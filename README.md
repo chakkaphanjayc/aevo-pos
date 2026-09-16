@@ -74,9 +74,12 @@ Prices are stored as integer minor units, so `65.00 THB` is sent to the API as
 explicit store-access check.
 
 The catalog migration is
-`supabase/migrations/20260916120000_catalog.sql`. If the project was already
-migrated before this phase was added, apply this file once through the SQL
-Editor or run `bun run db:migrate` after linking the project.
+`supabase/migrations/20260916120000_catalog.sql`. The follow-up
+`supabase/migrations/20260916150000_phase1_hardening.sql` is safe to apply to
+projects that already have the first catalog migration; it adds the missing
+tenant-safe store key and prevents duplicate no-variant menu items. If the
+project was already migrated before this phase was added, apply both files once
+through the SQL Editor or run `bun run db:migrate` after linking the project.
 
 ## Create the first admin/owner
 
@@ -157,6 +160,12 @@ the Astro site separately during local development.
 
 The first user is still created by the one-off `bun run db:seed` command above;
 the Worker deliberately has no public setup endpoint.
+
+If the deployed login shows `Request failed (500)` or Cloudflare error 1101,
+check `/health` and `/ready`. `/health` is a liveness check; `/ready` and
+`/api/*` require all three Worker values below. `WEB_ORIGIN` must include the
+scheme (for example `https://aevo-pos.example.workers.dev`), and the old
+`MONGODB_URI`/`MONGODB_DATABASE` variables are not used by this Supabase build.
 
 ## Environment
 
