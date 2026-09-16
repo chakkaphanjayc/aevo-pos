@@ -41,6 +41,43 @@ PUBLIC_API_URL=http://localhost:3001 bun run dev:web
 
 Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the seed; it must have at least 12 characters.
 
+## Cloudflare deployment
+
+The web app is an Astro static site. The repository-level `wrangler.jsonc`
+uploads the generated `apps/web/dist` directory as a Workers Static Assets
+deployment. Keeping this config at the repository root is intentional: it
+allows Cloudflare's root-level deploy command to resolve the monorepo project.
+
+For a Cloudflare Workers build, keep the build command as:
+
+```bash
+bun run build
+```
+
+The existing deploy command works with this config:
+
+```bash
+npx wrangler deploy
+```
+
+For a pinned, reproducible command, use:
+
+```bash
+npx --yes wrangler@4.132.0 deploy --config wrangler.jsonc
+```
+
+The repository also exposes the same deployment as:
+
+```bash
+bun run deploy:web
+```
+
+If using Cloudflare Pages rather than Workers, keep the repository root at the
+monorepo root, use `bun run build` as the build command, and set the build
+output directory to `apps/web/dist`. The Pages workflow and the Workers
+workflow are alternatives; do not configure both for the same production
+hostname.
+
 ## Environment
 
 | Variable | Purpose |
