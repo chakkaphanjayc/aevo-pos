@@ -4,6 +4,23 @@
 -- modeled separately so the same product can be reused by multiple menus and
 -- storefronts without changing historical order snapshots.
 
+-- The foundation migration predates tenant-safe composite store references.
+-- Add the referenced key here as well so this migration can be applied to an
+-- existing project where the foundation tables already exist.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.stores'::regclass
+      and conname = 'stores_organization_id_id_key'
+  ) then
+    alter table public.stores
+      add constraint stores_organization_id_id_key unique (organization_id, id);
+  end if;
+end;
+$$;
+
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
