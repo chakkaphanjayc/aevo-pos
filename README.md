@@ -43,9 +43,10 @@ Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the se
 
 ## Cloudflare deployment
 
-The web app is an Astro static site. Its Wrangler configuration lives in
-`apps/web/wrangler.jsonc` and uploads the generated `apps/web/dist` directory
-as a Workers Static Assets deployment.
+The web app is an Astro static site. The repository-level `wrangler.jsonc`
+uploads the generated `apps/web/dist` directory as a Workers Static Assets
+deployment. Keeping this config at the repository root is intentional: it
+allows Cloudflare's root-level deploy command to resolve the monorepo project.
 
 For a Cloudflare Workers build, keep the build command as:
 
@@ -53,24 +54,29 @@ For a Cloudflare Workers build, keep the build command as:
 bun run build
 ```
 
-Set the deploy command to:
+The existing deploy command works with this config:
+
+```bash
+npx wrangler deploy
+```
+
+For a pinned, reproducible command, use:
+
+```bash
+npx --yes wrangler@4.132.0 deploy --config wrangler.jsonc
+```
+
+The repository also exposes the same deployment as:
 
 ```bash
 bun run deploy:web
 ```
 
-The root command delegates to the `@aevo/web` workspace, so Wrangler runs from
-`apps/web` instead of the monorepo root. If the Cloudflare dashboard requires a
-literal shell command, use the equivalent:
-
-```bash
-cd apps/web && npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc
-```
-
 If using Cloudflare Pages rather than Workers, keep the repository root at the
 monorepo root, use `bun run build` as the build command, and set the build
-output directory to `apps/web/dist`. Do not run `npx wrangler deploy` from the
-repository root.
+output directory to `apps/web/dist`. The Pages workflow and the Workers
+workflow are alternatives; do not configure both for the same production
+hostname.
 
 ## Environment
 
