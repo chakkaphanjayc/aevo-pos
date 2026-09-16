@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AuthenticationError, AuthService, hasPermission } from "@aevo/auth";
 import type { AppConfig } from "@aevo/config";
-import type { SessionPrincipal } from "@aevo/contracts";
+import type { Permission, SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import {
   canAccessStore,
@@ -13,9 +13,18 @@ import {
   createProduct,
   listAuthorizedStores,
   listCatalog,
+  createOrder,
+  getOrder,
+  listOrders,
+  OrderConflictError,
+  OrderNotFoundError,
+  OrderValidationError,
+  recordOrderPayment,
+  transitionOrder,
   updateProduct,
   updateProductAvailability
 } from "@aevo/db";
+import { InvalidOrderTransitionError } from "@aevo/ordering";
 import { Elysia, t } from "elysia";
 import { AppError, forbidden, unauthorized } from "./errors";
 import { clearSessionCookie, clientIp, decodeAuthSessionCookie, encodeAuthSessionCookie, readCookie, sessionCookie } from "./http";
@@ -65,7 +74,7 @@ export function createApp(dependencies: AppDependencies) {
     return principal;
   }
 
-  async function authenticateStore(request: Request, storeId: string, permission: "catalog.read" | "catalog.manage") {
+  async function authenticateStore(request: Request, storeId: string, permission: Permission) {
     const principal = await authenticate(request);
     if (!hasPermission(principal, permission)) throw forbidden();
     if (!await canAccessStore(database, principal, storeId)) throw forbidden();
@@ -75,6 +84,25 @@ export function createApp(dependencies: AppDependencies) {
   function rethrowCatalogError(error: unknown): never {
     if (error instanceof CatalogConflictError) throw new AppError(409, "CATALOG_CONFLICT", error.message);
     throw error;
+  }
+
+  function rethrowOrderError(error: unknown): never {
+    if (error instanceof OrderValidationError || error instanceof InvalidOrderTransitionError) {
+      throw new AppError(422, error instanceof InvalidOrderTransitionError ? error.code : "ORDER_VALIDATION_ERROR", error.message);
+    }
+    if (error instanceof OrderConflictError) throw new AppError(409, "ORDER_CONFLICT", error.message);
+    if (error instanceof OrderNotFoundError) throw new AppError(404, "ORDER_NOT_FOUND", error.message);
+    throw error;
+  }
+
+  function idempotencyKey(request: Request): string {
+    return request.headers.get("idempotency-key")?.trim() ?? "";
+  }
+
+  function orderActionPermission(status: string): Permission {
+    if (status === "CANCELLED") return "order.void";
+    if (status === "REFUNDED" || status === "PARTIALLY_REFUNDED") return "refund.create";
+    return "order.create";
   }
 
   return new Elysia({ name: "aevo-api" })
@@ -184,6 +212,114 @@ export function createApp(dependencies: AppDependencies) {
       const principal = await authenticate(request);
       if (!hasPermission(principal, "store.read")) throw forbidden();
       return { stores: await listAuthorizedStores(database, principal) };
+    })
+    .get("/api/orders", async ({ request, query }) => {
+      const principal = await authenticateStore(request, query.storeId, "order.read");
+      try {
+        return {
+          orders: await listOrders(database, principal, query.storeId, {
+            ...(query.status ? { status: query.status } : {}),
+            ...(query.limit ? { limit: query.limit } : {})
+          })
+        };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      query: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        status: t.Optional(t.Union([
+          t.Literal("DRAFT"), t.Literal("PENDING_PAYMENT"), t.Literal("PAID"), t.Literal("CONFIRMED"),
+          t.Literal("QUEUED"), t.Literal("ACCEPTED"), t.Literal("PREPARING"), t.Literal("PARTIALLY_READY"),
+          t.Literal("READY"), t.Literal("SERVED"), t.Literal("PICKED_UP"), t.Literal("COMPLETED"),
+          t.Literal("CANCELLED"), t.Literal("REFUNDED"), t.Literal("PARTIALLY_REFUNDED"), t.Literal("NO_SHOW")
+        ])),
+        limit: t.Optional(t.Integer({ minimum: 1, maximum: 100 }))
+      })
+    })
+    .get("/api/orders/:orderId", async ({ request, params, query }) => {
+      const principal = await authenticateStore(request, query.storeId, "order.read");
+      try {
+        return { order: await getOrder(database, principal, query.storeId, params.orderId) };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      query: t.Object({ storeId: t.String({ format: "uuid" }) })
+    })
+    .post("/api/orders", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "order.create");
+      try {
+        return { order: await createOrder(database, principal, body, idempotencyKey(request)) };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        channel: catalogChannelSchema,
+        fulfillmentType: t.Union([t.Literal("TAKEAWAY"), t.Literal("DINE_IN"), t.Literal("PICKUP")]),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        customerName: t.Optional(t.String({ maxLength: 160 })),
+        customerPhone: t.Optional(t.String({ maxLength: 40 })),
+        customerEmail: t.Optional(t.String({ format: "email", maxLength: 320 })),
+        notes: t.Optional(t.String({ maxLength: 2000 })),
+        items: t.Array(t.Object({
+          productId: t.String({ format: "uuid" }),
+          variantId: t.Optional(t.String({ format: "uuid" })),
+          menuItemId: t.Optional(t.String({ format: "uuid" })),
+          modifierIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 50 })),
+          quantity: t.Integer({ minimum: 1, maximum: 999 }),
+          note: t.Optional(t.String({ maxLength: 1000 }))
+        }), { minItems: 1, maxItems: 100 })
+      })
+    })
+    .post("/api/orders/:orderId/transition", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, orderActionPermission(body.toStatus));
+      try {
+        return { order: await transitionOrder(database, principal, params.orderId, body, idempotencyKey(request)) };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        toStatus: t.Union([
+          t.Literal("PENDING_PAYMENT"), t.Literal("PAID"), t.Literal("CONFIRMED"), t.Literal("QUEUED"),
+          t.Literal("ACCEPTED"), t.Literal("PREPARING"), t.Literal("PARTIALLY_READY"), t.Literal("READY"),
+          t.Literal("SERVED"), t.Literal("PICKED_UP"), t.Literal("COMPLETED"), t.Literal("CANCELLED"),
+          t.Literal("REFUNDED"), t.Literal("PARTIALLY_REFUNDED"), t.Literal("NO_SHOW")
+        ]),
+        expectedStatus: t.Optional(t.Union([
+          t.Literal("DRAFT"), t.Literal("PENDING_PAYMENT"), t.Literal("PAID"), t.Literal("CONFIRMED"),
+          t.Literal("QUEUED"), t.Literal("ACCEPTED"), t.Literal("PREPARING"), t.Literal("PARTIALLY_READY"),
+          t.Literal("READY"), t.Literal("SERVED"), t.Literal("PICKED_UP"), t.Literal("COMPLETED"),
+          t.Literal("CANCELLED"), t.Literal("REFUNDED"), t.Literal("PARTIALLY_REFUNDED"), t.Literal("NO_SHOW")
+        ])),
+        reason: t.Optional(t.String({ maxLength: 500 }))
+      })
+    })
+    .post("/api/orders/:orderId/payments", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "payment.receive");
+      try {
+        return { order: await recordOrderPayment(database, principal, params.orderId, body, idempotencyKey(request)) };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        method: t.Union([t.Literal("CASH"), t.Literal("PROMPTPAY"), t.Literal("EXTERNAL_CARD"), t.Literal("MANUAL")]),
+        amountMinor: t.Integer({ minimum: 1, maximum: 2147483647 }),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        providerReference: t.Optional(t.String({ maxLength: 200 }))
+      })
     })
     .get("/api/catalog", async ({ request, query }) => {
       const principal = await authenticateStore(request, query.storeId, "catalog.read");

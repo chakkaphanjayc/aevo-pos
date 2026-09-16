@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "aevo-pos",
@@ -82,7 +83,19 @@
       "version": "0.0.1",
       "dependencies": {
         "@aevo/contracts": "workspace:*",
+        "@aevo/ordering": "workspace:*",
         "@supabase/supabase-js": "2.116.0",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
+    "packages/ordering": {
+      "name": "@aevo/ordering",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.2.21",
@@ -100,6 +113,8 @@
     "@aevo/contracts": ["@aevo/contracts@workspace:packages/contracts"],
 
     "@aevo/db": ["@aevo/db@workspace:packages/db"],
+
+    "@aevo/ordering": ["@aevo/ordering@workspace:packages/ordering"],
 
     "@aevo/web": ["@aevo/web@workspace:apps/web"],
 
