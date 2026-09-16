@@ -174,27 +174,26 @@ export function validateCatalogChannel(value: string): value is CatalogChannel {
 }
 
 /**
- * Build a complete availability row before an upsert. PostgREST treats an
- * upsert as an INSERT for the conflict path, so omitting a required column can
- * replace an existing value with NULL instead of preserving it. Reading the
- * current row and sending every column keeps PATCH semantics predictable.
+ * Encode PATCH presence separately from PATCH values. The database RPC uses
+ * these flags inside one INSERT ... ON CONFLICT statement, so two concurrent
+ * requests changing different fields cannot overwrite each other's updates.
  */
-export function mergeAvailabilityValues(
-  existing: Row | null,
+export function buildAvailabilityPatchParams(
   input: UpdateProductAvailabilityInput,
   principal: SessionPrincipal,
   productId: string
 ): Row {
   return {
-    organization_id: principal.organizationId,
-    store_id: input.storeId,
-    product_id: productId,
-    channel: input.channel,
-    is_available: input.isAvailable ?? (existing?.is_available === undefined ? true : existing.is_available === true),
-    sold_out: input.soldOut ?? (existing?.sold_out === true),
-    price_override_minor: input.priceOverrideMinor !== undefined
-      ? input.priceOverrideMinor
-      : (existing?.price_override_minor === undefined ? null : existing.price_override_minor)
+    p_organization_id: principal.organizationId,
+    p_store_id: input.storeId,
+    p_product_id: productId,
+    p_channel: input.channel,
+    p_is_available: input.isAvailable ?? null,
+    p_is_available_set: input.isAvailable !== undefined,
+    p_sold_out: input.soldOut ?? null,
+    p_sold_out_set: input.soldOut !== undefined,
+    p_price_override_minor: input.priceOverrideMinor ?? null,
+    p_price_override_set: input.priceOverrideMinor !== undefined
   };
 }
 
@@ -521,23 +520,12 @@ export async function updateProductAvailability(
   productId: string,
   input: UpdateProductAvailabilityInput
 ): Promise<ProductAvailabilitySummary> {
-  const existingResult = await database.client
-    .from("product_availability")
-    .select("is_available,sold_out,price_override_minor")
-    .eq("organization_id", principal.organizationId)
-    .eq("store_id", input.storeId)
-    .eq("product_id", productId)
-    .eq("channel", input.channel)
-    .maybeSingle();
-  throwIfError(existingResult.error, "availability lookup");
-  const result = await database.client
-    .from("product_availability")
-    .upsert(
-      mergeAvailabilityValues(existingResult.data as Row | null, input, principal, productId),
-      { onConflict: "organization_id,store_id,product_id,channel" }
-    )
-    .select("channel,is_available,sold_out,price_override_minor")
-    .single();
+  const result = await database.client.rpc(
+    "patch_product_availability",
+    buildAvailabilityPatchParams(input, principal, productId)
+  );
   throwIfError(result.error, "availability update");
-  return mapAvailability(result.data as Row);
+  const row = (Array.isArray(result.data) ? result.data[0] : result.data) as Row | undefined;
+  if (!row) throw new Error("Supabase availability update returned no row");
+  return mapAvailability(row);
 }
