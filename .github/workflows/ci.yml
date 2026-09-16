@@ -9,22 +9,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: aevo_test
-          POSTGRES_USER: aevo
-          POSTGRES_PASSWORD: aevo
+      mongodb:
+        image: mongo:8
         ports:
-          - 5432:5432
+          - 27017:27017
         options: >-
-          --health-cmd "pg_isready -U aevo -d aevo_test"
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgres://aevo:aevo@localhost:5432/aevo_test
-      DATABASE_URL: postgres://aevo:aevo@localhost:5432/aevo_test
+      TEST_MONGODB_URI: mongodb://localhost:27017
+      TEST_MONGODB_DATABASE: aevo_test
+      MONGODB_URI: mongodb://localhost:27017
+      MONGODB_DATABASE: aevo_test
       WEB_ORIGIN: http://localhost:4321
     steps:
       - uses: actions/checkout@v4

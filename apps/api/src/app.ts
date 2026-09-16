@@ -12,13 +12,13 @@ import { FixedWindowRateLimiter } from "./rate-limit";
 
 export interface AppDependencies {
   config: AppConfig;
-  sql: Database;
+  database: Database;
   auth?: Pick<AuthService, "login" | "logout" | "resolve">;
 }
 
 export function createApp(dependencies: AppDependencies) {
-  const { config, sql } = dependencies;
-  const auth = dependencies.auth ?? new AuthService(sql, config.sessionTtlHours);
+  const { config, database } = dependencies;
+  const auth = dependencies.auth ?? new AuthService(database, config.sessionTtlHours);
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const secureCookie = config.nodeEnv === "production";
@@ -66,7 +66,7 @@ export function createApp(dependencies: AppDependencies) {
     })
     .get("/health", ({ requestId }) => ({ status: "ok", service: "aevo-api", requestId }))
     .get("/ready", async ({ requestId }) => {
-      await sql`SELECT 1 AS ready`;
+      await database.ping();
       return { status: "ready", requestId };
     })
     .post("/api/auth/login", async ({ body, request, requestId, set }) => {
@@ -97,6 +97,6 @@ export function createApp(dependencies: AppDependencies) {
     .get("/api/stores", async ({ request }) => {
       const principal = await authenticate(request);
       if (!hasPermission(principal, "store.read")) throw forbidden();
-      return { stores: await listAuthorizedStores(sql, principal) };
+      return { stores: await listAuthorizedStores(database, principal) };
     });
 }

@@ -5,10 +5,11 @@ import { createApp } from "../src/app";
 
 const config: AppConfig = {
   nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4321",
-  databaseUrl: "postgres://unused/test", sessionCookieName: "aevo_session", sessionTtlHours: 1, logLevel: "error"
+  mongodbUri: "mongodb://unused/test", mongodbDatabase: "aevo_test",
+  sessionCookieName: "aevo_session", sessionTtlHours: 1, logLevel: "error"
 };
 
-const fakeSql = ((() => Promise.resolve([{ ready: 1 }])) as unknown) as Database;
+const fakeDatabase = { ping: async () => undefined } as unknown as Database;
 const fakeAuth = {
   login: async () => ({ token: "secret", expiresAt: new Date("2030-01-01T00:00:00Z") }),
   logout: async () => undefined,
@@ -16,7 +17,7 @@ const fakeAuth = {
 };
 
 describe("API foundation", () => {
-  const app = createApp({ config, sql: fakeSql, auth: fakeAuth });
+  const app = createApp({ config, database: fakeDatabase, auth: fakeAuth });
 
   test("health includes a correlation id", async () => {
     const response = await app.handle(new Request("http://localhost/health", { headers: { "x-request-id": "request-123" } }));
@@ -29,6 +30,12 @@ describe("API foundation", () => {
     const response = await app.handle(new Request("http://localhost/api/auth/me"));
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  });
+
+  test("readiness checks MongoDB connectivity", async () => {
+    const response = await app.handle(new Request("http://localhost/ready"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "ready" });
   });
 
   test("login writes an http-only cookie", async () => {
