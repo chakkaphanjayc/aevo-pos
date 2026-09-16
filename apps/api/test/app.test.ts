@@ -96,4 +96,35 @@ describe("API foundation", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
   });
+
+  test("catalog mutations reject cross-site origins", async () => {
+    const response = await app.handle(new Request("http://localhost/api/catalog/products", {
+      method: "POST",
+      headers: {
+        cookie: cookieHeader(),
+        origin: "https://attacker.example",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        storeId: "00000000-0000-4000-8000-000000000011",
+        sku: "LATTE",
+        name: "Latte",
+        basePriceMinor: 6500
+      })
+    }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "ORIGIN_NOT_ALLOWED" } });
+  });
+
+  test("catalog PATCH is advertised in CORS preflight", async () => {
+    const response = await app.handle(new Request("http://localhost/api/catalog/products/product/availability", {
+      method: "OPTIONS",
+      headers: {
+        origin: config.webOrigin,
+        "access-control-request-method": "PATCH"
+      }
+    }));
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
+  });
 });
