@@ -1,6 +1,6 @@
 {
   "name": "@aevo/web", "version": "0.0.1", "private": true, "type": "module",
-  "scripts": { "dev": "astro dev", "build": "ASTRO_TELEMETRY_DISABLED=1 astro build", "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check", "test": "bun test" },
+  "scripts": { "dev": "astro dev", "build": "ASTRO_TELEMETRY_DISABLED=1 astro build", "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check", "test": "bun test", "deploy": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc" },
   "dependencies": { "@aevo/contracts": "workspace:*", "astro": "^5.13.7" },
   "devDependencies": { "@astrojs/check": "^0.9.4", "@types/bun": "^1.2.21", "typescript": "^5.9.2" }
 }

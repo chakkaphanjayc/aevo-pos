@@ -8,6 +8,7 @@
     "dev:api": "bun run --filter @aevo/api dev",
     "dev:web": "bun run --filter @aevo/web dev",
     "build": "bun run --filter '*' build",
+    "deploy:web": "bun run --filter @aevo/web deploy",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test packages apps",
     "test:integration": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://aevo:aevo@localhost:5433/aevo_test} bun test packages/db/test",
