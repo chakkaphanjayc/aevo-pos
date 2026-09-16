@@ -173,6 +173,31 @@ export function validateCatalogChannel(value: string): value is CatalogChannel {
   return catalogChannels.includes(value as CatalogChannel);
 }
 
+/**
+ * Build a complete availability row before an upsert. PostgREST treats an
+ * upsert as an INSERT for the conflict path, so omitting a required column can
+ * replace an existing value with NULL instead of preserving it. Reading the
+ * current row and sending every column keeps PATCH semantics predictable.
+ */
+export function mergeAvailabilityValues(
+  existing: Row | null,
+  input: UpdateProductAvailabilityInput,
+  principal: SessionPrincipal,
+  productId: string
+): Row {
+  return {
+    organization_id: principal.organizationId,
+    store_id: input.storeId,
+    product_id: productId,
+    channel: input.channel,
+    is_available: input.isAvailable ?? (existing?.is_available === undefined ? true : existing.is_available === true),
+    sold_out: input.soldOut ?? (existing?.sold_out === true),
+    price_override_minor: input.priceOverrideMinor !== undefined
+      ? input.priceOverrideMinor
+      : (existing?.price_override_minor === undefined ? null : existing.price_override_minor)
+  };
+}
+
 export async function listCatalog(database: Database, principal: SessionPrincipal, storeId: string): Promise<CatalogSnapshot> {
   const [categoriesResult, productsResult, variantsResult, availabilityResult, menusResult, menuItemsResult, modifierGroupsResult, modifiersResult] = await Promise.all([
     database.client
@@ -496,17 +521,21 @@ export async function updateProductAvailability(
   productId: string,
   input: UpdateProductAvailabilityInput
 ): Promise<ProductAvailabilitySummary> {
+  const existingResult = await database.client
+    .from("product_availability")
+    .select("is_available,sold_out,price_override_minor")
+    .eq("organization_id", principal.organizationId)
+    .eq("store_id", input.storeId)
+    .eq("product_id", productId)
+    .eq("channel", input.channel)
+    .maybeSingle();
+  throwIfError(existingResult.error, "availability lookup");
   const result = await database.client
     .from("product_availability")
-    .upsert({
-      organization_id: principal.organizationId,
-      store_id: input.storeId,
-      product_id: productId,
-      channel: input.channel,
-      ...(input.isAvailable === undefined ? {} : { is_available: input.isAvailable }),
-      ...(input.soldOut === undefined ? {} : { sold_out: input.soldOut }),
-      ...(input.priceOverrideMinor === undefined ? {} : { price_override_minor: input.priceOverrideMinor })
-    }, { onConflict: "organization_id,store_id,product_id,channel" })
+    .upsert(
+      mergeAvailabilityValues(existingResult.data as Row | null, input, principal, productId),
+      { onConflict: "organization_id,store_id,product_id,channel" }
+    )
     .select("channel,is_available,sold_out,price_override_minor")
     .single();
   throwIfError(result.error, "availability update");

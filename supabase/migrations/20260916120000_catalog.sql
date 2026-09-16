@@ -4,6 +4,23 @@
 -- modeled separately so the same product can be reused by multiple menus and
 -- storefronts without changing historical order snapshots.
 
+-- The foundation migration predates tenant-safe composite store references.
+-- Add the referenced key here as well so this migration can be applied to an
+-- existing project where the foundation tables already exist.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.stores'::regclass
+      and conname = 'stores_organization_id_id_key'
+  ) then
+    alter table public.stores
+      add constraint stores_organization_id_id_key unique (organization_id, id);
+  end if;
+end;
+$$;
+
 create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -95,6 +112,13 @@ create table if not exists public.menu_items (
   foreign key (organization_id, variant_id, product_id)
     references public.product_variants(organization_id, id, product_id) on delete restrict
 );
+
+-- A normal UNIQUE constraint treats NULL variant ids as distinct. This partial
+-- index keeps a product from being added repeatedly to the same menu when it
+-- has no selected variant, while still allowing one row per concrete variant.
+create unique index if not exists menu_items_without_variant_unique_idx
+  on public.menu_items (organization_id, menu_id, product_id)
+  where variant_id is null;
 
 create table if not exists public.modifier_groups (
   id uuid primary key default gen_random_uuid(),

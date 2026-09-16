@@ -106,7 +106,7 @@ export function createApp(dependencies: AppDependencies) {
     })
     .options("/*", ({ set }) => {
       set.status = 204;
-      set.headers["access-control-allow-methods"] = "GET,POST,OPTIONS";
+      set.headers["access-control-allow-methods"] = "GET,POST,PATCH,OPTIONS";
       set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id";
       set.headers["access-control-expose-headers"] = "x-request-id";
       set.headers["access-control-max-age"] = "600";
@@ -192,6 +192,7 @@ export function createApp(dependencies: AppDependencies) {
       query: t.Object({ storeId: t.String({ format: "uuid" }) })
     })
     .post("/api/catalog/categories", async ({ request, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { category: await createCategory(database, principal, body) };
@@ -207,6 +208,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .post("/api/catalog/products", async ({ request, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { product: await createProduct(database, principal, body) };
@@ -230,6 +232,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .post("/api/catalog/menus", async ({ request, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { menu: await createMenu(database, principal, body) };
@@ -245,6 +248,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .post("/api/catalog/menu-items", async ({ request, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { menuItem: await createMenuItem(database, principal, body) };
@@ -261,6 +265,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .post("/api/catalog/modifier-groups", async ({ request, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { modifierGroup: await createModifierGroup(database, principal, body) };
@@ -284,6 +289,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .patch("/api/catalog/products/:productId", async ({ request, params, query, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, query.storeId, "catalog.manage");
       try {
         return { product: await updateProduct(database, principal, params.productId, body) };
@@ -302,6 +308,7 @@ export function createApp(dependencies: AppDependencies) {
       })
     })
     .patch("/api/catalog/products/:productId/availability", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "catalog.manage");
       try {
         return { availability: await updateProductAvailability(database, principal, params.productId, body) };
