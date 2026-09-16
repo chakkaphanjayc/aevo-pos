@@ -44,7 +44,9 @@ PUBLIC_API_URL=http://localhost:3001 bun run dev:web
 ```
 
 Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the
-seed; it must have at least 12 characters.
+seed; it must have at least 12 characters. The seed creates the initial user
+with `SEED_INITIAL_ROLE=OWNER` by default; use `SEED_INITIAL_ROLE=ADMIN` when
+the account should be an Admin instead.
 
 After seeding, sign in at `/login` with `SEED_OWNER_EMAIL` and
 `SEED_OWNER_PASSWORD`. The login session is an HttpOnly cookie; the browser
@@ -112,6 +114,14 @@ The Astro site is static and does not contain the Bun API process. Deploy the
 Elysia API separately on a Bun-compatible host and set `PUBLIC_API_URL` to that
 API origin when building the web app.
 
+When deploying this repository through Cloudflare Workers, configure
+`PUBLIC_API_URL` under the Worker build environment for both Preview and
+Production, then redeploy. It must point to the public Elysia API URL; setting
+it as a runtime secret does not rewrite an already-built Astro bundle. Keep
+`MONGODB_URI`, `MONGODB_DATABASE`, `WEB_ORIGIN`, `SEED_OWNER_EMAIL`,
+`SEED_OWNER_PASSWORD`, and `SEED_INITIAL_ROLE` on the API host or in a one-off
+server-side seed command. Do not put them in `wrangler.jsonc` or `PUBLIC_*`.
+
 ## Environment
 
 | Variable | Purpose |
@@ -126,7 +136,7 @@ API origin when building the web app.
 | `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
 | `PUBLIC_API_URL` | API origin embedded into the Astro frontend |
 | `TEST_MONGODB_URI` / `TEST_MONGODB_DATABASE` | Integration-test MongoDB target |
-| `SEED_*` | Initial local owner, organization and store values |
+| `SEED_*` | Initial user, role, organization and store values; `SEED_INITIAL_ROLE` supports `OWNER` or `ADMIN` (default `OWNER`) |
 
 ## Database foundation
 

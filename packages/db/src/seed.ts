@@ -30,6 +30,11 @@ export async function seed(databaseUri: string, databaseName = "aevo", env: Reco
   const organizationName = env.SEED_ORGANIZATION_NAME ?? "Aevo Demo";
   const storeName = env.SEED_STORE_NAME ?? "Main Store";
   const timezone = env.SEED_STORE_TIMEZONE ?? "Asia/Bangkok";
+  const requestedInitialRole = (env.SEED_INITIAL_ROLE ?? "OWNER").trim().toUpperCase();
+  if (!roles.includes(requestedInitialRole as Role)) {
+    throw new Error("SEED_INITIAL_ROLE must be one of the supported roles");
+  }
+  const initialRoleCode = requestedInitialRole as Role;
   const passwordHash = await Bun.password.hash(password, { algorithm: "argon2id" });
   const database = await createDatabase(databaseUri, databaseName);
   const now = new Date();
@@ -99,18 +104,18 @@ export async function seed(databaseUri: string, databaseName = "aevo", env: Reco
       { upsert: true }
     );
 
-    const ownerRole = await roleCollection.findOne({ code: "OWNER" });
-    if (!ownerRole) throw new Error("Unable to create OWNER role");
+    const initialRole = await roleCollection.findOne({ code: initialRoleCode });
+    if (!initialRole) throw new Error(`Unable to create ${initialRoleCode} role`);
     const membershipCollection = database.db.collection<MembershipDocument>("memberships");
     await membershipCollection.updateOne(
       { organizationId: organization._id, userId: user._id },
       {
-        $set: { roleId: ownerRole._id, status: "ACTIVE", storeIds: [], updatedAt: now },
+        $set: { roleId: initialRole._id, status: "ACTIVE", storeIds: [], updatedAt: now },
         $setOnInsert: { _id: randomUUID(), createdAt: now }
       },
       { upsert: true }
     );
-    console.info(JSON.stringify({ level: "info", event: "seed.completed", ownerEmail: email, database: databaseName }));
+    console.info(JSON.stringify({ level: "info", event: "seed.completed", ownerEmail: email, role: initialRoleCode, database: databaseName }));
   } finally {
     await database.close();
   }
