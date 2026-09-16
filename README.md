@@ -63,6 +63,21 @@ public application table. `private.is_org_member` and
 `private.has_org_permission` are non-exposed `SECURITY DEFINER` helpers with a
 fixed search path; no browser key can bypass tenant policies.
 
+## Catalog (Phase 1)
+
+After applying both migrations, an authorized staff member can open
+`/staff/catalog` from the selected store workspace. The catalog foundation
+provides organization-scoped categories, products, variants, menus,
+modifier groups and store/channel availability (including Sold out state).
+Prices are stored as integer minor units, so `65.00 THB` is sent to the API as
+`6500`. The API protects every catalog write with `catalog.manage` and an
+explicit store-access check.
+
+The catalog migration is
+`supabase/migrations/20260916120000_catalog.sql`. If the project was already
+migrated before this phase was added, apply this file once through the SQL
+Editor or run `bun run db:migrate` after linking the project.
+
 ## Create the first admin/owner
 
 The seed command uses the Supabase Admin Auth API and must run as a one-off

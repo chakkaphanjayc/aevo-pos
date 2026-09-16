@@ -3,7 +3,19 @@ import { AuthenticationError, AuthService, hasPermission } from "@aevo/auth";
 import type { AppConfig } from "@aevo/config";
 import type { SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
-import { listAuthorizedStores } from "@aevo/db";
+import {
+  canAccessStore,
+  CatalogConflictError,
+  createCategory,
+  createMenu,
+  createMenuItem,
+  createModifierGroup,
+  createProduct,
+  listAuthorizedStores,
+  listCatalog,
+  updateProduct,
+  updateProductAvailability
+} from "@aevo/db";
 import { Elysia, t } from "elysia";
 import { AppError, forbidden, unauthorized } from "./errors";
 import { clearSessionCookie, clientIp, decodeAuthSessionCookie, encodeAuthSessionCookie, readCookie, sessionCookie } from "./http";
@@ -23,6 +35,10 @@ export function createApp(dependencies: AppDependencies) {
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const secureCookie = config.nodeEnv === "production";
   const cookieSameSite = config.sessionCookieSameSite ?? "lax";
+  const catalogChannelSchema = t.Union([
+    t.Literal("POS"), t.Literal("QR"), t.Literal("KIOSK"),
+    t.Literal("PICKUP"), t.Literal("STAFF"), t.Literal("API")
+  ]);
 
   function assertAllowedOrigin(request: Request): void {
     const origin = request.headers.get("origin");
@@ -47,6 +63,18 @@ export function createApp(dependencies: AppDependencies) {
     const principal = await auth.resolve(accessToken, organizationId);
     if (!principal) throw unauthorized();
     return principal;
+  }
+
+  async function authenticateStore(request: Request, storeId: string, permission: "catalog.read" | "catalog.manage") {
+    const principal = await authenticate(request);
+    if (!hasPermission(principal, permission)) throw forbidden();
+    if (!await canAccessStore(database, principal, storeId)) throw forbidden();
+    return principal;
+  }
+
+  function rethrowCatalogError(error: unknown): never {
+    if (error instanceof CatalogConflictError) throw new AppError(409, "CATALOG_CONFLICT", error.message);
+    throw error;
   }
 
   return new Elysia({ name: "aevo-api" })
@@ -156,5 +184,138 @@ export function createApp(dependencies: AppDependencies) {
       const principal = await authenticate(request);
       if (!hasPermission(principal, "store.read")) throw forbidden();
       return { stores: await listAuthorizedStores(database, principal) };
+    })
+    .get("/api/catalog", async ({ request, query }) => {
+      const principal = await authenticateStore(request, query.storeId, "catalog.read");
+      return await listCatalog(database, principal, query.storeId);
+    }, {
+      query: t.Object({ storeId: t.String({ format: "uuid" }) })
+    })
+    .post("/api/catalog/categories", async ({ request, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { category: await createCategory(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        code: t.Optional(t.String({ minLength: 1, maxLength: 32 })),
+        parentId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .post("/api/catalog/products", async ({ request, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { product: await createProduct(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        categoryId: t.Optional(t.String({ format: "uuid" })),
+        sku: t.String({ minLength: 1, maxLength: 64 }),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        description: t.Optional(t.String({ maxLength: 2000 })),
+        basePriceMinor: t.Integer({ minimum: 0, maximum: 2147483647 }),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        variants: t.Optional(t.Array(t.Object({
+          code: t.String({ minLength: 1, maxLength: 32 }),
+          name: t.String({ minLength: 1, maxLength: 160 }),
+          priceMinor: t.Integer({ minimum: 0, maximum: 2147483647 })
+        }), { maxItems: 32 }))
+      })
+    })
+    .post("/api/catalog/menus", async ({ request, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { menu: await createMenu(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        code: t.Optional(t.String({ minLength: 1, maxLength: 32 })),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        channel: catalogChannelSchema
+      })
+    })
+    .post("/api/catalog/menu-items", async ({ request, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { menuItem: await createMenuItem(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        menuId: t.String({ format: "uuid" }),
+        productId: t.String({ format: "uuid" }),
+        variantId: t.Optional(t.String({ format: "uuid" })),
+        priceOverrideMinor: t.Optional(t.Nullable(t.Integer({ minimum: 0, maximum: 2147483647 })))
+      })
+    })
+    .post("/api/catalog/modifier-groups", async ({ request, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { modifierGroup: await createModifierGroup(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        code: t.Optional(t.String({ minLength: 1, maxLength: 32 })),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        selectionType: t.Optional(t.Union([t.Literal("SINGLE"), t.Literal("MULTIPLE")])),
+        minSelections: t.Optional(t.Integer({ minimum: 0, maximum: 99 })),
+        maxSelections: t.Optional(t.Integer({ minimum: 0, maximum: 99 })),
+        required: t.Optional(t.Boolean()),
+        modifiers: t.Optional(t.Array(t.Object({
+          code: t.String({ minLength: 1, maxLength: 32 }),
+          name: t.String({ minLength: 1, maxLength: 160 }),
+          priceDeltaMinor: t.Optional(t.Integer({ minimum: -2147483648, maximum: 2147483647 }))
+        }), { maxItems: 99 }))
+      })
+    })
+    .patch("/api/catalog/products/:productId", async ({ request, params, query, body }) => {
+      const principal = await authenticateStore(request, query.storeId, "catalog.manage");
+      try {
+        return { product: await updateProduct(database, principal, params.productId, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      params: t.Object({ productId: t.String({ format: "uuid" }) }),
+      query: t.Object({ storeId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        categoryId: t.Optional(t.Nullable(t.String({ format: "uuid" }))),
+        name: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+        description: t.Optional(t.String({ maxLength: 2000 })),
+        basePriceMinor: t.Optional(t.Integer({ minimum: 0, maximum: 2147483647 })),
+        status: t.Optional(t.Union([t.Literal("ACTIVE"), t.Literal("ARCHIVED")]))
+      })
+    })
+    .patch("/api/catalog/products/:productId/availability", async ({ request, params, body }) => {
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { availability: await updateProductAvailability(database, principal, params.productId, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      params: t.Object({ productId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        channel: catalogChannelSchema,
+        isAvailable: t.Optional(t.Boolean()),
+        soldOut: t.Optional(t.Boolean()),
+        priceOverrideMinor: t.Optional(t.Nullable(t.Integer({ minimum: 0, maximum: 2147483647 })))
+      })
     });
 }
