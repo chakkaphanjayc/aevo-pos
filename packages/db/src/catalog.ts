@@ -1,0 +1,514 @@
+import type {
+  CatalogChannel,
+  CatalogSnapshot,
+  CategorySummary,
+  CreateCategoryInput,
+  CreateMenuInput,
+  CreateMenuItemInput,
+  CreateModifierGroupInput,
+  CreateProductInput,
+  ProductAvailabilitySummary,
+  ProductSummary,
+  ProductVariantSummary,
+  MenuSummary,
+  MenuItemSummary,
+  ModifierGroupSummary,
+  ModifierSummary,
+  SessionPrincipal,
+  UpdateProductAvailabilityInput,
+  UpdateProductInput
+} from "@aevo/contracts";
+import { catalogChannels } from "@aevo/contracts";
+import type { Database } from "./client";
+
+type Row = Record<string, unknown>;
+
+export class CatalogConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CatalogConflictError";
+  }
+}
+
+function throwIfError(error: { message: string; code?: string } | null, operation: string): void {
+  if (!error) return;
+  if (error.code === "23505") throw new CatalogConflictError(`Catalog ${operation} already exists`);
+  throw new Error(`Supabase catalog ${operation} failed: ${error.message}`);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stableHash(value: string): string {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).slice(0, 8);
+}
+
+function slugify(value: string): string {
+  const slug = value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 63);
+  return slug || `item-${stableHash(value)}`;
+}
+
+function codeFrom(value: string, fallback: string): string {
+  const code = value.toUpperCase().trim().replace(/[^A-Z0-9_-]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 32);
+  return code || fallback;
+}
+
+function mapCategory(row: Row): CategorySummary {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    ...(optionalString(row.parent_id) ? { parentId: String(row.parent_id) } : {}),
+    code: String(row.code),
+    name: String(row.name),
+    slug: String(row.slug),
+    sortOrder: Number(row.sort_order ?? 0),
+    status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE"
+  };
+}
+
+function mapVariant(row: Row): ProductVariantSummary {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    name: String(row.name),
+    priceMinor: Number(row.price_minor ?? 0),
+    sortOrder: Number(row.sort_order ?? 0),
+    status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE"
+  };
+}
+
+function mapAvailability(row: Row): ProductAvailabilitySummary {
+  const channel = String(row.channel);
+  return {
+    channel: (catalogChannels.includes(channel as CatalogChannel) ? channel : "POS") as CatalogChannel,
+    isAvailable: row.is_available !== false,
+    soldOut: row.sold_out === true,
+    ...(row.price_override_minor === null || row.price_override_minor === undefined
+      ? {}
+      : { priceOverrideMinor: Number(row.price_override_minor) })
+  };
+}
+
+function mapProduct(row: Row, variants: ProductVariantSummary[], availability: ProductAvailabilitySummary[]): ProductSummary {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    ...(optionalString(row.category_id) ? { categoryId: String(row.category_id) } : {}),
+    sku: String(row.sku),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    basePriceMinor: Number(row.base_price_minor ?? 0),
+    currency: String(row.currency ?? "THB"),
+    status: row.status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE",
+    variants,
+    availability
+  };
+}
+
+function mapMenu(row: Row, items: MenuItemSummary[] = []): MenuSummary {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    storeId: String(row.store_id),
+    code: String(row.code),
+    name: String(row.name),
+    channel: (catalogChannels.includes(String(row.channel) as CatalogChannel) ? String(row.channel) : "POS") as CatalogChannel,
+    status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+    items
+  };
+}
+
+function mapMenuItem(row: Row): MenuItemSummary {
+  return {
+    id: String(row.id),
+    menuId: String(row.menu_id),
+    productId: String(row.product_id),
+    ...(optionalString(row.variant_id) ? { variantId: String(row.variant_id) } : {}),
+    ...(row.price_override_minor === null || row.price_override_minor === undefined
+      ? {}
+      : { priceOverrideMinor: Number(row.price_override_minor) }),
+    sortOrder: Number(row.sort_order ?? 0),
+    isAvailable: row.is_available !== false,
+    soldOut: row.sold_out === true
+  };
+}
+
+function mapModifier(row: Row): ModifierSummary {
+  return {
+    id: String(row.id),
+    code: String(row.code),
+    name: String(row.name),
+    priceDeltaMinor: Number(row.price_delta_minor ?? 0),
+    sortOrder: Number(row.sort_order ?? 0),
+    status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE"
+  };
+}
+
+function mapModifierGroup(row: Row, modifiers: ModifierSummary[]): ModifierGroupSummary {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    code: String(row.code),
+    name: String(row.name),
+    selectionType: row.selection_type === "MULTIPLE" ? "MULTIPLE" : "SINGLE",
+    minSelections: Number(row.min_selections ?? 0),
+    maxSelections: Number(row.max_selections ?? 1),
+    required: row.required === true,
+    modifiers,
+    status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE"
+  };
+}
+
+export function slugifyCatalogName(value: string): string {
+  return slugify(value);
+}
+
+export function validateCatalogChannel(value: string): value is CatalogChannel {
+  return catalogChannels.includes(value as CatalogChannel);
+}
+
+export async function listCatalog(database: Database, principal: SessionPrincipal, storeId: string): Promise<CatalogSnapshot> {
+  const [categoriesResult, productsResult, variantsResult, availabilityResult, menusResult, menuItemsResult, modifierGroupsResult, modifiersResult] = await Promise.all([
+    database.client
+      .from("categories")
+      .select("id,organization_id,parent_id,code,name,slug,sort_order,status")
+      .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+    database.client
+      .from("products")
+      .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+      .eq("organization_id", principal.organizationId)
+      .order("name", { ascending: true }),
+    database.client
+      .from("product_variants")
+      .select("id,organization_id,product_id,code,name,price_minor,sort_order,status")
+      .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true }),
+    database.client
+      .from("product_availability")
+      .select("organization_id,store_id,product_id,channel,is_available,sold_out,price_override_minor")
+      .eq("organization_id", principal.organizationId)
+      .eq("store_id", storeId),
+    database.client
+      .from("menus")
+      .select("id,organization_id,store_id,code,name,channel,status")
+      .eq("organization_id", principal.organizationId)
+      .eq("store_id", storeId)
+      .order("name", { ascending: true }),
+    database.client
+      .from("menu_items")
+      .select("id,organization_id,menu_id,product_id,variant_id,price_override_minor,sort_order,is_available,sold_out")
+      .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true }),
+    database.client
+      .from("modifier_groups")
+      .select("id,organization_id,code,name,selection_type,min_selections,max_selections,required,status")
+      .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+    database.client
+      .from("modifiers")
+      .select("id,organization_id,modifier_group_id,code,name,price_delta_minor,sort_order,status")
+      .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true })
+  ]);
+  throwIfError(categoriesResult.error, "category list");
+  throwIfError(productsResult.error, "product list");
+  throwIfError(variantsResult.error, "variant list");
+  throwIfError(availabilityResult.error, "availability list");
+  throwIfError(menusResult.error, "menu list");
+  throwIfError(menuItemsResult.error, "menu item list");
+  throwIfError(modifierGroupsResult.error, "modifier group list");
+  throwIfError(modifiersResult.error, "modifier list");
+
+  const variantsByProduct = new Map<string, ProductVariantSummary[]>();
+  for (const row of (variantsResult.data ?? []) as Row[]) {
+    const productId = String(row.product_id);
+    const items = variantsByProduct.get(productId) ?? [];
+    items.push(mapVariant(row));
+    variantsByProduct.set(productId, items);
+  }
+  const availabilityByProduct = new Map<string, ProductAvailabilitySummary[]>();
+  for (const row of (availabilityResult.data ?? []) as Row[]) {
+    const productId = String(row.product_id);
+    const items = availabilityByProduct.get(productId) ?? [];
+    items.push(mapAvailability(row));
+    availabilityByProduct.set(productId, items);
+  }
+  const modifiersByGroup = new Map<string, ModifierSummary[]>();
+  for (const row of (modifiersResult.data ?? []) as Row[]) {
+    const groupId = String(row.modifier_group_id);
+    const items = modifiersByGroup.get(groupId) ?? [];
+    items.push(mapModifier(row));
+    modifiersByGroup.set(groupId, items);
+  }
+  const menuIds = new Set(((menusResult.data ?? []) as Row[]).map((row) => String(row.id)));
+  const menuItemsByMenu = new Map<string, MenuItemSummary[]>();
+  for (const row of (menuItemsResult.data ?? []) as Row[]) {
+    const menuId = String(row.menu_id);
+    if (!menuIds.has(menuId)) continue;
+    const items = menuItemsByMenu.get(menuId) ?? [];
+    items.push(mapMenuItem(row));
+    menuItemsByMenu.set(menuId, items);
+  }
+  return {
+    categories: ((categoriesResult.data ?? []) as Row[]).map(mapCategory),
+    products: ((productsResult.data ?? []) as Row[]).map((row) => mapProduct(
+      row,
+      variantsByProduct.get(String(row.id)) ?? [],
+      availabilityByProduct.get(String(row.id)) ?? []
+    )),
+    menus: ((menusResult.data ?? []) as Row[]).map((row) => mapMenu(row, menuItemsByMenu.get(String(row.id)) ?? [])),
+    modifierGroups: ((modifierGroupsResult.data ?? []) as Row[]).map((row) => mapModifierGroup(
+      row,
+      modifiersByGroup.get(String(row.id)) ?? []
+    ))
+  };
+}
+
+export async function createCategory(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateCategoryInput
+): Promise<CategorySummary> {
+  const slug = slugify(input.name);
+  const code = codeFrom(input.code ?? "", codeFrom(slug.replace(/-/g, "_"), "CATEGORY"));
+  const result = await database.client
+    .from("categories")
+    .insert({
+      organization_id: principal.organizationId,
+      ...(input.parentId ? { parent_id: input.parentId } : {}),
+      code,
+      name: input.name.trim(),
+      slug
+    })
+    .select("id,organization_id,parent_id,code,name,slug,sort_order,status")
+    .single();
+  throwIfError(result.error, "category create");
+  return mapCategory(result.data as Row);
+}
+
+export async function createProduct(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateProductInput
+): Promise<ProductSummary> {
+  const productResult = await database.client
+    .from("products")
+    .insert({
+      organization_id: principal.organizationId,
+      ...(input.categoryId ? { category_id: input.categoryId } : {}),
+      sku: input.sku.trim().toUpperCase(),
+      name: input.name.trim(),
+      description: input.description?.trim() ?? "",
+      base_price_minor: input.basePriceMinor,
+      currency: input.currency?.trim().toUpperCase() || "THB"
+    })
+    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+    .single();
+  throwIfError(productResult.error, "product create");
+  const product = productResult.data as Row;
+  const variants = input.variants?.length
+    ? input.variants
+    : [{ code: "BASE", name: "Standard", priceMinor: input.basePriceMinor }];
+  const variantResult = await database.client.from("product_variants").insert(variants.map((variant, index) => ({
+    organization_id: principal.organizationId,
+    product_id: String(product.id),
+    code: variant.code.trim().toUpperCase(),
+    name: variant.name.trim(),
+    price_minor: variant.priceMinor,
+    sort_order: index
+  }))).select("id,organization_id,product_id,code,name,price_minor,sort_order,status");
+  if (variantResult.error) {
+    await database.client.from("products").delete().eq("id", String(product.id)).eq("organization_id", principal.organizationId);
+    throwIfError(variantResult.error, "variant create");
+  }
+  const availabilityResult = await database.client.from("product_availability").insert(["POS", "QR", "KIOSK", "PICKUP"].map((channel) => ({
+    organization_id: principal.organizationId,
+    store_id: input.storeId,
+    product_id: String(product.id),
+    channel,
+    is_available: true,
+    sold_out: false
+  })));
+  if (availabilityResult.error) {
+    await database.client.from("products").delete().eq("id", String(product.id)).eq("organization_id", principal.organizationId);
+    throwIfError(availabilityResult.error, "availability create");
+  }
+  return mapProduct(
+    product,
+    ((variantResult.data ?? []) as Row[]).map(mapVariant),
+    []
+  );
+}
+
+export async function createMenu(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateMenuInput
+): Promise<MenuSummary> {
+  const code = codeFrom(input.code ?? "", codeFrom(slugify(input.name).replace(/-/g, "_"), "MENU"));
+  const result = await database.client
+    .from("menus")
+    .insert({
+      organization_id: principal.organizationId,
+      store_id: input.storeId,
+      code,
+      name: input.name.trim(),
+      channel: input.channel
+    })
+    .select("id,organization_id,store_id,code,name,channel,status")
+    .single();
+  throwIfError(result.error, "menu create");
+  return mapMenu(result.data as Row);
+}
+
+export async function createMenuItem(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateMenuItemInput
+): Promise<MenuItemSummary> {
+  const menuResult = await database.client
+    .from("menus")
+    .select("id")
+    .eq("id", input.menuId)
+    .eq("organization_id", principal.organizationId)
+    .eq("store_id", input.storeId)
+    .maybeSingle();
+  throwIfError(menuResult.error, "menu access check");
+  if (!menuResult.data) throw new Error("Menu was not found in the selected store");
+  const productResult = await database.client
+    .from("products")
+    .select("id")
+    .eq("id", input.productId)
+    .eq("organization_id", principal.organizationId)
+    .maybeSingle();
+  throwIfError(productResult.error, "product access check");
+  if (!productResult.data) throw new Error("Product was not found in the organization");
+  if (input.variantId) {
+    const variantResult = await database.client
+      .from("product_variants")
+      .select("id")
+      .eq("id", input.variantId)
+      .eq("product_id", input.productId)
+      .eq("organization_id", principal.organizationId)
+      .maybeSingle();
+    throwIfError(variantResult.error, "variant access check");
+    if (!variantResult.data) throw new Error("Variant was not found on the selected product");
+  }
+  const result = await database.client
+    .from("menu_items")
+    .insert({
+      organization_id: principal.organizationId,
+      menu_id: input.menuId,
+      product_id: input.productId,
+      ...(input.variantId ? { variant_id: input.variantId } : {}),
+      ...(input.priceOverrideMinor === undefined ? {} : { price_override_minor: input.priceOverrideMinor })
+    })
+    .select("id,organization_id,menu_id,product_id,variant_id,price_override_minor,sort_order,is_available,sold_out")
+    .single();
+  throwIfError(result.error, "menu item create");
+  return mapMenuItem(result.data as Row);
+}
+
+export async function createModifierGroup(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateModifierGroupInput
+): Promise<ModifierGroupSummary> {
+  const code = codeFrom(input.code ?? "", codeFrom(slugify(input.name).replace(/-/g, "_"), "MODIFIER_GROUP"));
+  const minSelections = input.minSelections ?? (input.required ? 1 : 0);
+  const maxSelections = input.maxSelections ?? (input.selectionType === "MULTIPLE" ? 99 : 1);
+  if (maxSelections < minSelections) throw new Error("Modifier group maxSelections must be greater than or equal to minSelections");
+  const groupResult = await database.client
+    .from("modifier_groups")
+    .insert({
+      organization_id: principal.organizationId,
+      code,
+      name: input.name.trim(),
+      selection_type: input.selectionType ?? "SINGLE",
+      min_selections: minSelections,
+      max_selections: maxSelections,
+      required: input.required ?? false
+    })
+    .select("id,organization_id,code,name,selection_type,min_selections,max_selections,required,status")
+    .single();
+  throwIfError(groupResult.error, "modifier group create");
+  const group = groupResult.data as Row;
+  const modifierInputs = input.modifiers ?? [];
+  const modifierResult = modifierInputs.length
+    ? await database.client.from("modifiers").insert(modifierInputs.map((modifier, index) => ({
+      organization_id: principal.organizationId,
+      modifier_group_id: String(group.id),
+      code: modifier.code.trim().toUpperCase(),
+      name: modifier.name.trim(),
+      price_delta_minor: modifier.priceDeltaMinor ?? 0,
+      sort_order: index
+    }))).select("id,organization_id,modifier_group_id,code,name,price_delta_minor,sort_order,status")
+    : { data: [], error: null };
+  if (modifierResult.error) {
+    await database.client.from("modifier_groups").delete().eq("id", String(group.id)).eq("organization_id", principal.organizationId);
+    throwIfError(modifierResult.error, "modifier create");
+  }
+  return mapModifierGroup(group, ((modifierResult.data ?? []) as Row[]).map(mapModifier));
+}
+
+export async function updateProduct(
+  database: Database,
+  principal: SessionPrincipal,
+  productId: string,
+  input: UpdateProductInput
+): Promise<ProductSummary> {
+  const patch: Row = {};
+  if (input.categoryId !== undefined) patch.category_id = input.categoryId;
+  if (input.name !== undefined) patch.name = input.name.trim();
+  if (input.description !== undefined) patch.description = input.description.trim();
+  if (input.basePriceMinor !== undefined) patch.base_price_minor = input.basePriceMinor;
+  if (input.status !== undefined) patch.status = input.status;
+  const result = await database.client
+    .from("products")
+    .update(patch)
+    .eq("id", productId)
+    .eq("organization_id", principal.organizationId)
+    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+    .single();
+  throwIfError(result.error, "product update");
+  const variantResult = await database.client
+    .from("product_variants")
+    .select("id,organization_id,product_id,code,name,price_minor,sort_order,status")
+    .eq("organization_id", principal.organizationId)
+    .eq("product_id", productId)
+    .order("sort_order", { ascending: true });
+  throwIfError(variantResult.error, "variant lookup");
+  return mapProduct(result.data as Row, ((variantResult.data ?? []) as Row[]).map(mapVariant), []);
+}
+
+export async function updateProductAvailability(
+  database: Database,
+  principal: SessionPrincipal,
+  productId: string,
+  input: UpdateProductAvailabilityInput
+): Promise<ProductAvailabilitySummary> {
+  const result = await database.client
+    .from("product_availability")
+    .upsert({
+      organization_id: principal.organizationId,
+      store_id: input.storeId,
+      product_id: productId,
+      channel: input.channel,
+      ...(input.isAvailable === undefined ? {} : { is_available: input.isAvailable }),
+      ...(input.soldOut === undefined ? {} : { sold_out: input.soldOut }),
+      ...(input.priceOverrideMinor === undefined ? {} : { price_override_minor: input.priceOverrideMinor })
+    }, { onConflict: "organization_id,store_id,product_id,channel" })
+    .select("channel,is_available,sold_out,price_override_minor")
+    .single();
+  throwIfError(result.error, "availability update");
+  return mapAvailability(result.data as Row);
+}

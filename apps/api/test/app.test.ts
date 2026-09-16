@@ -88,4 +88,12 @@ describe("API foundation", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: "ORIGIN_NOT_ALLOWED" } });
   });
+
+  test("catalog routes require the catalog permission", async () => {
+    const response = await app.handle(new Request("http://localhost/api/catalog?storeId=00000000-0000-4000-8000-000000000011", {
+      headers: { cookie: cookieHeader() }
+    }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+  });
 });

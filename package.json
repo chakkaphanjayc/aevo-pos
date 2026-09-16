@@ -14,7 +14,7 @@
     "test": "bun test packages apps",
     "test:integration": "bun test packages/db/test apps/api/test",
     "db:migrate": "npx --yes supabase@2.117.0 db push",
-    "db:seed": "bun run --filter @aevo/db seed"
+    "db:seed": "bun packages/db/src/seed.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.2.21",
