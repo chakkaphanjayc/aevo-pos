@@ -78,8 +78,10 @@ The catalog migration is
 `supabase/migrations/20260916150000_phase1_hardening.sql` is safe to apply to
 projects that already have the first catalog migration; it adds the missing
 tenant-safe store key and prevents duplicate no-variant menu items. If the
-project was already migrated before this phase was added, apply both files once
-through the SQL Editor or run `bun run db:migrate` after linking the project.
+`supabase/migrations/20260916152000_atomic_availability.sql` adds the atomic
+availability PATCH RPC. If the project was already migrated before this phase
+was added, apply all three follow-up files once through the SQL Editor or run
+`bun run db:migrate` after linking the project.
 
 ## Create the first admin/owner
 

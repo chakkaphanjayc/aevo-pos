@@ -15,6 +15,21 @@ begin
 end;
 $$;
 
+do $$
+begin
+  if exists (
+    select 1
+    from public.menu_items
+    where variant_id is null
+    group by organization_id, menu_id, product_id
+    having count(*) > 1
+  ) then
+    raise exception using
+      message = 'Cannot add the no-variant menu item uniqueness index: duplicate legacy menu_items exist';
+  end if;
+end;
+$$;
+
 create unique index if not exists menu_items_without_variant_unique_idx
   on public.menu_items (organization_id, menu_id, product_id)
   where variant_id is null;
