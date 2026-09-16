@@ -18,18 +18,18 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
   <template id="store-card">
     <article class="card store-card">
       <div><p class="store-code"></p><h2></h2><p class="muted timezone"></p></div>
-      <button class="button" disabled title="Available in Phase 3">เลือกสาขา</button>
+      <button class="button store-select" type="button">เข้าสู่ workspace</button>
     </article>
   </template>
   <script>
-    import { api } from "../../lib/api";
+    import { api, ApiError } from "../../lib/api";
     import type { SessionPrincipal, StoreSummary } from "@aevo/contracts";
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
     try {
       const [{ user }, { stores }] = await Promise.all([
         api<{ user: SessionPrincipal }>("/api/auth/me"), api<{ stores: StoreSummary[] }>("/api/stores")
       ]);
-      document.querySelector("#welcome")!.textContent = `สวัสดี ${user.email}`;
+      document.querySelector("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
       const list = document.querySelector<HTMLElement>("#stores")!;
       const template = document.querySelector<HTMLTemplateElement>("#store-card")!;
       for (const store of stores) {
@@ -37,11 +37,15 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         node.querySelector("h2")!.textContent = store.name;
         node.querySelector(".store-code")!.textContent = store.code;
         node.querySelector(".timezone")!.textContent = store.timezone;
+        node.querySelector<HTMLButtonElement>(".store-select")!.addEventListener("click", () => {
+          sessionStorage.setItem("aevo.selectedStoreId", store.id);
+          window.location.assign(`/staff/workspace?store=${encodeURIComponent(store.id)}`);
+        });
         list.append(node);
       }
       if (!stores.length) list.textContent = "ยังไม่มีสาขาที่บัญชีนี้เข้าถึงได้";
     } catch (cause) {
-      if (cause instanceof Error && /Authentication/.test(cause.message)) window.location.assign("/login");
+      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
       else { error.textContent = cause instanceof Error ? cause.message : "โหลดข้อมูลไม่สำเร็จ"; error.hidden = false; }
     }
     document.querySelector("#logout")!.addEventListener("click", async () => {
@@ -54,7 +58,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     .store-card { min-height: 190px; padding: 22px; display: flex; flex-direction: column; justify-content: space-between; }
     .store-card h2 { margin: 4px 0; }
     .store-code { margin: 0; font-size: .76rem; font-weight: 800; color: var(--brand); letter-spacing: .12em; }
-    .store-card .button:disabled { opacity: .55; cursor: not-allowed; }
     @media (max-width: 520px) { .status { display: none; } }
   </style>
 </BaseLayout>

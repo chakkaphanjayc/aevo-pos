@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { generateSessionToken, hashSessionToken, sessionExpiresAt } from "../src";
+import { generateSessionToken, hashSessionToken, sessionExpiresAt, verifyPassword } from "../src";
 
 test("session tokens are opaque and only hashes need persistence", () => {
   const first = generateSessionToken();
@@ -11,4 +11,8 @@ test("session tokens are opaque and only hashes need persistence", () => {
 
 test("session expiry is deterministic", () => {
   expect(sessionExpiresAt(1, new Date("2026-01-01T00:00:00Z")).toISOString()).toBe("2026-01-01T01:00:00.000Z");
+});
+
+test("malformed password hashes fail as invalid credentials", async () => {
+  expect(await verifyPassword("password", "not-a-password-hash")).toBeFalse();
 });

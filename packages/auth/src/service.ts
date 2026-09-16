@@ -11,7 +11,8 @@ export class AuthService {
   constructor(private readonly database: Database, private readonly sessionTtlHours: number) {}
 
   async login(input: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
-    const user = await findActiveUserByEmail(this.database, input.email.trim().toLowerCase());
+    const email = input.email.trim().toLowerCase();
+    const user = await findActiveUserByEmail(this.database, email);
     if (!user || !(await verifyPassword(input.password, user.passwordHash))) throw new AuthenticationError();
     const token = generateSessionToken();
     const expiresAt = sessionExpiresAt(this.sessionTtlHours);

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AppConfig } from "@aevo/config";
+import type { SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import { createApp } from "../src/app";
 
@@ -10,10 +11,15 @@ const config: AppConfig = {
 };
 
 const fakeDatabase = { ping: async () => undefined } as unknown as Database;
+const principal: SessionPrincipal = {
+  userId: "user-1", email: "owner@example.com", displayName: "Aevo Owner",
+  organizationId: "org-1", membershipId: "membership-1", role: "OWNER",
+  permissions: ["store.read"]
+};
 const fakeAuth = {
   login: async () => ({ token: "secret", expiresAt: new Date("2030-01-01T00:00:00Z") }),
   logout: async () => undefined,
-  resolve: async () => null
+  resolve: async (token: string) => token === "secret" ? principal : null
 };
 
 describe("API foundation", () => {
@@ -46,5 +52,27 @@ describe("API foundation", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("SameSite=Lax");
+  });
+
+  test("authenticated session can be resolved and logged out", async () => {
+    const me = await app.handle(new Request("http://localhost/api/auth/me", {
+      headers: { cookie: "aevo_session=secret" }
+    }));
+    expect(me.status).toBe(200);
+    expect(await me.json()).toEqual({ user: principal });
+
+    const logout = await app.handle(new Request("http://localhost/api/auth/logout", {
+      method: "POST", headers: { cookie: "aevo_session=secret" }
+    }));
+    expect(logout.status).toBe(204);
+    expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  test("rejects credentialed mutations from an untrusted origin", async () => {
+    const response = await app.handle(new Request("http://localhost/api/auth/logout", {
+      method: "POST", headers: { origin: "https://attacker.example" }
+    }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "ORIGIN_NOT_ALLOWED" } });
   });
 });

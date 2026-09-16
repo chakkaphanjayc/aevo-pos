@@ -1,5 +1,6 @@
 export type NodeEnvironment = "development" | "test" | "production";
 export type LogLevel = "debug" | "info" | "warn" | "error";
+export type SessionCookieSameSite = "lax" | "strict" | "none";
 
 export interface AppConfig {
   nodeEnv: NodeEnvironment;
@@ -9,6 +10,8 @@ export interface AppConfig {
   mongodbUri: string;
   mongodbDatabase: string;
   sessionCookieName: string;
+  /** Cookie policy used by the browser session. Defaults to lax. */
+  sessionCookieSameSite?: SessionCookieSameSite;
   sessionTtlHours: number;
   logLevel: LogLevel;
 }
@@ -23,6 +26,22 @@ function positiveInteger(value: string, key: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${key} must be a positive integer`);
   return parsed;
+}
+
+function sessionCookieSameSite(value: string): SessionCookieSameSite {
+  const normalized = value.trim().toLowerCase();
+  if (normalized !== "lax" && normalized !== "strict" && normalized !== "none") {
+    throw new Error("SESSION_COOKIE_SAME_SITE must be lax, strict, or none");
+  }
+  return normalized;
+}
+
+function sessionCookieName(value: string): string {
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/.test(normalized)) {
+    throw new Error("SESSION_COOKIE_NAME contains invalid characters");
+  }
+  return normalized;
 }
 
 export function loadConfig(source: Record<string, string | undefined> = process.env): AppConfig {
@@ -45,6 +64,10 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(mongodbDatabase)) {
     throw new Error("MONGODB_DATABASE must be a valid database name");
   }
+  const configuredCookieSameSite = sessionCookieSameSite(source.SESSION_COOKIE_SAME_SITE ?? "lax");
+  if (configuredCookieSameSite === "none" && nodeEnv !== "production") {
+    throw new Error("SESSION_COOKIE_SAME_SITE=none requires NODE_ENV=production and HTTPS");
+  }
   return {
     nodeEnv: nodeEnv as NodeEnvironment,
     apiHost: source.API_HOST ?? "0.0.0.0",
@@ -52,7 +75,8 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     webOrigin,
     mongodbUri,
     mongodbDatabase,
-    sessionCookieName: source.SESSION_COOKIE_NAME ?? "aevo_session",
+    sessionCookieName: sessionCookieName(source.SESSION_COOKIE_NAME ?? "aevo_session"),
+    sessionCookieSameSite: configuredCookieSameSite,
     sessionTtlHours: positiveInteger(source.SESSION_TTL_HOURS ?? "168", "SESSION_TTL_HOURS"),
     logLevel: logLevel as LogLevel
   };
