@@ -130,6 +130,14 @@ export async function resolvePrincipal(
   });
   if (!session) return null;
 
+  // Keep a lightweight activity timestamp for session/device administration.
+  // The update is intentionally best-effort with respect to the lookup: the
+  // session has already been proven active by the query above.
+  void database.db.collection<SessionDocument>("sessions").updateOne(
+    { _id: session._id, revokedAt: null },
+    { $set: { lastSeenAt: new Date() } }
+  ).catch(() => undefined);
+
   const user = await database.db.collection<UserDocument>("users").findOne({ _id: session.userId, status: "ACTIVE" });
   if (!user) return null;
 
@@ -148,6 +156,7 @@ export async function resolvePrincipal(
   return {
     userId: user._id,
     email: user.email,
+    displayName: user.displayName,
     membershipId: membership._id,
     organizationId: membership.organizationId,
     role: role.code,

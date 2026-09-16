@@ -24,8 +24,8 @@ const rolePermissions: Record<Role, Permission[]> = {
 export async function seed(databaseUri: string, databaseName = "aevo", env: Record<string, string | undefined> = process.env): Promise<void> {
   const email = env.SEED_OWNER_EMAIL?.trim().toLowerCase();
   const password = env.SEED_OWNER_PASSWORD;
-  if (!email || !password || password.length < 12) {
-    throw new Error("SEED_OWNER_EMAIL and a 12+ character SEED_OWNER_PASSWORD are required");
+  if (!email || !password || password.length < 12 || password === "change-me-now") {
+    throw new Error("Set SEED_OWNER_EMAIL and a unique 12+ character SEED_OWNER_PASSWORD before seeding");
   }
   const organizationName = env.SEED_ORGANIZATION_NAME ?? "Aevo Demo";
   const storeName = env.SEED_STORE_NAME ?? "Main Store";

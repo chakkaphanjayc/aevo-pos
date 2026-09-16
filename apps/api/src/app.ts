@@ -22,6 +22,14 @@ export function createApp(dependencies: AppDependencies) {
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const secureCookie = config.nodeEnv === "production";
+  const cookieSameSite = config.sessionCookieSameSite ?? "lax";
+
+  function assertAllowedOrigin(request: Request): void {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== config.webOrigin) {
+      throw new AppError(403, "ORIGIN_NOT_ALLOWED", "The request origin is not allowed");
+    }
+  }
 
   async function authenticate(request: Request): Promise<SessionPrincipal> {
     const token = readCookie(request, config.sessionCookieName);
@@ -41,9 +49,15 @@ export function createApp(dependencies: AppDependencies) {
     .derive({ as: "global" }, ({ request, set }) => {
       const requestId = request.headers.get("x-request-id")?.slice(0, 128) || randomUUID();
       set.headers["x-request-id"] = requestId;
-      set.headers["access-control-allow-origin"] = config.webOrigin;
-      set.headers["access-control-allow-credentials"] = "true";
+      const origin = request.headers.get("origin");
+      if (!origin || origin === config.webOrigin) {
+        set.headers["access-control-allow-origin"] = config.webOrigin;
+        set.headers["access-control-allow-credentials"] = "true";
+      }
       set.headers["vary"] = "Origin";
+      set.headers["cache-control"] = "no-store";
+      set.headers["x-content-type-options"] = "nosniff";
+      set.headers["referrer-policy"] = "no-referrer";
       return { requestId };
     })
     .onAfterHandle({ as: "global" }, ({ request, requestId, set }) => {
@@ -61,7 +75,9 @@ export function createApp(dependencies: AppDependencies) {
     .options("/*", ({ set }) => {
       set.status = 204;
       set.headers["access-control-allow-methods"] = "GET,POST,OPTIONS";
-      set.headers["access-control-allow-headers"] = "content-type,x-organization-id,x-request-id";
+      set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id";
+      set.headers["access-control-expose-headers"] = "x-request-id";
+      set.headers["access-control-max-age"] = "600";
       return "";
     })
     .get("/health", ({ requestId }) => ({ status: "ok", service: "aevo-api", requestId }))
@@ -70,6 +86,7 @@ export function createApp(dependencies: AppDependencies) {
       return { status: "ready", requestId };
     })
     .post("/api/auth/login", async ({ body, request, requestId, set }) => {
+      assertAllowedOrigin(request);
       const ipAddress = clientIp(request);
       if (!loginLimiter.consume(ipAddress ?? "unknown")) throw new AppError(429, "RATE_LIMITED", "Too many login attempts");
       const result = await auth.login({
@@ -77,15 +94,16 @@ export function createApp(dependencies: AppDependencies) {
         ...(ipAddress ? { ipAddress } : {}),
         ...(request.headers.get("user-agent") ? { userAgent: request.headers.get("user-agent")! } : {})
       });
-      set.headers["set-cookie"] = sessionCookie(config.sessionCookieName, result.token, result.expiresAt, secureCookie);
+      set.headers["set-cookie"] = sessionCookie(config.sessionCookieName, result.token, result.expiresAt, secureCookie, cookieSameSite);
       set.status = 204;
       logger.info("auth.login", { requestId });
       return "";
     }, { body: t.Object({ email: t.String({ format: "email", maxLength: 320 }), password: t.String({ minLength: 1, maxLength: 1024 }) }) })
     .post("/api/auth/logout", async ({ request, set, requestId }) => {
+      assertAllowedOrigin(request);
       const token = readCookie(request, config.sessionCookieName);
       if (token) await auth.logout(token);
-      set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie);
+      set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
       set.status = 204;
       logger.info("auth.logout", { requestId });
       return "";

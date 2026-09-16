@@ -4,29 +4,64 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 <BaseLayout title="Sign in">
   <main class="login-page">
     <a class="brand" href="/"><span class="brand-mark">A</span> Aevo</a>
-    <form class="card" id="login-form">
+    <form class="card" id="login-form" novalidate>
       <p class="eyebrow">Staff access</p>
       <h1>ยินดีต้อนรับกลับ</h1>
       <p class="muted">เข้าสู่ระบบเพื่อเลือกองค์กร ร้าน และ workspace ที่ได้รับอนุญาต</p>
-      <label>อีเมล<input name="email" type="email" autocomplete="username" required /></label>
-      <label>รหัสผ่าน<input name="password" type="password" autocomplete="current-password" required /></label>
+      <label for="email">อีเมล<input id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required /></label>
+      <label for="password">รหัสผ่าน
+        <span class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required /><button id="toggle-password" class="password-toggle" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button></span>
+      </label>
       <p class="error" id="error" role="alert" hidden></p>
-      <button class="button" type="submit">เข้าสู่ระบบ</button>
+      <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+      <button class="button" id="submit" type="submit">เข้าสู่ระบบ</button>
+      <p class="helper">หากยังไม่มีบัญชี ให้ติดต่อผู้ดูแลระบบขององค์กร</p>
     </form>
   </main>
   <script>
-    import { api } from "../lib/api";
+    import { api, ApiError } from "../lib/api";
     const form = document.querySelector<HTMLFormElement>("#login-form")!;
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
+    const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
+    const button = document.querySelector<HTMLButtonElement>("#submit")!;
+    const password = document.querySelector<HTMLInputElement>("#password")!;
+    const togglePassword = document.querySelector<HTMLButtonElement>("#toggle-password")!;
+
+    togglePassword.addEventListener("click", () => {
+      const visible = password.type === "text";
+      password.type = visible ? "password" : "text";
+      togglePassword.textContent = visible ? "แสดง" : "ซ่อน";
+      togglePassword.setAttribute("aria-label", visible ? "แสดงรหัสผ่าน" : "ซ่อนรหัสผ่าน");
+      togglePassword.setAttribute("aria-pressed", String(!visible));
+    });
+
+    // A valid session should skip the login form when a user returns to this
+    // URL. A network failure is left visible so the user can still retry.
+    void api("/api/auth/me").then(() => window.location.assign("/staff")).catch(() => undefined);
+
     form.addEventListener("submit", async (event) => {
-      event.preventDefault(); error.hidden = true;
-      const button = form.querySelector<HTMLButtonElement>("button")!;
-      const data = new FormData(form); button.disabled = true; button.textContent = "กำลังเข้าสู่ระบบ…";
+      event.preventDefault(); error.hidden = true; status.textContent = "";
+      const data = new FormData(form);
+      const email = String(data.get("email") ?? "").trim().toLowerCase();
+      const passwordValue = String(data.get("password") ?? "");
+      if (!email || !passwordValue) {
+        error.textContent = "กรุณากรอกอีเมลและรหัสผ่าน";
+        error.hidden = false;
+        return;
+      }
+      button.disabled = true; button.textContent = "กำลังเข้าสู่ระบบ…"; status.textContent = "กำลังตรวจสอบข้อมูลบัญชี";
       try {
-        await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: data.get("email"), password: data.get("password") }) });
+        await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password: passwordValue }) });
         window.location.assign("/staff");
       } catch (cause) {
-        error.textContent = cause instanceof Error ? cause.message : "เข้าสู่ระบบไม่สำเร็จ"; error.hidden = false;
+        if (cause instanceof ApiError && cause.code === "INVALID_CREDENTIALS") {
+          error.textContent = "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+        } else if (cause instanceof ApiError && cause.code === "RATE_LIMITED") {
+          error.textContent = "ลองเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่";
+        } else {
+          error.textContent = cause instanceof Error ? cause.message : "เข้าสู่ระบบไม่สำเร็จ";
+        }
+        error.hidden = false; status.textContent = "";
       } finally { button.disabled = false; button.textContent = "เข้าสู่ระบบ"; }
     });
   </script>
@@ -36,6 +71,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     form { padding: clamp(24px, 5vw, 42px); display: grid; gap: 18px; }
     form h1 { font-size: 2rem; }
     label { display: grid; gap: 7px; font-weight: 700; }
-    input { min-height: 48px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+    input { width: 100%; min-height: 48px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+    .password-field { position: relative; display: block; }
+    .password-field input { padding-right: 72px; }
+    .password-toggle { position: absolute; top: 5px; right: 5px; min-height: 38px; padding: 0 10px; border: 0; border-radius: 8px; color: var(--brand); background: transparent; font-weight: 750; cursor: pointer; }
+    .password-toggle:hover { background: #eef5f1; }
+    .form-status, .helper { margin: 0; color: var(--muted); font-size: .88rem; }
+    .helper { text-align: center; }
   </style>
 </BaseLayout>

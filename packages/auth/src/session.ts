@@ -9,7 +9,14 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return Bun.password.verify(password, hash);
+  if (!password || !hash) return false;
+  try {
+    return await Bun.password.verify(password, hash);
+  } catch {
+    // A malformed or legacy hash must behave like a bad password, not turn
+    // into a 500 response from the login endpoint.
+    return false;
+  }
 }
 
 export function sessionExpiresAt(ttlHours: number, now = new Date()): Date {

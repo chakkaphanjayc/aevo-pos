@@ -16,6 +16,8 @@ export type Permission = (typeof permissions)[number];
 export interface SessionPrincipal {
   userId: string;
   email: string;
+  /** Display name is optional for backwards-compatible session payloads. */
+  displayName?: string;
   organizationId: string;
   membershipId: string;
   role: Role;

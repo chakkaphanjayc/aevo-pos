@@ -46,6 +46,11 @@ PUBLIC_API_URL=http://localhost:3001 bun run dev:web
 Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the
 seed; it must have at least 12 characters.
 
+After seeding, sign in at `/login` with `SEED_OWNER_EMAIL` and
+`SEED_OWNER_PASSWORD`. The login session is an HttpOnly cookie; the browser
+never receives the MongoDB URI or the password hash. Use the logout button to
+revoke the current session.
+
 To run the database integration test locally, start the second MongoDB service:
 
 ```bash
@@ -62,6 +67,10 @@ network access list, then set `MONGODB_URI` to the Atlas SRV connection string:
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
 MONGODB_DATABASE=aevo
 ```
+
+Replace `<password>` with the database user's URL-encoded password. For
+example, `@` becomes `%40`. The Atlas URI belongs in the API host's server-side
+environment, not in the Astro app or any `PUBLIC_*` variable.
 
 The API connects with the official MongoDB Node.js driver, keeps a bounded
 connection pool, and fails fast if the cluster cannot be selected. Keep the URI
@@ -112,6 +121,7 @@ API origin when building the web app.
 | `WEB_ORIGIN` | Exact browser origin allowed to make credentialed API requests |
 | `API_HOST` / `API_PORT` | API listener, defaults to `0.0.0.0:3001` |
 | `SESSION_COOKIE_NAME` | HttpOnly session cookie name |
+| `SESSION_COOKIE_SAME_SITE` | `lax`, `strict`, or `none`; use `none` only with HTTPS and a cross-site web/API deployment |
 | `SESSION_TTL_HOURS` | Session lifetime, defaults to 168 hours |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
 | `PUBLIC_API_URL` | API origin embedded into the Astro frontend |
