@@ -1,3 +1,5 @@
+import { isAuthSessionCookie, type AuthSessionCookie } from "@aevo/auth";
+
 export function readCookie(request: Request, name: string): string | null {
   const cookie = request.headers.get("cookie");
   if (!cookie) return null;
@@ -11,6 +13,20 @@ export function readCookie(request: Request, name: string): string | null {
     }
   }
   return null;
+}
+
+export function encodeAuthSessionCookie(session: AuthSessionCookie): string {
+  return JSON.stringify(session);
+}
+
+export function decodeAuthSessionCookie(value: string): AuthSessionCookie | null {
+  if (!value || value.length > 8192) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isAuthSessionCookie(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export type SameSite = "lax" | "strict" | "none";

@@ -7,12 +7,13 @@ export interface AppConfig {
   apiHost: string;
   apiPort: number;
   webOrigin: string;
-  mongodbUri: string;
-  mongodbDatabase: string;
+  /** Supabase project URL (for example https://<project>.supabase.co). */
+  supabaseUrl: string;
+  /** Server-only Supabase secret/service-role key. Never send this to browsers. */
+  supabaseKey: string;
   sessionCookieName: string;
   /** Cookie policy used by the browser session. Defaults to lax. */
   sessionCookieSameSite?: SessionCookieSameSite;
-  sessionTtlHours: number;
   logLevel: LogLevel;
 }
 
@@ -50,19 +51,25 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   const logLevel = source.LOG_LEVEL ?? "info";
   if (!["debug", "info", "warn", "error"].includes(logLevel)) throw new Error("LOG_LEVEL is invalid");
   const webOrigin = required(source, "WEB_ORIGIN");
-  const mongodbUri = required(source, "MONGODB_URI");
-  const mongodbDatabase = source.MONGODB_DATABASE?.trim() || "aevo";
+  const supabaseUrl = required(source, "SUPABASE_URL");
+  // SUPABASE_SERVICE_ROLE_KEY is accepted for existing deployments. New
+  // deployments should use SUPABASE_SECRET_KEY, which is the current key
+  // name in Supabase's API-key model.
+  const supabaseKey = source.SUPABASE_SECRET_KEY?.trim() || source.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!supabaseKey) throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
+  let normalizedWebOrigin: string;
+  let normalizedSupabaseUrl: string;
   try {
-    new URL(webOrigin);
-    const parsedMongoUri = new URL(mongodbUri);
-    if (parsedMongoUri.protocol !== "mongodb:" && parsedMongoUri.protocol !== "mongodb+srv:") {
-      throw new Error("invalid MongoDB protocol");
+    const parsedWebOrigin = new URL(webOrigin);
+    if (parsedWebOrigin.protocol !== "https:" && parsedWebOrigin.protocol !== "http:") throw new Error("invalid web protocol");
+    const parsedSupabaseUrl = new URL(supabaseUrl);
+    if (parsedSupabaseUrl.protocol !== "https:" && parsedSupabaseUrl.protocol !== "http:") {
+      throw new Error("invalid Supabase protocol");
     }
+    normalizedWebOrigin = parsedWebOrigin.origin;
+    normalizedSupabaseUrl = parsedSupabaseUrl.toString().replace(/\/$/, "");
   } catch {
-    throw new Error("WEB_ORIGIN and MONGODB_URI must be valid URLs");
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(mongodbDatabase)) {
-    throw new Error("MONGODB_DATABASE must be a valid database name");
+    throw new Error("WEB_ORIGIN and SUPABASE_URL must be valid URLs");
   }
   const configuredCookieSameSite = sessionCookieSameSite(source.SESSION_COOKIE_SAME_SITE ?? "lax");
   if (configuredCookieSameSite === "none" && nodeEnv !== "production") {
@@ -72,12 +79,11 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     nodeEnv: nodeEnv as NodeEnvironment,
     apiHost: source.API_HOST ?? "0.0.0.0",
     apiPort: positiveInteger(source.API_PORT ?? "3001", "API_PORT"),
-    webOrigin,
-    mongodbUri,
-    mongodbDatabase,
+    webOrigin: normalizedWebOrigin!,
+    supabaseUrl: normalizedSupabaseUrl!,
+    supabaseKey,
     sessionCookieName: sessionCookieName(source.SESSION_COOKIE_NAME ?? "aevo_session"),
     sessionCookieSameSite: configuredCookieSameSite,
-    sessionTtlHours: positiveInteger(source.SESSION_TTL_HOURS ?? "168", "SESSION_TTL_HOURS"),
     logLevel: logLevel as LogLevel
   };
 }

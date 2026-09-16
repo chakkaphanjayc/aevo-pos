@@ -3,7 +3,7 @@ import { createDatabase } from "@aevo/db";
 import { createApp } from "./app";
 
 const config = loadConfig();
-const database = await createDatabase(config.mongodbUri, config.mongodbDatabase);
+const database = createDatabase(config.supabaseUrl, config.supabaseKey);
 const app = createApp({ config, database });
 
 app.listen({ hostname: config.apiHost, port: config.apiPort });

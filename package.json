@@ -8,11 +8,12 @@
     "dev:api": "bun run --filter @aevo/api dev",
     "dev:web": "bun run --filter @aevo/web dev",
     "build": "bun run --filter '*' build",
+    "deploy": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc",
     "deploy:web": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test packages apps",
-    "test:integration": "TEST_MONGODB_URI=${TEST_MONGODB_URI:-mongodb://localhost:27018} TEST_MONGODB_DATABASE=${TEST_MONGODB_DATABASE:-aevo_test} bun test packages/db/test",
-    "db:migrate": "bun run --filter @aevo/db migrate",
+    "test:integration": "bun test packages/db/test apps/api/test",
+    "db:migrate": "npx --yes supabase@2.117.0 db push",
     "db:seed": "bun run --filter @aevo/db seed"
   },
   "devDependencies": {

@@ -1,26 +1,32 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test, describe } from "bun:test";
 import type { AppConfig } from "@aevo/config";
 import type { SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import { createApp } from "../src/app";
+import { encodeAuthSessionCookie } from "../src/http";
 
 const config: AppConfig = {
   nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4321",
-  mongodbUri: "mongodb://unused/test", mongodbDatabase: "aevo_test",
-  sessionCookieName: "aevo_session", sessionTtlHours: 1, logLevel: "error"
+  supabaseUrl: "https://demo.supabase.co", supabaseKey: "server-secret",
+  sessionCookieName: "aevo_session", sessionCookieSameSite: "lax", logLevel: "error"
 };
 
-const fakeDatabase = { ping: async () => undefined } as unknown as Database;
+const fakeDatabase = { ping: async () => undefined, close: async () => undefined } as unknown as Database;
 const principal: SessionPrincipal = {
   userId: "user-1", email: "owner@example.com", displayName: "Aevo Owner",
   organizationId: "org-1", membershipId: "membership-1", role: "OWNER",
   permissions: ["store.read"]
 };
 const fakeAuth = {
-  login: async () => ({ token: "secret", expiresAt: new Date("2030-01-01T00:00:00Z") }),
+  login: async () => ({ accessToken: "secret", refreshToken: "refresh", expiresAt: new Date("2030-01-01T00:00:00Z") }),
+  refresh: async () => ({ accessToken: "secret", refreshToken: "refresh", expiresAt: new Date("2030-01-01T00:00:00Z") }),
   logout: async () => undefined,
   resolve: async (token: string) => token === "secret" ? principal : null
 };
+
+function cookieHeader() {
+  return `aevo_session=${encodeURIComponent(encodeAuthSessionCookie({ accessToken: "secret", refreshToken: "refresh" }))}`;
+}
 
 describe("API foundation", () => {
   const app = createApp({ config, database: fakeDatabase, auth: fakeAuth });
@@ -38,13 +44,13 @@ describe("API foundation", () => {
     expect(await response.json()).toMatchObject({ error: { code: "UNAUTHORIZED" } });
   });
 
-  test("readiness checks MongoDB connectivity", async () => {
+  test("readiness checks Supabase connectivity", async () => {
     const response = await app.handle(new Request("http://localhost/ready"));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "ready" });
   });
 
-  test("login writes an http-only cookie", async () => {
+  test("login writes an http-only cookie containing Supabase tokens", async () => {
     const response = await app.handle(new Request("http://localhost/api/auth/login", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "owner@example.com", password: "correct-password" })
@@ -52,20 +58,27 @@ describe("API foundation", () => {
     expect(response.status).toBe(204);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("SameSite=Lax");
+    expect(response.headers.get("set-cookie")).toContain(encodeURIComponent("accessToken"));
   });
 
   test("authenticated session can be resolved and logged out", async () => {
-    const me = await app.handle(new Request("http://localhost/api/auth/me", {
-      headers: { cookie: "aevo_session=secret" }
-    }));
+    const me = await app.handle(new Request("http://localhost/api/auth/me", { headers: { cookie: cookieHeader() } }));
     expect(me.status).toBe(200);
     expect(await me.json()).toEqual({ user: principal });
 
     const logout = await app.handle(new Request("http://localhost/api/auth/logout", {
-      method: "POST", headers: { cookie: "aevo_session=secret" }
+      method: "POST", headers: { cookie: cookieHeader() }
     }));
     expect(logout.status).toBe(204);
     expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  test("refresh rotates the Supabase session cookie", async () => {
+    const response = await app.handle(new Request("http://localhost/api/auth/refresh", {
+      method: "POST", headers: { cookie: cookieHeader(), origin: config.webOrigin }
+    }));
+    expect(response.status).toBe(204);
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
   });
 
   test("rejects credentialed mutations from an untrusted origin", async () => {

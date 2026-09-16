@@ -6,19 +6,19 @@ import type { Database } from "@aevo/db";
 import { listAuthorizedStores } from "@aevo/db";
 import { Elysia, t } from "elysia";
 import { AppError, forbidden, unauthorized } from "./errors";
-import { clearSessionCookie, clientIp, readCookie, sessionCookie } from "./http";
+import { clearSessionCookie, clientIp, decodeAuthSessionCookie, encodeAuthSessionCookie, readCookie, sessionCookie } from "./http";
 import { createLogger } from "./logger";
 import { FixedWindowRateLimiter } from "./rate-limit";
 
 export interface AppDependencies {
   config: AppConfig;
   database: Database;
-  auth?: Pick<AuthService, "login" | "logout" | "resolve">;
+  auth?: Pick<AuthService, "login" | "logout" | "resolve" | "refresh">;
 }
 
 export function createApp(dependencies: AppDependencies) {
   const { config, database } = dependencies;
-  const auth = dependencies.auth ?? new AuthService(database, config.sessionTtlHours);
+  const auth = dependencies.auth ?? new AuthService(database);
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const secureCookie = config.nodeEnv === "production";
@@ -32,15 +32,19 @@ export function createApp(dependencies: AppDependencies) {
   }
 
   async function authenticate(request: Request): Promise<SessionPrincipal> {
-    const token = readCookie(request, config.sessionCookieName);
-    if (!token) throw unauthorized();
+    const rawCookie = readCookie(request, config.sessionCookieName);
+    const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+    // A raw token is accepted for one-way compatibility with pre-Supabase
+    // sessions; new logins always write the structured token pair.
+    const accessToken = cookie?.accessToken ?? rawCookie;
+    if (!accessToken) throw unauthorized();
     const requestedOrganizationId = request.headers.get("x-organization-id") ?? undefined;
     let organizationId: string | undefined;
     if (requestedOrganizationId) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedOrganizationId)) throw unauthorized();
       organizationId = requestedOrganizationId;
     }
-    const principal = await auth.resolve(token, organizationId);
+    const principal = await auth.resolve(accessToken, organizationId);
     if (!principal) throw unauthorized();
     return principal;
   }
@@ -94,15 +98,51 @@ export function createApp(dependencies: AppDependencies) {
         ...(ipAddress ? { ipAddress } : {}),
         ...(request.headers.get("user-agent") ? { userAgent: request.headers.get("user-agent")! } : {})
       });
-      set.headers["set-cookie"] = sessionCookie(config.sessionCookieName, result.token, result.expiresAt, secureCookie, cookieSameSite);
+      set.headers["set-cookie"] = sessionCookie(
+        config.sessionCookieName,
+        encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
+        result.expiresAt,
+        secureCookie,
+        cookieSameSite
+      );
       set.status = 204;
       logger.info("auth.login", { requestId });
       return "";
     }, { body: t.Object({ email: t.String({ format: "email", maxLength: 320 }), password: t.String({ minLength: 1, maxLength: 1024 }) }) })
+    .post("/api/auth/refresh", async ({ request, requestId, set }) => {
+      assertAllowedOrigin(request);
+      const rawCookie = readCookie(request, config.sessionCookieName);
+      const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+      if (!cookie?.refreshToken) throw unauthorized();
+      const result = await auth.refresh(cookie.refreshToken);
+      set.headers["set-cookie"] = sessionCookie(
+        config.sessionCookieName,
+        encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
+        result.expiresAt,
+        secureCookie,
+        cookieSameSite
+      );
+      set.status = 204;
+      logger.info("auth.refresh", { requestId });
+      return "";
+    })
     .post("/api/auth/logout", async ({ request, set, requestId }) => {
       assertAllowedOrigin(request);
-      const token = readCookie(request, config.sessionCookieName);
-      if (token) await auth.logout(token);
+      const rawCookie = readCookie(request, config.sessionCookieName);
+      const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+      if (cookie?.accessToken ?? rawCookie) {
+        try {
+          await auth.logout(cookie?.accessToken ?? rawCookie!);
+        } catch (error) {
+          // Always clear the browser cookie even if remote session revocation is
+          // temporarily unavailable. The access JWT is short-lived and the
+          // failure is recorded without logging the token.
+          logger.warn("auth.logout.remote_failed", {
+            requestId,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
       set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
       set.status = 204;
       logger.info("auth.logout", { requestId });
