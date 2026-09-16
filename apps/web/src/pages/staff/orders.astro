@@ -1,0 +1,136 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Orders">
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand brand-link" href="/staff"><span class="brand-mark">A</span> Aevo Staff</a>
+      <div class="header-actions"><span class="status" id="connection-status">Online</span><button id="logout" class="button secondary" type="button">ออกจากระบบ</button></div>
+    </header>
+    <main class="page">
+      <div class="page-heading">
+        <div>
+          <a class="back" id="workspace-link" href="/staff">← กลับ workspace</a>
+          <p class="eyebrow">Orders · Phase 2</p>
+          <h1>รายการออเดอร์</h1>
+          <p class="lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
+        </div>
+        <div class="toolbar">
+          <label>สถานะ<select id="status-filter" aria-label="กรองสถานะ"><option value="">ทั้งหมด</option><option value="DRAFT">Draft</option><option value="PENDING_PAYMENT">รอชำระเงิน</option><option value="PAID">ชำระแล้ว</option><option value="CONFIRMED">ยืนยันแล้ว</option><option value="PREPARING">กำลังเตรียม</option><option value="READY">พร้อมรับ</option><option value="COMPLETED">เสร็จสิ้น</option><option value="CANCELLED">ยกเลิก</option></select></label>
+          <button class="button secondary" id="refresh" type="button">รีเฟรช</button>
+        </div>
+      </div>
+      <p class="error" id="error" role="alert" hidden></p>
+      <section class="card panel">
+        <div class="panel-heading"><div><p class="eyebrow">Unified order engine</p><h2>ออเดอร์ของสาขา</h2></div><span class="count" id="order-count">0</span></div>
+        <div class="order-list" id="orders" aria-live="polite"><p class="empty">กำลังโหลดออเดอร์…</p></div>
+      </section>
+    </main>
+  </div>
+  <script>
+    import { api, ApiError } from "../../lib/api";
+    import type { OrderListItem, SessionPrincipal, StoreSummary } from "@aevo/contracts";
+
+    const error = document.querySelector<HTMLParagraphElement>("#error")!;
+    const list = document.querySelector<HTMLElement>("#orders")!;
+    const count = document.querySelector<HTMLElement>("#order-count")!;
+    const statusFilter = document.querySelector<HTMLSelectElement>("#status-filter")!;
+    const refresh = document.querySelector<HTMLButtonElement>("#refresh")!;
+    const params = new URLSearchParams(window.location.search);
+    let selectedStoreId = params.get("store") || sessionStorage.getItem("aevo.selectedStoreId") || "";
+    let orders: OrderListItem[] = [];
+
+    const statusLabels: Record<string, string> = {
+      DRAFT: "Draft", PENDING_PAYMENT: "รอชำระเงิน", PAID: "ชำระแล้ว", CONFIRMED: "ยืนยันแล้ว",
+      QUEUED: "เข้าคิว", ACCEPTED: "รับงานแล้ว", PREPARING: "กำลังเตรียม", PARTIALLY_READY: "พร้อมบางรายการ",
+      READY: "พร้อมรับ", SERVED: "เสิร์ฟแล้ว", PICKED_UP: "รับสินค้าแล้ว", COMPLETED: "เสร็จสิ้น",
+      CANCELLED: "ยกเลิก", REFUNDED: "คืนเงินแล้ว", PARTIALLY_REFUNDED: "คืนเงินบางส่วน", NO_SHOW: "ไม่มารับ"
+    };
+
+    function money(minor: number, currency: string) {
+      return new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
+    }
+
+    function render() {
+      count.textContent = String(orders.length);
+      list.replaceChildren();
+      if (!orders.length) {
+        list.innerHTML = '<p class="empty">ยังไม่มีออเดอร์ในสาขานี้</p>';
+        return;
+      }
+      for (const order of orders) {
+        const card = document.createElement("article");
+        card.className = "order-row";
+        card.innerHTML = `<div><p class="order-number"></p><p class="muted order-meta"></p></div><div class="order-total"><strong></strong><span class="status-pill"></span></div>`;
+        card.querySelector(".order-number")!.textContent = order.orderNumber;
+        card.querySelector(".order-meta")!.textContent = `${order.channel} · ${order.fulfillmentType} · ${order.itemCount} รายการ · ${new Date(order.createdAt).toLocaleString("th-TH")}`;
+        card.querySelector(".order-total strong")!.textContent = money(order.totalMinor, order.currency);
+        const pill = card.querySelector<HTMLElement>(".status-pill")!;
+        pill.textContent = statusLabels[order.status] || order.status;
+        pill.dataset.status = order.status;
+        list.append(card);
+      }
+    }
+
+    async function loadOrders() {
+      if (!selectedStoreId) { window.location.assign("/staff"); return; }
+      error.hidden = true;
+      refresh.disabled = true;
+      try {
+        const query = new URLSearchParams({ storeId: selectedStoreId });
+        if (statusFilter.value) query.set("status", statusFilter.value);
+        const result = await api<{ orders: OrderListItem[] }>(`/api/orders?${query}`);
+        orders = result.orders;
+        render();
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
+        else { error.textContent = cause instanceof Error ? cause.message : "โหลดออเดอร์ไม่สำเร็จ"; error.hidden = false; }
+      } finally { refresh.disabled = false; }
+    }
+
+    try {
+      const [{ user }, { stores }] = await Promise.all([
+        api<{ user: SessionPrincipal }>("/api/auth/me"),
+        api<{ stores: StoreSummary[] }>("/api/stores")
+      ]);
+      const store = stores.find((item) => item.id === selectedStoreId);
+      if (!store) window.location.assign("/staff");
+      else {
+        sessionStorage.setItem("aevo.selectedStoreId", store.id);
+        document.querySelector("#store-summary")!.textContent = `${store.name} · ${store.code} · ${user.displayName || user.email}`;
+        document.querySelector<HTMLAnchorElement>("#workspace-link")!.href = `/staff/workspace?store=${encodeURIComponent(store.id)}`;
+        await loadOrders();
+      }
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
+      else { error.textContent = cause instanceof Error ? cause.message : "โหลด workspace ไม่สำเร็จ"; error.hidden = false; }
+    }
+    statusFilter.addEventListener("change", () => void loadOrders());
+    refresh.addEventListener("click", () => void loadOrders());
+    document.querySelector("#logout")!.addEventListener("click", async () => {
+      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+      sessionStorage.removeItem("aevo.selectedStoreId");
+      window.location.assign("/login");
+    });
+  </script>
+  <style>
+    .brand-link { text-decoration: none; }
+    .header-actions, .toolbar { display: flex; align-items: center; gap: 16px; }
+    .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
+    .toolbar { align-items: flex-end; }
+    .toolbar label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
+    .toolbar select { min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+    .panel { padding: 22px; }
+    .order-list { display: grid; gap: 10px; }
+    .order-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+    .order-number, .order-meta { margin: 0; }
+    .order-number { font-weight: 850; letter-spacing: .04em; }
+    .order-meta { margin-top: 5px; font-size: .82rem; }
+    .order-total { display: grid; justify-items: end; gap: 7px; white-space: nowrap; }
+    .status-pill { padding: 4px 9px; border-radius: 999px; color: var(--brand); background: #e7f2ed; font-size: .75rem; font-weight: 800; }
+    .status-pill[data-status="CANCELLED"], .status-pill[data-status="REFUNDED"] { color: #9c2f2f; background: #fde8e8; }
+    .status-pill[data-status="READY"], .status-pill[data-status="COMPLETED"] { color: #7c5b00; background: #fff3c4; }
+    @media (max-width: 700px) { .page-heading { display: block; } .toolbar { margin-top: 18px; justify-content: space-between; } .order-row { align-items: flex-start; } .order-total { text-align: right; } }
+    @media (max-width: 520px) { .status { display: none; } .order-row { padding: 13px; } .order-meta { line-height: 1.45; } }
+  </style>
+</BaseLayout>

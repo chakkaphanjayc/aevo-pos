@@ -16,7 +16,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       <section class="workspace-grid" aria-label="Workspaces">
         <a class="card workspace-card workspace-link" id="catalog-link" href="#"><span class="workspace-icon">▤</span><h2>Catalog</h2><p>จัดการสินค้า หมวดหมู่ และ Sold out</p><span class="coming-soon ready">Phase 1</span></a>
         <article class="card workspace-card"><span class="workspace-icon">▦</span><h2>POS</h2><p>รับออเดอร์และรับชำระเงิน</p><span class="coming-soon">Phase 3</span></article>
-        <article class="card workspace-card"><span class="workspace-icon">◫</span><h2>Orders</h2><p>ดูรายการและสถานะออเดอร์</p><span class="coming-soon">กำลังพัฒนา</span></article>
+        <a class="card workspace-card workspace-link" id="orders-link" href="#"><span class="workspace-icon">◫</span><h2>Orders</h2><p>ดูรายการและสถานะออเดอร์</p><span class="coming-soon ready">Phase 2</span></a>
         <article class="card workspace-card"><span class="workspace-icon">✦</span><h2>Preparation</h2><p>จัดการงานเตรียมสินค้า</p><span class="coming-soon">กำลังพัฒนา</span></article>
         <article class="card workspace-card"><span class="workspace-icon">⌁</span><h2>Queue</h2><p>คิวรับสินค้าและจอแสดงผล</p><span class="coming-soon">กำลังพัฒนา</span></article>
       </section>
@@ -41,6 +41,7 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       } else {
         sessionStorage.setItem("aevo.selectedStoreId", store.id);
         document.querySelector<HTMLAnchorElement>("#catalog-link")!.href = `/staff/catalog?store=${encodeURIComponent(store.id)}`;
+        document.querySelector<HTMLAnchorElement>("#orders-link")!.href = `/staff/orders?store=${encodeURIComponent(store.id)}`;
         document.querySelector("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
         document.querySelector("#store-summary")!.textContent = `${store.name} · ${store.code} · ${store.timezone}`;
       }

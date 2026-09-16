@@ -16,6 +16,26 @@ export type Permission = (typeof permissions)[number];
 export const catalogChannels = ["POS", "QR", "KIOSK", "PICKUP", "STAFF", "API"] as const;
 export type CatalogChannel = (typeof catalogChannels)[number];
 
+/** All ordering surfaces write to the same Order aggregate. */
+export const orderChannels = catalogChannels;
+export type OrderChannel = (typeof orderChannels)[number];
+
+export const fulfillmentTypes = ["TAKEAWAY", "DINE_IN", "PICKUP"] as const;
+export type FulfillmentType = (typeof fulfillmentTypes)[number];
+
+export const orderStatuses = [
+  "DRAFT", "PENDING_PAYMENT", "PAID", "CONFIRMED", "QUEUED", "ACCEPTED",
+  "PREPARING", "PARTIALLY_READY", "READY", "SERVED", "PICKED_UP", "COMPLETED",
+  "CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED", "NO_SHOW"
+] as const;
+export type OrderStatus = (typeof orderStatuses)[number];
+
+export const paymentStatuses = ["UNPAID", "PENDING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"] as const;
+export type PaymentStatus = (typeof paymentStatuses)[number];
+
+export const paymentMethods = ["CASH", "PROMPTPAY", "EXTERNAL_CARD", "MANUAL"] as const;
+export type PaymentMethod = (typeof paymentMethods)[number];
+
 export type CatalogStatus = "ACTIVE" | "INACTIVE";
 export type ProductStatus = "ACTIVE" | "ARCHIVED";
 
@@ -181,6 +201,107 @@ export interface UpdateProductAvailabilityInput {
   isAvailable?: boolean;
   soldOut?: boolean;
   priceOverrideMinor?: number | null;
+}
+
+export interface CreateOrderItemInput {
+  productId: string;
+  variantId?: string;
+  menuItemId?: string;
+  modifierIds?: string[];
+  quantity: number;
+  note?: string;
+}
+
+export interface CreateOrderInput {
+  storeId: string;
+  channel: OrderChannel;
+  fulfillmentType: FulfillmentType;
+  currency?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  notes?: string;
+  items: CreateOrderItemInput[];
+}
+
+export interface OrderItemModifierSummary {
+  id: string;
+  modifierId: string;
+  modifierGroupId: string;
+  name: string;
+  priceDeltaMinor: number;
+  quantity: number;
+}
+
+export interface OrderItemSummary {
+  id: string;
+  lineNumber: number;
+  productId: string;
+  variantId?: string;
+  menuItemId?: string;
+  sku: string;
+  productName: string;
+  variantName?: string;
+  unitPriceMinor: number;
+  quantity: number;
+  subtotalMinor: number;
+  note?: string;
+  modifiers: OrderItemModifierSummary[];
+}
+
+export interface OrderSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  orderNumber: string;
+  channel: OrderChannel;
+  fulfillmentType: FulfillmentType;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  currency: string;
+  subtotalMinor: number;
+  discountMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  notes?: string;
+  items: OrderItemSummary[];
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderListItem {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  orderNumber: string;
+  channel: OrderChannel;
+  fulfillmentType: FulfillmentType;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  currency: string;
+  totalMinor: number;
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TransitionOrderInput {
+  storeId: string;
+  toStatus: OrderStatus;
+  expectedStatus?: OrderStatus;
+  reason?: string;
+}
+
+export interface RecordPaymentInput {
+  storeId: string;
+  method: PaymentMethod;
+  amountMinor: number;
+  currency?: string;
+  providerReference?: string;
 }
 
 export interface SessionPrincipal {
