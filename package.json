@@ -11,7 +11,7 @@
     "deploy:web": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test packages apps",
-    "test:integration": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://aevo:aevo@localhost:5433/aevo_test} bun test packages/db/test",
+    "test:integration": "TEST_MONGODB_URI=${TEST_MONGODB_URI:-mongodb://localhost:27018} TEST_MONGODB_DATABASE=${TEST_MONGODB_DATABASE:-aevo_test} bun test packages/db/test",
     "db:migrate": "bun run --filter @aevo/db migrate",
     "db:seed": "bun run --filter @aevo/db seed"
   },

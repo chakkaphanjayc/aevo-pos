@@ -1,81 +1,202 @@
+import { randomUUID } from "node:crypto";
+import type { Filter } from "mongodb";
 import type { Permission, Role, SessionPrincipal, StoreSummary } from "@aevo/contracts";
+import { permissions as permissionCodes, roles as roleCodes } from "@aevo/contracts";
 import type { Database } from "./client";
 
-export interface UserRecord { id: string; email: string; displayName: string; passwordHash: string }
-interface StoreRow { id: string; organization_id: string; name: string; code: string; timezone: string }
+export interface UserRecord {
+  id: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+}
 
-export async function findActiveUserByEmail(sql: Database, email: string): Promise<UserRecord | null> {
-  const rows = await sql`SELECT id, email, display_name, password_hash FROM users
-    WHERE lower(email) = lower(${email}) AND status = 'ACTIVE' LIMIT 1`;
-  const row = rows[0];
-  return row ? { id: row.id, email: row.email, displayName: row.display_name, passwordHash: row.password_hash } : null;
+export interface UserDocument {
+  _id: string;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+  status: "ACTIVE" | "DISABLED";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface OrganizationDocument {
+  _id: string;
+  name: string;
+  slug: string;
+  status: "ACTIVE" | "SUSPENDED";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StoreDocument {
+  _id: string;
+  organizationId: string;
+  name: string;
+  code: string;
+  timezone: string;
+  currency: string;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RoleDocument {
+  _id: string;
+  code: Role;
+  name: string;
+  isSystem: boolean;
+  permissionCodes: Permission[];
+}
+
+export interface MembershipDocument {
+  _id: string;
+  organizationId: string;
+  userId: string;
+  roleId: string;
+  status: "INVITED" | "ACTIVE" | "SUSPENDED";
+  /** Empty means the member has no store access unless their role is elevated. */
+  storeIds: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface SessionDocument {
+  _id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  lastSeenAt: Date;
+  revokedAt: Date | null;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: Date;
+}
+
+function storesCollection(database: Database) {
+  return database.db.collection<StoreDocument>("stores");
+}
+
+function membershipsCollection(database: Database) {
+  return database.db.collection<MembershipDocument>("memberships");
+}
+
+export async function findActiveUserByEmail(database: Database, email: string): Promise<UserRecord | null> {
+  const user = await database.db.collection<UserDocument>("users").findOne({
+    email: email.trim().toLowerCase(),
+    status: "ACTIVE"
+  });
+  return user
+    ? { id: user._id, email: user.email, displayName: user.displayName, passwordHash: user.passwordHash }
+    : null;
 }
 
 export async function createSession(
-  sql: Database,
+  database: Database,
   input: { userId: string; tokenHash: string; expiresAt: Date; ipAddress?: string; userAgent?: string }
 ): Promise<void> {
-  await sql`INSERT INTO sessions (user_id, token_hash, expires_at, ip_address, user_agent)
-    VALUES (${input.userId}, ${input.tokenHash}, ${input.expiresAt}, ${input.ipAddress ?? null}, ${input.userAgent ?? null})`;
+  const now = new Date();
+  const session: SessionDocument = {
+    _id: randomUUID(),
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    expiresAt: input.expiresAt,
+    lastSeenAt: now,
+    revokedAt: null,
+    createdAt: now,
+    ...(input.ipAddress ? { ipAddress: input.ipAddress } : {}),
+    ...(input.userAgent ? { userAgent: input.userAgent } : {})
+  };
+  await database.db.collection<SessionDocument>("sessions").insertOne(session);
 }
 
-export async function revokeSession(sql: Database, tokenHash: string): Promise<void> {
-  await sql`UPDATE sessions SET revoked_at = now() WHERE token_hash = ${tokenHash} AND revoked_at IS NULL`;
+export async function revokeSession(database: Database, tokenHash: string): Promise<void> {
+  await database.db.collection<SessionDocument>("sessions").updateOne(
+    { tokenHash, revokedAt: null },
+    { $set: { revokedAt: new Date() } }
+  );
 }
 
 export async function resolvePrincipal(
-  sql: Database,
+  database: Database,
   tokenHash: string,
   requestedOrganizationId?: string
 ): Promise<SessionPrincipal | null> {
-  const rows = await sql`SELECT u.id AS user_id, u.email, m.id AS membership_id,
-      m.organization_id, r.code AS role,
-      COALESCE(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), '{}') AS permissions
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id AND u.status = 'ACTIVE'
-    JOIN memberships m ON m.user_id = u.id AND m.status = 'ACTIVE'
-    JOIN roles r ON r.id = m.role_id
-    LEFT JOIN role_permissions rp ON rp.role_id = r.id
-    LEFT JOIN permissions p ON p.id = rp.permission_id
-    WHERE s.token_hash = ${tokenHash} AND s.revoked_at IS NULL AND s.expires_at > now()
-      AND (${requestedOrganizationId ?? null}::uuid IS NULL OR m.organization_id = ${requestedOrganizationId ?? null}::uuid)
-    GROUP BY u.id, u.email, m.id, m.organization_id, r.code
-    ORDER BY m.created_at ASC LIMIT 1`;
-  const row = rows[0];
-  if (!row) return null;
+  const session = await database.db.collection<SessionDocument>("sessions").findOne({
+    tokenHash,
+    revokedAt: null,
+    expiresAt: { $gt: new Date() }
+  });
+  if (!session) return null;
+
+  const user = await database.db.collection<UserDocument>("users").findOne({ _id: session.userId, status: "ACTIVE" });
+  if (!user) return null;
+
+  const membershipFilter: Filter<MembershipDocument> = { userId: user._id, status: "ACTIVE" };
+  if (requestedOrganizationId) membershipFilter.organizationId = requestedOrganizationId;
+  const membership = await membershipsCollection(database)
+    .find(membershipFilter)
+    .sort({ createdAt: 1 })
+    .limit(1)
+    .next();
+  if (!membership) return null;
+
+  const role = await database.db.collection<RoleDocument>("roles").findOne({ _id: membership.roleId });
+  if (!role || !roleCodes.includes(role.code)) return null;
+
   return {
-    userId: row.user_id,
-    email: row.email,
-    membershipId: row.membership_id,
-    organizationId: row.organization_id,
-    role: row.role as Role,
-    permissions: row.permissions as Permission[]
+    userId: user._id,
+    email: user.email,
+    membershipId: membership._id,
+    organizationId: membership.organizationId,
+    role: role.code,
+    permissions: role.permissionCodes.filter((code): code is Permission => permissionCodes.includes(code))
   };
 }
 
-export async function listAuthorizedStores(sql: Database, principal: SessionPrincipal): Promise<StoreSummary[]> {
-  const rows = await sql`SELECT s.id, s.organization_id, s.name, s.code, s.timezone
-    FROM stores s
-    WHERE s.organization_id = ${principal.organizationId} AND s.status = 'ACTIVE'
-      AND (${principal.role} IN ('OWNER', 'ADMIN') OR EXISTS (
-        SELECT 1 FROM membership_store_access msa
-        WHERE msa.organization_id = ${principal.organizationId}
-          AND msa.membership_id = ${principal.membershipId} AND msa.store_id = s.id
-      ))
-    ORDER BY s.name`;
-  return rows.map((row: StoreRow) => ({
-    id: row.id, organizationId: row.organization_id, name: row.name, code: row.code, timezone: row.timezone
+export async function listAuthorizedStores(database: Database, principal: SessionPrincipal): Promise<StoreSummary[]> {
+  const filter: Filter<StoreDocument> = {
+    organizationId: principal.organizationId,
+    status: "ACTIVE"
+  };
+
+  if (principal.role !== "OWNER" && principal.role !== "ADMIN") {
+    const membership = await membershipsCollection(database).findOne({
+      _id: principal.membershipId,
+      organizationId: principal.organizationId,
+      userId: principal.userId,
+      status: "ACTIVE"
+    });
+    const storeIds = membership?.storeIds ?? [];
+    if (storeIds.length === 0) return [];
+    filter._id = { $in: storeIds };
+  }
+
+  const stores = await storesCollection(database).find(filter).sort({ name: 1 }).toArray();
+  return stores.map((store) => ({
+    id: store._id,
+    organizationId: store.organizationId,
+    name: store.name,
+    code: store.code,
+    timezone: store.timezone
   }));
 }
 
-export async function canAccessStore(sql: Database, principal: SessionPrincipal, storeId: string): Promise<boolean> {
-  const rows = await sql`SELECT EXISTS (
-    SELECT 1 FROM stores s WHERE s.id = ${storeId} AND s.organization_id = ${principal.organizationId}
-      AND s.status = 'ACTIVE' AND (${principal.role} IN ('OWNER', 'ADMIN') OR EXISTS (
-        SELECT 1 FROM membership_store_access msa
-        WHERE msa.organization_id = ${principal.organizationId}
-          AND msa.membership_id = ${principal.membershipId} AND msa.store_id = s.id
-      ))
-  ) AS allowed`;
-  return rows[0]?.allowed === true;
+export async function canAccessStore(database: Database, principal: SessionPrincipal, storeId: string): Promise<boolean> {
+  const store = await storesCollection(database).findOne({
+    _id: storeId,
+    organizationId: principal.organizationId,
+    status: "ACTIVE"
+  });
+  if (!store) return false;
+  if (principal.role === "OWNER" || principal.role === "ADMIN") return true;
+
+  const membership = await membershipsCollection(database).findOne({
+    _id: principal.membershipId,
+    organizationId: principal.organizationId,
+    userId: principal.userId,
+    status: "ACTIVE"
+  });
+  return membership?.storeIds.includes(store._id) ?? false;
 }

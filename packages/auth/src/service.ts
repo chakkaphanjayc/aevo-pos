@@ -8,14 +8,14 @@ export class AuthenticationError extends Error {
 }
 
 export class AuthService {
-  constructor(private readonly sql: Database, private readonly sessionTtlHours: number) {}
+  constructor(private readonly database: Database, private readonly sessionTtlHours: number) {}
 
   async login(input: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
-    const user = await findActiveUserByEmail(this.sql, input.email.trim().toLowerCase());
+    const user = await findActiveUserByEmail(this.database, input.email.trim().toLowerCase());
     if (!user || !(await verifyPassword(input.password, user.passwordHash))) throw new AuthenticationError();
     const token = generateSessionToken();
     const expiresAt = sessionExpiresAt(this.sessionTtlHours);
-    await createSession(this.sql, {
+    await createSession(this.database, {
       userId: user.id, tokenHash: hashSessionToken(token), expiresAt,
       ...(input.ipAddress ? { ipAddress: input.ipAddress } : {}),
       ...(input.userAgent ? { userAgent: input.userAgent } : {})
@@ -23,6 +23,6 @@ export class AuthService {
     return { token, expiresAt };
   }
 
-  resolve(token: string, organizationId?: string) { return resolvePrincipal(this.sql, hashSessionToken(token), organizationId); }
-  logout(token: string) { return revokeSession(this.sql, hashSessionToken(token)); }
+  resolve(token: string, organizationId?: string) { return resolvePrincipal(this.database, hashSessionToken(token), organizationId); }
+  logout(token: string) { return revokeSession(this.database, hashSessionToken(token)); }
 }

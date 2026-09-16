@@ -1,37 +1,37 @@
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { createDatabase } from "./client";
+import { foundationMigration, type MongoMigration } from "./migrations/001_foundation";
 
-export async function migrate(databaseUrl: string, directory = join(import.meta.dir, "../migrations")): Promise<void> {
-  const sql = createDatabase(databaseUrl);
+export const migrations: MongoMigration[] = [foundationMigration];
+
+export async function migrate(mongodbUri: string, databaseName = "aevo"): Promise<void> {
+  const database = await createDatabase(mongodbUri, databaseName);
   try {
-    await sql.unsafe(`CREATE TABLE IF NOT EXISTS schema_migrations (
-      version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
-    )`);
-    const files = (await readdir(directory)).filter((file) => file.endsWith(".sql")).sort();
-    for (const file of files) {
-      const body = await Bun.file(join(directory, file)).text();
-      const checksum = createHash("sha256").update(body).digest("hex");
-      const existing = await sql`SELECT checksum FROM schema_migrations WHERE version = ${file}`;
-      if (existing.length) {
-        if (existing[0]?.checksum !== checksum) throw new Error(`Migration ${file} changed after it was applied`);
+    const appliedMigrations = database.db.collection<{ _id: string; version: string; checksum: string; appliedAt: Date }>("schema_migrations");
+    for (const migration of migrations) {
+      const checksum = createHash("sha256").update(migration.checksumSource).digest("hex");
+      const existing = await appliedMigrations.findOne({ _id: migration.version });
+      if (existing) {
+        if (existing.checksum !== checksum) throw new Error(`Migration ${migration.version} changed after it was applied`);
         continue;
       }
-      await sql.begin(async (tx) => {
-        await tx.unsafe(body);
-        await tx`INSERT INTO schema_migrations (version, checksum) VALUES (${file}, ${checksum})
-                 ON CONFLICT (version) DO UPDATE SET checksum = EXCLUDED.checksum`;
+
+      await migration.up(database.db);
+      await appliedMigrations.insertOne({
+        _id: migration.version,
+        version: migration.version,
+        checksum,
+        appliedAt: new Date()
       });
-      console.info(JSON.stringify({ level: "info", event: "migration.applied", migration: file }));
+      console.info(JSON.stringify({ level: "info", event: "migration.applied", migration: migration.version }));
     }
   } finally {
-    await sql.close();
+    await database.close();
   }
 }
 
 if (import.meta.main) {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  await migrate(databaseUrl);
+  const mongodbUri = process.env.MONGODB_URI;
+  if (!mongodbUri) throw new Error("MONGODB_URI is required");
+  await migrate(mongodbUri, process.env.MONGODB_DATABASE ?? "aevo");
 }

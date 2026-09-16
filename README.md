@@ -12,21 +12,25 @@ packages/
   auth/                Session, password and permission services
   config/              Fail-fast environment validation
   contracts/           Shared API/domain types
-  db/                  Bun SQL client, migrations, seed and tenant-scoped repositories
+  db/                  MongoDB driver, migrations, seed and tenant-scoped repositories
 ```
 
-The application begins as a modular monolith. PostgreSQL is shared across tenants; tenant scope is represented by `organization_id`, and store access is authorized server-side from the authenticated membership. Composite foreign keys prevent cross-tenant store references in tenant-owned join/event tables.
+The application begins as a modular monolith. MongoDB Atlas is the production
+database; tenant scope is represented by `organizationId`, and store access is
+authorized server-side from the authenticated membership. UUID strings are used
+as document `_id` values so API contracts remain stable while MongoDB indexes
+enforce tenant-safe uniqueness.
 
 ## Requirements
 
 - Bun 1.2.21+
-- PostgreSQL 17 (or Docker Compose)
+- MongoDB Atlas, or MongoDB 8 through Docker Compose
 
 ## Local setup
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
+docker compose up -d mongodb
 bun install
 bun run db:migrate
 bun run db:seed
@@ -39,7 +43,30 @@ In a second terminal:
 PUBLIC_API_URL=http://localhost:3001 bun run dev:web
 ```
 
-Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the seed; it must have at least 12 characters.
+Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the
+seed; it must have at least 12 characters.
+
+To run the database integration test locally, start the second MongoDB service:
+
+```bash
+docker compose up -d mongodb-test
+bun run test:integration
+```
+
+## MongoDB Atlas
+
+Create a database user and an Atlas cluster, add the API host to the cluster
+network access list, then set `MONGODB_URI` to the Atlas SRV connection string:
+
+```dotenv
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DATABASE=aevo
+```
+
+The API connects with the official MongoDB Node.js driver, keeps a bounded
+connection pool, and fails fast if the cluster cannot be selected. Keep the URI
+in server-side environment variables only; never expose it through Astro
+`PUBLIC_*` variables.
 
 ## Cloudflare deployment
 
@@ -72,36 +99,42 @@ The repository also exposes the same deployment as:
 bun run deploy:web
 ```
 
-If using Cloudflare Pages rather than Workers, keep the repository root at the
-monorepo root, use `bun run build` as the build command, and set the build
-output directory to `apps/web/dist`. The Pages workflow and the Workers
-workflow are alternatives; do not configure both for the same production
-hostname.
+The Astro site is static and does not contain the Bun API process. Deploy the
+Elysia API separately on a Bun-compatible host and set `PUBLIC_API_URL` to that
+API origin when building the web app.
 
 ## Environment
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection URL; required |
+| `MONGODB_URI` | MongoDB or MongoDB Atlas connection URI; required |
+| `MONGODB_DATABASE` | Database name, defaults to `aevo` |
 | `WEB_ORIGIN` | Exact browser origin allowed to make credentialed API requests |
 | `API_HOST` / `API_PORT` | API listener, defaults to `0.0.0.0:3001` |
 | `SESSION_COOKIE_NAME` | HttpOnly session cookie name |
 | `SESSION_TTL_HOURS` | Session lifetime, defaults to 168 hours |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
 | `PUBLIC_API_URL` | API origin embedded into the Astro frontend |
+| `TEST_MONGODB_URI` / `TEST_MONGODB_DATABASE` | Integration-test MongoDB target |
 | `SEED_*` | Initial local owner, organization and store values |
 
 ## Database foundation
 
-- Organization → optional Brand → Store
-- User → Membership → Role → Permission
-- Explicit non-owner membership-to-store access
-- Opaque, hashed, revocable sessions
-- Domain events and transactional outbox tables
-- Tenant-scoped idempotency keys
-- Audit log foundation
+`bun run db:migrate` applies the versioned MongoDB foundation migration. It
+creates collections and indexes for:
 
-The schema uses relational columns for identity and tenant boundaries. JSONB is limited to immutable event/audit metadata and stored idempotent responses.
+- Organization → optional Brand → Store
+- User → Membership → Role → Permission codes
+- Explicit non-owner membership-to-store access
+- Opaque, hashed, revocable sessions with TTL cleanup
+- Domain events and outbox events
+- Tenant-scoped idempotency keys
+- Audit logs
+
+The migration runner records a checksum in `schema_migrations` and fails if an
+already-applied migration is changed. Relational identity fields are modeled as
+document fields, while JSON-like payloads are reserved for immutable event,
+provider and audit metadata.
 
 ## Verification
 
@@ -111,14 +144,9 @@ bun test
 bun run build
 ```
 
-For the PostgreSQL tenant-isolation test:
-
-```bash
-docker compose up -d postgres-test
-bun run test:integration
-```
-
-CI starts PostgreSQL, applies migrations, type-checks, runs all tests, and builds both applications.
+`bun test` runs unit tests everywhere and runs the MongoDB tenant-isolation test
+when `TEST_MONGODB_URI` is set. CI starts MongoDB, applies migrations,
+type-checks, runs all tests, and builds both applications.
 
 ## Security decisions
 
@@ -129,6 +157,7 @@ CI starts PostgreSQL, applies migrations, type-checks, runs all tests, and build
 - Store reads include the principal's organization and explicit store authorization.
 - Login has a basic per-process rate limiter. Replace it with a shared limiter before horizontally scaling the API.
 - Structured logger excludes password/token/secret/cookie fields.
+- MongoDB Atlas credentials stay server-side and should be managed with deployment secret storage.
 
 ## Known Phase 0 limitations
 
@@ -137,6 +166,7 @@ CI starts PostgreSQL, applies migrations, type-checks, runs all tests, and build
 - The in-memory login limiter is instance-local.
 - Device identity, WebSocket rooms, offline cache, domain-specific orders, catalog and integrations belong to later phases.
 - The current staff cards prove authorized store retrieval but remain disabled until the first operational workspace is implemented.
+- MongoDB transactions are exposed by the database adapter for later order/outbox commands; the Phase 0 seed is idempotent and also works against a standalone local MongoDB container.
 
 ## Recommended Phase 1 order
 

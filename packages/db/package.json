@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "migrate": "bun src/migrate.ts",
     "seed": "bun src/seed.ts",
@@ -11,6 +13,12 @@
     "test": "bun test",
     "build": "bun build src/index.ts --target bun --outdir dist"
   },
-  "dependencies": { "@aevo/contracts": "workspace:*" },
-  "devDependencies": { "@types/bun": "^1.2.21", "typescript": "^5.9.2" }
+  "dependencies": {
+    "@aevo/contracts": "workspace:*",
+    "mongodb": "6.20.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.21",
+    "typescript": "^5.9.2"
+  }
 }
