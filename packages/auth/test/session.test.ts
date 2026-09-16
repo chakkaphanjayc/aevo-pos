@@ -1,18 +1,14 @@
 import { expect, test } from "bun:test";
-import { generateSessionToken, hashSessionToken, sessionExpiresAt, verifyPassword } from "../src";
+import { isAuthSessionCookie } from "../src";
 
-test("session tokens are opaque and only hashes need persistence", () => {
-  const first = generateSessionToken();
-  const second = generateSessionToken();
-  expect(first).not.toBe(second);
-  expect(hashSessionToken(first)).toHaveLength(64);
-  expect(hashSessionToken(first)).not.toBe(first);
+test("accepts a Supabase access/refresh token pair", () => {
+  expect(isAuthSessionCookie({ accessToken: "access", refreshToken: "refresh" })).toBeTrue();
+  expect(isAuthSessionCookie({ accessToken: "access" })).toBeTrue();
 });
 
-test("session expiry is deterministic", () => {
-  expect(sessionExpiresAt(1, new Date("2026-01-01T00:00:00Z")).toISOString()).toBe("2026-01-01T01:00:00.000Z");
-});
-
-test("malformed password hashes fail as invalid credentials", async () => {
-  expect(await verifyPassword("password", "not-a-password-hash")).toBeFalse();
+test("rejects malformed session cookie payloads", () => {
+  expect(isAuthSessionCookie(null)).toBeFalse();
+  expect(isAuthSessionCookie({ accessToken: "" })).toBeFalse();
+  expect(isAuthSessionCookie({ accessToken: 123 })).toBeFalse();
+  expect(isAuthSessionCookie({ accessToken: "access", refreshToken: 123 })).toBeFalse();
 });

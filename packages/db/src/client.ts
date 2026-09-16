@@ -1,37 +1,38 @@
-import { MongoClient, type ClientSession, type Db } from "mongodb";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export interface Database {
-  readonly client: MongoClient;
-  readonly db: Db;
+  /** A server-side Supabase client. The key must never be exposed to a browser. */
+  readonly client: SupabaseClient;
   ping(): Promise<void>;
-  withTransaction<T>(work: (session: ClientSession) => Promise<T>): Promise<T>;
+  /** Supabase clients use HTTP and do not hold sockets. */
   close(): Promise<void>;
 }
 
 /**
- * Create a connected MongoDB client for the configured database.
+ * Create a Supabase client for the API/Worker runtime.
  *
- * The connection is established before the API starts accepting requests so a
- * bad Atlas URI or unavailable cluster fails fast during startup.
+ * The API deliberately uses the server-only secret key. Row Level Security is
+ * still enabled on every public table; server routes enforce the authenticated
+ * principal and tenant boundary before returning data.
  */
-export async function createDatabase(mongodbUri: string, databaseName = "aevo"): Promise<Database> {
-  const client = new MongoClient(mongodbUri, {
-    maxPoolSize: 10,
-    minPoolSize: 0,
-    maxIdleTimeMS: 30_000,
-    serverSelectionTimeoutMS: 10_000,
-    connectTimeoutMS: 10_000
+export function createDatabase(supabaseUrl: string, supabaseKey: string): Database {
+  const client = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
+    global: {
+      headers: { "x-aevo-runtime": "api" }
+    }
   });
-  await client.connect();
-  const db = client.db(databaseName);
+
   return {
     client,
-    db,
     ping: async () => {
-      await db.command({ ping: 1 });
+      const { error } = await client.from("organizations").select("id").limit(1);
+      if (error) throw new Error(`Supabase readiness check failed: ${error.message}`);
     },
-    withTransaction: async <T>(work: (session: ClientSession) => Promise<T>) =>
-      client.withSession((session) => session.withTransaction(() => work(session))),
-    close: () => client.close()
+    close: async () => undefined
   };
 }

@@ -8,29 +8,12 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    services:
-      mongodb:
-        image: mongo:8
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    env:
-      TEST_MONGODB_URI: mongodb://localhost:27017
-      TEST_MONGODB_DATABASE: aevo_test
-      MONGODB_URI: mongodb://localhost:27017
-      MONGODB_DATABASE: aevo_test
-      WEB_ORIGIN: http://localhost:4321
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.21
       - run: bun install --frozen-lockfile
-      - run: bun run db:migrate
       - run: bun run typecheck
       - run: bun test
       - run: bun run build

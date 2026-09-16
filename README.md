@@ -1,198 +1,212 @@
 # Aevo Store Operations Platform
 
-Phase 0 foundation for a multi-tenant store operations platform. This repository intentionally does not implement POS, catalog, kiosk, KDS, queue, payment providers, LINE, or Odoo yet.
+Phase 0 foundation for a multi-tenant store operations platform. POS, catalog,
+kiosk, KDS, queue, payment providers, LINE and Odoo remain later phases; the
+foundation already provides the shared tenant/auth/event boundaries they need.
 
 ## Architecture
 
 ```text
-apps/
-  api/                 Elysia HTTP API, auth endpoints, request IDs and error handling
-  web/                 Astro public entry, login and authenticated staff shell
-packages/
-  auth/                Session, password and permission services
-  config/              Fail-fast environment validation
-  contracts/           Shared API/domain types
-  db/                  MongoDB driver, migrations, seed and tenant-scoped repositories
+Cloudflare Worker
+├── Astro static assets (/, /login, /staff)
+└── Elysia API (/health, /ready, /api/*)
+       │
+       └── Supabase Auth + PostgreSQL (RLS enabled)
 ```
 
-The application begins as a modular monolith. MongoDB Atlas is the production
-database; tenant scope is represented by `organizationId`, and store access is
-authorized server-side from the authenticated membership. UUID strings are used
-as document `_id` values so API contracts remain stable while MongoDB indexes
-enforce tenant-safe uniqueness.
+```text
+apps/
+  worker/              Single Worker entrypoint and API/static routing
+  api/                  Elysia routes, auth boundary, request IDs and errors
+  web/                  Astro public entry, login and authenticated staff shell
+packages/
+  auth/                Supabase Auth adapter and permission checks
+  config/              Fail-fast environment validation
+  contracts/           Shared API/domain types
+  db/                  Supabase client, tenant repositories and seed command
+supabase/
+  migrations/          PostgreSQL schema, role matrix and RLS policies
+```
+
+The Worker is a modular monolith: the browser talks to same-origin `/api/*`
+routes, while the server-only Supabase secret key stays inside the Worker.
+Supabase Auth owns password/JWT/refresh-token handling. Membership and role
+data are read from PostgreSQL on every request, so disabling a membership takes
+effect without waiting for a custom session cache.
 
 ## Requirements
 
 - Bun 1.2.21+
-- MongoDB Atlas, or MongoDB 8 through Docker Compose
+- A Supabase project
+- Node.js/npm only for the pinned Supabase and Wrangler CLIs
 
-## Local setup
+## Supabase project setup
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. In **Project Settings → API**, copy the project URL and the server-only
+   **Secret key**. The legacy `service_role` key is also accepted.
+3. Apply the migration. With the Supabase CLI:
+
+   ```bash
+   npx --yes supabase@2.117.0 login
+   npx --yes supabase@2.117.0 link --project-ref <project-ref>
+   npx --yes supabase@2.117.0 db push
+   ```
+
+   Or paste `supabase/migrations/20260916083047_foundation.sql` into the
+   Supabase SQL Editor and run it once.
+
+The migration creates the organization → optional brand → store model,
+Supabase-user profiles, memberships, roles/permissions, explicit store access,
+domain/outbox events, idempotency keys and audit logs. RLS is enabled on every
+public application table. `private.is_org_member` and
+`private.has_org_permission` are non-exposed `SECURITY DEFINER` helpers with a
+fixed search path; no browser key can bypass tenant policies.
+
+## Create the first admin/owner
+
+The seed command uses the Supabase Admin Auth API and must run as a one-off
+server-side command. Never put its secret or password in `apps/web`, an Astro
+`PUBLIC_*` variable, or source control.
 
 ```bash
 cp .env.example .env
-docker compose up -d mongodb
+# edit SUPABASE_URL, SUPABASE_SECRET_KEY and the SEED_* values
 bun install
-bun run db:migrate
+bun run db:seed
+```
+
+`SEED_INITIAL_ROLE=OWNER` is the default. Set it to `ADMIN` when the first
+account should not be the owner. Running the seed again is idempotent for the
+same email/organization/store and updates that Auth user's password.
+
+## Local development
+
+```bash
+cp .env.example .env
+bun install
 bun run db:seed
 bun run dev:api
 ```
 
-In a second terminal:
+In another terminal run the Astro site:
 
 ```bash
 PUBLIC_API_URL=http://localhost:3001 bun run dev:web
 ```
 
-Open `http://localhost:4321`. Change `SEED_OWNER_PASSWORD` before running the
-seed; it must have at least 12 characters. The seed creates the initial user
-with `SEED_INITIAL_ROLE=OWNER` by default; use `SEED_INITIAL_ROLE=ADMIN` when
-the account should be an Admin instead.
-
-After seeding, sign in at `/login` with `SEED_OWNER_EMAIL` and
-`SEED_OWNER_PASSWORD`. The login session is an HttpOnly cookie; the browser
-never receives the MongoDB URI or the password hash. Use the logout button to
-revoke the current session.
-
-To run the database integration test locally, start the second MongoDB service:
+Open [http://localhost:4321/login](http://localhost:4321/login), then use the
+seed email/password. For a same-origin Worker preview, put the values below in
+`.dev.vars` (do not commit that file) and run:
 
 ```bash
-docker compose up -d mongodb-test
-bun run test:integration
+bun run build
+npx --yes wrangler@4.132.0 dev --config wrangler.jsonc
 ```
-
-## MongoDB Atlas
-
-Create a database user and an Atlas cluster, add the API host to the cluster
-network access list, then set `MONGODB_URI` to the Atlas SRV connection string:
-
-```dotenv
-MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
-MONGODB_DATABASE=aevo
-```
-
-Replace `<password>` with the database user's URL-encoded password. For
-example, `@` becomes `%40`. The Atlas URI belongs in the API host's server-side
-environment, not in the Astro app or any `PUBLIC_*` variable.
-
-The API connects with the official MongoDB Node.js driver, keeps a bounded
-connection pool, and fails fast if the cluster cannot be selected. Keep the URI
-in server-side environment variables only; never expose it through Astro
-`PUBLIC_*` variables.
 
 ## Cloudflare deployment
 
-The web app is an Astro static site. The repository-level `wrangler.jsonc`
-uploads the generated `apps/web/dist` directory as a Workers Static Assets
-deployment. Keeping this config at the repository root is intentional: it
-allows Cloudflare's root-level deploy command to resolve the monorepo project.
+The root `wrangler.jsonc` intentionally targets the Worker entrypoint and
+uploads `apps/web/dist` as the `ASSETS` binding. This fixes the previous
+workspace-root detection error: Cloudflare now sees an actual Worker with a
+single deployment for UI and API.
 
-For a Cloudflare Workers build, keep the build command as:
+Build command:
 
 ```bash
 bun run build
 ```
 
-The existing deploy command works with this config:
-
-```bash
-npx wrangler deploy
-```
-
-For a pinned, reproducible command, use:
+Deploy command:
 
 ```bash
 npx --yes wrangler@4.132.0 deploy --config wrangler.jsonc
 ```
 
-The repository also exposes the same deployment as:
+Set these under **Workers & Pages → Settings → Variables and Secrets** for
+Preview and Production. Use **Encrypt** for the Supabase secret:
 
-```bash
-bun run deploy:web
-```
+| Variable | Value |
+| --- | --- |
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_SECRET_KEY` | Supabase server-only Secret key (or `SUPABASE_SERVICE_ROLE_KEY`) |
+| `WEB_ORIGIN` | Exact public Worker origin, e.g. `https://pos.example.com` |
+| `SESSION_COOKIE_NAME` | Optional; default `aevo_session` |
+| `SESSION_COOKIE_SAME_SITE` | Optional; use `lax` for same-origin Worker UI |
+| `LOG_LEVEL` | Optional: `info`, `warn`, `error` or `debug` |
 
-The Astro site is static and does not contain the Bun API process. Deploy the
-Elysia API separately on a Bun-compatible host and set `PUBLIC_API_URL` to that
-API origin when building the web app.
+Do not set `SUPABASE_SECRET_KEY` as `PUBLIC_SUPABASE_*`, do not commit it to
+`wrangler.jsonc`, and do not expose it to the browser. The frontend uses a
+relative `/api` URL in production; `PUBLIC_API_URL` is only needed when running
+the Astro site separately during local development.
 
-When deploying this repository through Cloudflare Workers, configure
-`PUBLIC_API_URL` under the Worker build environment for both Preview and
-Production, then redeploy. It must point to the public Elysia API URL; setting
-it as a runtime secret does not rewrite an already-built Astro bundle. Keep
-`MONGODB_URI`, `MONGODB_DATABASE`, `WEB_ORIGIN`, `SEED_OWNER_EMAIL`,
-`SEED_OWNER_PASSWORD`, and `SEED_INITIAL_ROLE` on the API host or in a one-off
-server-side seed command. Do not put them in `wrangler.jsonc` or `PUBLIC_*`.
+The first user is still created by the one-off `bun run db:seed` command above;
+the Worker deliberately has no public setup endpoint.
 
 ## Environment
 
+See `.env.example` for a complete local template.
+
 | Variable | Purpose |
 | --- | --- |
-| `MONGODB_URI` | MongoDB or MongoDB Atlas connection URI; required |
-| `MONGODB_DATABASE` | Database name, defaults to `aevo` |
-| `WEB_ORIGIN` | Exact browser origin allowed to make credentialed API requests |
-| `API_HOST` / `API_PORT` | API listener, defaults to `0.0.0.0:3001` |
-| `SESSION_COOKIE_NAME` | HttpOnly session cookie name |
-| `SESSION_COOKIE_SAME_SITE` | `lax`, `strict`, or `none`; use `none` only with HTTPS and a cross-site web/API deployment |
-| `SESSION_TTL_HOURS` | Session lifetime, defaults to 168 hours |
-| `LOG_LEVEL` | `debug`, `info`, `warn`, or `error` |
-| `PUBLIC_API_URL` | API origin embedded into the Astro frontend |
-| `TEST_MONGODB_URI` / `TEST_MONGODB_DATABASE` | Integration-test MongoDB target |
-| `SEED_*` | Initial user, role, organization and store values; `SEED_INITIAL_ROLE` supports `OWNER` or `ADMIN` (default `OWNER`) |
-
-## Database foundation
-
-`bun run db:migrate` applies the versioned MongoDB foundation migration. It
-creates collections and indexes for:
-
-- Organization → optional Brand → Store
-- User → Membership → Role → Permission codes
-- Explicit non-owner membership-to-store access
-- Opaque, hashed, revocable sessions with TTL cleanup
-- Domain events and outbox events
-- Tenant-scoped idempotency keys
-- Audit logs
-
-The migration runner records a checksum in `schema_migrations` and fails if an
-already-applied migration is changed. Relational identity fields are modeled as
-document fields, while JSON-like payloads are reserved for immutable event,
-provider and audit metadata.
+| `SUPABASE_URL` | Supabase project URL; required |
+| `SUPABASE_SECRET_KEY` | Server-only key; required (service-role alias accepted) |
+| `WEB_ORIGIN` | Exact origin allowed for credentialed API requests; required |
+| `API_HOST` / `API_PORT` | Local Bun API listener; defaults to `0.0.0.0:3001` |
+| `SESSION_COOKIE_NAME` | HttpOnly cookie name; default `aevo_session` |
+| `SESSION_COOKIE_SAME_SITE` | `lax`, `strict` or `none`; `none` requires production HTTPS |
+| `LOG_LEVEL` | `debug`, `info`, `warn` or `error` |
+| `PUBLIC_API_URL` | Optional API origin for a separately served Astro dev site |
+| `SEED_*` | One-off initial Auth user, role, organization and store values |
 
 ## Verification
 
 ```bash
 bun run typecheck
-bun test
+bun test packages apps
 bun run build
+npx --yes wrangler@4.132.0 deploy --dry-run --config wrangler.jsonc
 ```
 
-`bun test` runs unit tests everywhere and runs the MongoDB tenant-isolation test
-when `TEST_MONGODB_URI` is set. CI starts MongoDB, applies migrations,
-type-checks, runs all tests, and builds both applications.
+The checked-in tests cover Supabase Auth adapter behavior, login/logout cookies,
+RBAC, tenant-safe store access, request IDs, readiness/error responses and
+Worker API-vs-assets routing. A live Supabase query should be run after setting
+your project secrets (`bun run db:seed` performs several authenticated queries);
+this repository does not contain or guess your project credentials.
 
 ## Security decisions
 
-- Passwords use Bun Argon2id.
-- Raw session tokens are only sent in HttpOnly, SameSite cookies; only hashes are persisted.
-- Production cookies are marked Secure.
-- The requested organization header is treated only as a selector and must match an active membership.
-- Store reads include the principal's organization and explicit store authorization.
-- Login has a basic per-process rate limiter. Replace it with a shared limiter before horizontally scaling the API.
-- Structured logger excludes password/token/secret/cookie fields.
-- MongoDB Atlas credentials stay server-side and should be managed with deployment secret storage.
+- Supabase Auth handles password hashing, JWT signing and refresh rotation.
+- Access/refresh tokens are stored only in an HttpOnly, SameSite cookie; no
+  token is placed in the Astro bundle.
+- Production cookies are marked `Secure`.
+- Every principal is resolved from an active Supabase user profile and active
+  tenant membership; the requested organization header is only a selector.
+- Store reads are constrained by organization and explicit membership-store
+  access (OWNER/ADMIN are elevated by role).
+- Login has a per-Worker rate limiter; use a shared limiter before scaling to
+  multiple Worker instances if needed.
+- Domain/outbox/idempotency/audit tables have no browser write policies.
+- Structured logs exclude password, token, cookie and integration-secret data.
 
 ## Known Phase 0 limitations
 
-- No self-service registration, password reset, MFA, or passkeys.
-- No UI for switching between multiple organization memberships yet.
-- The in-memory login limiter is instance-local.
-- Device identity, WebSocket rooms, offline cache, domain-specific orders, catalog and integrations belong to later phases.
-- The current staff cards prove authorized store retrieval but remain disabled until the first operational workspace is implemented.
-- MongoDB transactions are exposed by the database adapter for later order/outbox commands; the Phase 0 seed is idempotent and also works against a standalone local MongoDB container.
+- No self-service registration, password reset, MFA or passkeys UI.
+- No organization switcher UI when a user belongs to multiple organizations.
+- The login limiter is instance-local.
+- Device identity, WebSocket rooms, offline POS, orders, catalog and external
+  integrations belong to later phases.
+- The staff cards prove authorized store retrieval; operational workspaces are
+  intentionally placeholders until Phase 1/2.
+- Transactional order/outbox commands should use a Postgres function/RPC or a
+  server-side transaction when those domains are implemented; the current
+  foundation only reads through PostgREST.
 
 ## Recommended Phase 1 order
 
 1. Categories, products and variants with organization-scoped SKU constraints.
-2. Modifier groups/modifiers and variant-independent menu composition.
-3. Menus and menu items with store/channel availability.
-4. Store sold-out overrides and effective-availability queries.
+2. Modifier groups/modifiers and flexible menu composition.
+3. Menus/menu items with store and channel availability.
+4. Sold-out overrides and effective-availability queries.
 5. Catalog administration UI and audit events.
 6. Coffee-shop acceptance fixture covering size, temperature, milk and extras.

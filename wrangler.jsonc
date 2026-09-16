@@ -1,9 +1,12 @@
 {
   "$schema": "https://unpkg.com/wrangler@4.132.0/config-schema.json",
-  "name": "aevo-pos-web",
+  "name": "aevo-pos",
   "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./apps/worker/src/index.ts",
   "assets": {
     "directory": "./apps/web/dist",
+    "binding": "ASSETS",
     "not_found_handling": "404-page"
   }
 }
