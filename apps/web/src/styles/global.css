@@ -1,0 +1,37 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #19231f;
+  background: #f4f6f2;
+  --ink: #19231f;
+  --muted: #69736e;
+  --paper: #fff;
+  --line: #dce3de;
+  --brand: #185f48;
+  --brand-dark: #104736;
+  --focus: #f0b429;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input { font: inherit; }
+button { min-height: 44px; }
+a { color: inherit; }
+.shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+.topbar { min-height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; background: var(--paper); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; }
+.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: white; background: var(--brand); }
+.page { width: min(1180px, 100%); margin: 0 auto; padding: 32px 24px 64px; }
+.eyebrow { margin: 0 0 6px; color: var(--brand); font-size: .8rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3.2rem); line-height: 1.05; letter-spacing: -.045em; }
+.lede { max-width: 680px; color: var(--muted); line-height: 1.6; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 14px 40px rgba(26, 48, 39, .06); }
+.button { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 12px; padding: 0 18px; min-height: 46px; background: var(--brand); color: white; font-weight: 750; cursor: pointer; text-decoration: none; }
+.button:hover { background: var(--brand-dark); }
+.button.secondary { background: white; border: 1px solid var(--line); color: var(--ink); }
+.button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus), transparent 35%); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 7px; font-size: .84rem; color: var(--muted); }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #23a36d; }
+.error { padding: 12px 14px; border-radius: 10px; color: #8b2525; background: #fff0ef; border: 1px solid #f5cfcc; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) { .topbar, .page { padding-left: 16px; padding-right: 16px; } }

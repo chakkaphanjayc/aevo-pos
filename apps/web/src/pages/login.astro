@@ -1,0 +1,41 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Sign in">
+  <main class="login-page">
+    <a class="brand" href="/"><span class="brand-mark">A</span> Aevo</a>
+    <form class="card" id="login-form">
+      <p class="eyebrow">Staff access</p>
+      <h1>ยินดีต้อนรับกลับ</h1>
+      <p class="muted">เข้าสู่ระบบเพื่อเลือกองค์กร ร้าน และ workspace ที่ได้รับอนุญาต</p>
+      <label>อีเมล<input name="email" type="email" autocomplete="username" required /></label>
+      <label>รหัสผ่าน<input name="password" type="password" autocomplete="current-password" required /></label>
+      <p class="error" id="error" role="alert" hidden></p>
+      <button class="button" type="submit">เข้าสู่ระบบ</button>
+    </form>
+  </main>
+  <script>
+    import { api } from "../lib/api";
+    const form = document.querySelector<HTMLFormElement>("#login-form")!;
+    const error = document.querySelector<HTMLParagraphElement>("#error")!;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); error.hidden = true;
+      const button = form.querySelector<HTMLButtonElement>("button")!;
+      const data = new FormData(form); button.disabled = true; button.textContent = "กำลังเข้าสู่ระบบ…";
+      try {
+        await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: data.get("email"), password: data.get("password") }) });
+        window.location.assign("/staff");
+      } catch (cause) {
+        error.textContent = cause instanceof Error ? cause.message : "เข้าสู่ระบบไม่สำเร็จ"; error.hidden = false;
+      } finally { button.disabled = false; button.textContent = "เข้าสู่ระบบ"; }
+    });
+  </script>
+  <style>
+    .login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(280px, 460px); place-content: center; gap: 28px; padding: 24px; background: radial-gradient(circle at 15% 10%, #d7eee4, transparent 32%), #f4f6f2; }
+    .brand { text-decoration: none; }
+    form { padding: clamp(24px, 5vw, 42px); display: grid; gap: 18px; }
+    form h1 { font-size: 2rem; }
+    label { display: grid; gap: 7px; font-weight: 700; }
+    input { min-height: 48px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+  </style>
+</BaseLayout>

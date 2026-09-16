@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Store Operations">
+  <main class="landing">
+    <div class="brand"><span class="brand-mark">A</span> Aevo</div>
+    <section>
+      <p class="eyebrow">Store operations, one foundation</p>
+      <h1>Run every store surface<br />from one secure core.</h1>
+      <p class="lede">Phase 0 establishes authentication, organization boundaries, store access and permissions. Ordering workspaces will be added on this foundation.</p>
+      <a class="button" href="/login">เข้าสู่ระบบพนักงาน</a>
+    </section>
+  </main>
+  <style>
+    .landing { min-height: 100vh; padding: 28px clamp(20px, 6vw, 80px); display: grid; align-content: space-between; background: radial-gradient(circle at 80% 15%, #d7eee4, transparent 36%), #f4f6f2; }
+    section { padding: 14vh 0 18vh; }
+    .button { margin-top: 18px; }
+  </style>
+</BaseLayout>

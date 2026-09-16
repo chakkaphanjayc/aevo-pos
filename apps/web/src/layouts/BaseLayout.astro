@@ -1,0 +1,16 @@
+---
+import "../styles/global.css";
+interface Props { title: string }
+const { title } = Astro.props;
+---
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#185f48" />
+    <meta name="description" content="Aevo Store Operations Platform" />
+    <title>{title} · Aevo</title>
+  </head>
+  <body><slot /></body>
+</html>

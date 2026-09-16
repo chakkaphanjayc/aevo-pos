@@ -1,0 +1,9 @@
+{
+  "name": "@aevo/api", "version": "0.0.1", "private": true, "type": "module",
+  "scripts": { "dev": "bun --watch src/index.ts", "start": "bun src/index.ts", "typecheck": "tsc --noEmit", "test": "bun test", "build": "bun build src/index.ts --target bun --outdir dist" },
+  "dependencies": {
+    "@aevo/auth": "workspace:*", "@aevo/config": "workspace:*", "@aevo/contracts": "workspace:*",
+    "@aevo/db": "workspace:*", "elysia": "^1.4.15"
+  },
+  "devDependencies": { "@types/bun": "^1.2.21", "typescript": "^5.9.2" }
+}
