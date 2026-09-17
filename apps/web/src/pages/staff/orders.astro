@@ -200,12 +200,116 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       try {
         const result = await api<{ order: OrderSummary }>(`/api/orders/${encodeURIComponent(orderId)}?storeId=${encodeURIComponent(selectedStoreId)}`);
         const order = result.order;
+        const canVoid = order.status !== "CANCELLED" && order.status !== "COMPLETED" && order.status !== "REFUNDED";
+        const canRefund = order.status === "PAID" || order.status === "COMPLETED" || order.status === "CONFIRMED";
+
         detail.innerHTML = `
           <div class="order-detail-meta"><div><span>เลขออเดอร์</span><strong>${escapeHtml(order.orderNumber)}</strong></div><div><span>สถานะ</span><strong class="detail-status" data-status="${order.status}">${escapeHtml(statusLabels[order.status] ?? order.status)}</strong></div><div><span>ประเภท</span><strong>${escapeHtml(fulfillmentLabels[order.fulfillmentType] ?? order.fulfillmentType)}</strong></div><div><span>เวลา</span><strong>${new Date(order.createdAt).toLocaleString("th-TH")}</strong></div></div>
           <div class="order-detail-items">${order.items.map((item) => `<div class="order-detail-item"><div><strong>${escapeHtml(item.productName)}${item.variantName ? ` · ${escapeHtml(item.variantName)}` : ""}</strong><small>${item.quantity} × ${money(item.unitPriceMinor, order.currency)}${item.modifiers.length ? ` · ${item.modifiers.map((modifier) => escapeHtml(modifier.name)).join(", ")}` : ""}</small></div><strong>${money(item.subtotalMinor, order.currency)}</strong></div>`).join("")}</div>
           <div class="order-detail-total"><span>ยอดรวม</span><strong>${money(order.totalMinor, order.currency)}</strong></div>
           ${order.customerName ? `<p class="order-detail-customer">ลูกค้า: ${escapeHtml(order.customerName)}</p>` : ""}
+          <div class="order-detail-actions">
+            <button id="btn-view-receipt" class="button secondary" type="button">🧾 ใบเสร็จรับเงิน</button>
+            ${canVoid ? `<button id="btn-void-order" class="button secondary order-action-void" type="button">🚫 ยกเลิก (Void)</button>` : ""}
+            ${canRefund ? `<button id="btn-refund-order" class="button secondary order-action-refund" type="button">💸 คืนเงิน (Refund)</button>` : ""}
+          </div>
+          <div id="receipt-preview-area" class="receipt-preview-area"></div>
         `;
+
+        // Wire View Receipt
+        document.getElementById("btn-view-receipt")?.addEventListener("click", async () => {
+          const area = document.getElementById("receipt-preview-area")!;
+          area.style.display = "block";
+          area.innerHTML = '<p class="receipt-preview-loading">กำลังโหลดใบเสร็จ…</p>';
+          try {
+            const res = await api<{ receipt: any; thermalText?: string }>(
+              `/api/orders/${encodeURIComponent(order.id)}/receipt?storeId=${encodeURIComponent(selectedStoreId)}&format=thermal`
+            );
+            area.innerHTML = `
+              <div class="receipt-thermal-view">${escapeHtml(res.thermalText || JSON.stringify(res.receipt, null, 2))}</div>
+              <div class="receipt-actions-row">
+                <button id="btn-reprint-receipt" class="button secondary" type="button">🖨️ พิมพ์ซ้ำ (Reprint)</button>
+              </div>
+            `;
+            document.getElementById("btn-reprint-receipt")?.addEventListener("click", async () => {
+              try {
+                const rep = await api<{ receipt: any; thermalText?: string }>(`/api/receipts/${encodeURIComponent(res.receipt.id)}/reprint`, {
+                  method: "POST",
+                  body: JSON.stringify({ storeId: selectedStoreId })
+                });
+                alert(`พิมพ์ซ้ำสำเร็จ (ครั้งที่ ${rep.receipt.reprintCount})`);
+                window.print();
+              } catch (cause) {
+                alert(friendlyErrorMessage(cause, "พิมพ์ซ้ำไม่สำเร็จ"));
+              }
+            });
+          } catch {
+            area.innerHTML = `
+              <p class="receipt-preview-empty">ยังไม่มีใบเสร็จในระบบ</p>
+              <button id="btn-generate-receipt" class="button" type="button">สร้างใบเสร็จตอนนี้</button>
+            `;
+            document.getElementById("btn-generate-receipt")?.addEventListener("click", async () => {
+              try {
+                await api("/api/receipts", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    storeId: selectedStoreId,
+                    orderId: order.id,
+                    cashierName: "Staff"
+                  })
+                });
+                alert("สร้างใบเสร็จเรียบร้อยแล้ว");
+                document.getElementById("btn-view-receipt")?.click();
+              } catch (cause) {
+                alert(friendlyErrorMessage(cause, "สร้างใบเสร็จไม่สำเร็จ"));
+              }
+            });
+          }
+        });
+
+        // Wire Void Order
+        document.getElementById("btn-void-order")?.addEventListener("click", async () => {
+          const reason = window.prompt("กรุณาระบุเหตุผลในการยกเลิกออเดอร์ (Void Reason):", "ลูกค้าขอยกเลิก");
+          if (!reason || !reason.trim()) return;
+          try {
+            await api(`/api/orders/${encodeURIComponent(order.id)}/transition`, {
+              method: "POST",
+              headers: { "Idempotency-Key": `void-${order.id}-${Date.now()}` },
+              body: JSON.stringify({
+                storeId: selectedStoreId,
+                toStatus: "CANCELLED",
+                reason: reason.trim()
+              })
+            });
+            alert("ยกเลิกออเดอร์ (Void) สำเร็จ");
+            dialog.close();
+            await loadOrders();
+          } catch (cause) {
+            alert(friendlyErrorMessage(cause, "ยกเลิกออเดอร์ไม่สำเร็จ"));
+          }
+        });
+
+        // Wire Refund Order
+        document.getElementById("btn-refund-order")?.addEventListener("click", async () => {
+          const reason = window.prompt("กรุณาระบุเหตุผลในการคืนเงิน (Refund Reason):", "สินค้ามีปัญหา / ลูกค้าขอคืนเงิน");
+          if (!reason || !reason.trim()) return;
+          try {
+            await api(`/api/orders/${encodeURIComponent(order.id)}/transition`, {
+              method: "POST",
+              headers: { "Idempotency-Key": `refund-${order.id}-${Date.now()}` },
+              body: JSON.stringify({
+                storeId: selectedStoreId,
+                toStatus: "REFUNDED",
+                reason: reason.trim()
+              })
+            });
+            alert("บันทึกการคืนเงิน (Refund) สำเร็จ");
+            dialog.close();
+            await loadOrders();
+          } catch (cause) {
+            alert(friendlyErrorMessage(cause, "คืนเงินไม่สำเร็จ"));
+          }
+        });
       } catch (cause) {
         detail.innerHTML = `<div class="empty-state"><strong>โหลดรายละเอียดไม่ได้</strong><p>${escapeHtml(friendlyErrorMessage(cause, "กรุณาลองใหม่อีกครั้ง"))}</p></div>`;
       }
@@ -322,6 +426,15 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     .order-detail-total { display: flex; justify-content: space-between; padding-top: 15px; border-top: 1px solid var(--line); font-size: .82rem; }
     .order-detail-total strong { color: var(--brand); font-size: 1.15rem; }
     .order-detail-customer { margin: 16px 0 0; color: var(--muted); font-size: .76rem; }
+    .order-detail-actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .order-action-void { color: var(--danger, #c62828) !important; border-color: var(--danger, #c62828) !important; }
+    .order-action-void:hover { background: var(--danger-soft, #fdf2f2) !important; }
+    .order-action-refund { color: var(--warning, #b45309) !important; border-color: var(--warning, #b45309) !important; }
+    .order-action-refund:hover { background: var(--warning-soft, #fffbeb) !important; }
+    .receipt-preview-area { display: none; margin-top: 14px; background: var(--surface-soft, #f9fbf9); border: 1px dashed var(--line); border-radius: var(--radius-md, 10px); padding: 12px; }
+    .receipt-preview-loading, .receipt-preview-empty { color: var(--muted); font-size: 0.85rem; margin: 0 0 8px; }
+    .receipt-thermal-view { font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; line-height: 1.4; background: var(--surface, #ffffff); padding: 10px; border-radius: var(--radius-sm, 8px); border: 1px solid var(--line); max-height: 220px; overflow-y: auto; }
+    .receipt-actions-row { display: flex; gap: 8px; margin-top: 8px; }
     @media (max-width: 800px) { .orders-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 620px) { .orders-header-actions { margin-top: 18px; } .orders-header-actions .button { flex: 1; } .orders-summary { gap: 8px; margin-top: 22px; } .orders-summary-item { padding: 12px; } .orders-toolbar { align-items: stretch; flex-direction: column; } .orders-filter { min-width: 0; } .orders-panel-heading { padding-left: 15px; padding-right: 15px; } .orders-toolbar { padding-left: 15px; padding-right: 15px; } .orders-table-head, .order-row, .orders-loading-row { padding-left: 15px; padding-right: 15px; } }
   </style>

@@ -1,5 +1,6 @@
 import type { SessionPrincipal, StoreSummary } from "@aevo/contracts";
 import { api, ApiError } from "./api";
+import { enforceDeviceMode } from "./device-mode";
 
 export interface StaffContext {
   user: SessionPrincipal;
@@ -137,6 +138,17 @@ function updateStoreLabel(store?: StoreSummary): void {
   });
 }
 
+function updatePermissionVisibility(permissions: SessionPrincipal["permissions"]): void {
+  const granted = new Set(permissions);
+  document.querySelectorAll<HTMLElement>("[data-staff-permission]").forEach((element) => {
+    const required = element.dataset.staffPermission;
+    if (!required) return;
+    const visible = granted.has(required as SessionPrincipal["permissions"][number]);
+    element.hidden = !visible;
+    element.setAttribute("aria-hidden", String(!visible));
+  });
+}
+
 function setConnectionState(): void {
   const status = document.querySelector<HTMLElement>("[data-staff-connection]");
   if (!status) return;
@@ -159,6 +171,7 @@ function setDrawerOpen(open: boolean): void {
 }
 
 export function initStaffShell(options: StaffShellOptions): () => void {
+  enforceDeviceMode();
   let selectedStoreId = options.selectedStoreId && options.stores.some((store) => store.id === options.selectedStoreId)
     ? options.selectedStoreId
     : "";
@@ -177,6 +190,7 @@ export function initStaffShell(options: StaffShellOptions): () => void {
   if (userName) userName.textContent = options.user.displayName || options.user.email;
   if (userRole) userRole.textContent = roleLabels[options.user.role] ?? options.user.role;
   if (tenant) tenant.textContent = `องค์กร · ${options.user.organizationId.slice(0, 8)}`;
+  updatePermissionVisibility(options.user.permissions);
 
   if (select) {
     select.replaceChildren();

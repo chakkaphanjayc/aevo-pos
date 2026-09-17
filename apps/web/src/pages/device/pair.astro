@@ -1,0 +1,68 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="จับคู่อุปกรณ์ — Aevo">
+  <main class="device-pair-page">
+    <section class="device-pair-card">
+      <div class="device-pair-logo">A</div>
+      <span class="device-pair-eyebrow">AEVO DEVICE SETUP</span>
+      <h1>จับคู่อุปกรณ์</h1>
+      <p>กรอกรหัส 8 หลักที่ผู้ดูแลสร้างจากหน้า “จัดการอุปกรณ์” เพื่อกำหนดโหมดการใช้งานให้เครื่องนี้</p>
+      <form id="pair-form">
+        <label for="pairing-code">รหัสจับคู่</label>
+        <input id="pairing-code" required minlength="6" maxlength="32" autocomplete="one-time-code" inputmode="text" placeholder="เช่น 4F8A2C19" />
+        <button class="pair-submit" type="submit" id="pair-submit">จับคู่อุปกรณ์</button>
+      </form>
+      <p class="pair-error" id="pair-error" hidden role="alert"></p>
+      <p class="pair-hint">รหัสมีอายุ 10 นาทีและใช้ได้ครั้งเดียว</p>
+    </section>
+  </main>
+</BaseLayout>
+
+<style is:global>
+  .device-pair-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--canvas, #f5f8f5); }
+  .device-pair-card { width: min(420px, 100%); display: grid; gap: 14px; padding: 34px; border: 1px solid var(--line, #dce8df); border-radius: 24px; background: var(--surface, #fff); box-shadow: var(--shadow-md, 0 12px 32px rgba(23,99,72,.1)); }
+  .device-pair-logo { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--brand, #176348); color: #fff; font-size: 1.7rem; font-weight: 800; }
+  .device-pair-eyebrow { color: var(--brand, #176348); font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+  .device-pair-card h1 { margin: 0; color: var(--ink, #1b2a22); }
+  .device-pair-card p { margin: 0; color: var(--muted, #66756c); line-height: 1.6; }
+  #pair-form { display: grid; gap: 8px; margin-top: 8px; }
+  #pair-form label { color: var(--muted, #66756c); font-size: .82rem; font-weight: 700; }
+  #pairing-code { min-height: 52px; padding: 0 14px; border: 1px solid var(--line, #dce8df); border-radius: 12px; color: var(--ink, #1b2a22); font: 800 1.3rem ui-monospace, monospace; letter-spacing: .15em; text-transform: uppercase; text-align: center; }
+  .pair-submit { min-height: 48px; margin-top: 6px; border: 0; border-radius: 12px; background: var(--brand, #176348); color: white; font: inherit; font-weight: 800; cursor: pointer; }
+  .pair-submit:disabled { opacity: .6; cursor: wait; }
+  .pair-error { color: #b42318 !important; font-size: .84rem; }
+  .pair-hint { font-size: .76rem; }
+</style>
+
+<script>
+  import { api, ApiError } from "../../lib/api";
+  import type { DeviceSummary } from "@aevo/contracts";
+
+  const form = document.querySelector<HTMLFormElement>("#pair-form")!;
+  const input = document.querySelector<HTMLInputElement>("#pairing-code")!;
+  const submit = document.querySelector<HTMLButtonElement>("#pair-submit")!;
+  const error = document.querySelector<HTMLElement>("#pair-error")!;
+  const destination: Record<DeviceSummary["mode"], (storeCode: string) => string> = {
+    POS: () => "/staff/pos",
+    KIOSK: (storeCode) => `/kiosk/${encodeURIComponent(storeCode)}`,
+    KDS: () => "/staff/kds",
+    QUEUE_DISPLAY: (storeCode) => `/queue/${encodeURIComponent(storeCode)}`
+  };
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    error.hidden = true;
+    try {
+      const result = await api<{ device: DeviceSummary; deviceToken: string; storeCode: string }>("/api/devices/pair", { method: "POST", body: JSON.stringify({ pairingCode: input.value.trim() }) });
+      localStorage.setItem("aevo.device.session.v1", JSON.stringify({ deviceToken: result.deviceToken, device: result.device, storeCode: result.storeCode, pairedAt: Date.now() }));
+      window.location.assign(destination[result.device.mode](result.storeCode));
+    } catch (cause) {
+      error.textContent = cause instanceof ApiError ? cause.message : "จับคู่อุปกรณ์ไม่สำเร็จ กรุณาตรวจสอบรหัสอีกครั้ง";
+      error.hidden = false;
+      submit.disabled = false;
+    }
+  });
+</script>

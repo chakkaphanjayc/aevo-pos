@@ -1,13 +1,15 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 
-const { store: storeCode } = Astro.params;
+const { store: storeCode = "" } = Astro.params as { store?: string };
 
 // The Worker currently deploys the web app as static assets. Store codes are
 // tenant data and cannot be enumerated safely at build time, so this route is
 // intentionally left to the runtime/dev router until a server adapter is used.
 export function getStaticPaths() {
-  return [];
+  // Store codes are tenant data and cannot be enumerated at build time. The
+  // Worker rewrites /order/:store to this runtime shell asset.
+  return [{ params: { store: "__runtime__" } }];
 }
 ---
 <BaseLayout title="สั่งอาหารออนไลน์">
@@ -159,6 +161,7 @@ export function getStaticPaths() {
         </div>
 
         <p class="qr-success-hint">กรุณารอรับอาหารตามคิว หรือติดต่อเคาน์เตอร์แคชเชียร์</p>
+        <a class="qr-btn qr-btn-secondary qr-track-link" id="success-track-link" href="#" hidden>ติดตามออเดอร์</a>
         <button class="qr-btn qr-btn-primary qr-done-btn" id="success-done-btn" type="button">
           สั่งอาหารเพิ่ม
         </button>
@@ -186,7 +189,10 @@ export function getStaticPaths() {
     } from "../../lib/qr-cart";
 
     const appEl = document.getElementById("qr-app")!;
-    const storeCode = appEl.dataset.storeCode || "";
+    const configuredStoreCode = appEl.dataset.storeCode || "";
+    const storeCode = configuredStoreCode !== "__runtime__"
+      ? configuredStoreCode
+      : decodeURIComponent(window.location.pathname.split("/")[2] || "");
 
     // Parse optional table from URL query (?table=...)
     const queryParams = new URLSearchParams(window.location.search);
@@ -640,6 +646,11 @@ export function getStaticPaths() {
         document.getElementById("success-order-num")!.textContent = order.orderNumber;
         const metaText = `ร้าน ${catalog?.store.name ?? ""} · ${order.fulfillmentType === "DINE_IN" ? (tableNumber ? `โต๊ะ ${tableNumber}` : "ทานที่ร้าน") : "ซื้อกลับ"}`;
         document.getElementById("success-order-meta")!.textContent = metaText;
+        const trackingLink = document.getElementById("success-track-link") as HTMLAnchorElement;
+        if (order.publicTrackingToken) {
+          trackingLink.href = `/order/${encodeURIComponent(storeCode)}/track/${encodeURIComponent(order.publicTrackingToken)}`;
+          trackingLink.hidden = false;
+        }
 
         successModal.showModal();
       } catch (cause) {
@@ -1159,6 +1170,11 @@ export function getStaticPaths() {
     .qr-btn-primary:hover:not([disabled]) {
       background: var(--qr-brand-hover);
     }
+    .qr-btn-secondary {
+      border: 1px solid var(--qr-line);
+      background: var(--qr-card);
+      color: var(--qr-brand);
+    }
     .qr-btn:disabled {
       opacity: .5;
       cursor: not-allowed;
@@ -1213,6 +1229,7 @@ export function getStaticPaths() {
       color: var(--qr-muted);
       margin-bottom: 24px;
     }
+    .qr-track-link { display: flex; text-decoration: none; margin: 8px 0; }
     .qr-done-btn {
       width: 100%;
     }

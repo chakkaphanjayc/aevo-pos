@@ -1,0 +1,1407 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const { store: storeCode = "" } = Astro.params as { store?: string };
+
+export function getStaticPaths() {
+  return [{ params: { store: "__runtime__" } }];
+}
+---
+
+<BaseLayout title="ตู้สั่งอาหารอัตโนมัติ (Kiosk)">
+  <div class="kiosk-wrapper" id="kiosk-app" data-store-code={storeCode || ""}>
+    <!-- Attract Screen (Overlay) -->
+    <div class="kiosk-attract-screen" id="attract-screen">
+      <div class="attract-content">
+        <div class="attract-logo-mark">A</div>
+        <h1 class="attract-store-title" id="attract-store-name">กำลังโหลดร้านค้า…</h1>
+        <p class="attract-tagline">แตะหน้าจอเพื่อเริ่มสั่งอาหาร</p>
+        <div class="attract-tap-indicator">
+          <span class="tap-ring"></span>
+          <span class="tap-hand">👆</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fulfillment Type Screen (Modal/Step) -->
+    <div class="kiosk-modal-backdrop" id="fulfillment-screen" hidden>
+      <div class="fulfillment-card">
+        <h2>กรุณาเลือกรูปแบบการรับประทาน</h2>
+        <div class="fulfillment-options">
+          <button class="fulfillment-btn" id="btn-dine-in" type="button">
+            <span class="fulfillment-icon">🍽️</span>
+            <span class="fulfillment-label">ทานที่ร้าน (Dine-in)</span>
+          </button>
+          <button class="fulfillment-btn" id="btn-takeaway" type="button">
+            <span class="fulfillment-icon">🛍️</span>
+            <span class="fulfillment-label">สั่งกลับบ้าน (Takeaway)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Kiosk Interface -->
+    <div class="kiosk-main-layout" id="main-interface" hidden>
+      <!-- Top Header -->
+      <header class="kiosk-top-header">
+        <div class="kiosk-header-left">
+          <button class="kiosk-btn-home" id="btn-restart" type="button" title="เริ่มใหม่">
+            <span>🏠</span>
+            <span>เริ่มใหม่</span>
+          </button>
+          <div class="kiosk-store-info">
+            <h2 id="kiosk-store-title">ร้านค้า</h2>
+            <span class="kiosk-fulfillment-pill" id="kiosk-fulfillment-badge">ทานที่ร้าน</span>
+          </div>
+        </div>
+        <div class="kiosk-header-right">
+          <button class="kiosk-btn-lang" type="button">🇹🇭 ไทย</button>
+        </div>
+      </header>
+
+      <div class="kiosk-body-split">
+        <!-- Categories Sidebar -->
+        <aside class="kiosk-category-sidebar">
+          <div class="kiosk-cat-list" id="kiosk-cat-list">
+            <button class="kiosk-cat-btn active" data-category="all" type="button">
+              <span>🍽️</span>
+              <span>ทั้งหมด</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- Product Grid Area -->
+        <main class="kiosk-products-view">
+          <div class="kiosk-product-grid" id="kiosk-product-grid"></div>
+        </main>
+      </div>
+
+      <!-- Bottom Order Tray Bar -->
+      <footer class="kiosk-tray-footer">
+        <div class="kiosk-tray-summary">
+          <div class="kiosk-tray-qty-pill">
+            <span id="tray-total-qty">0</span> รายการ
+          </div>
+          <div class="kiosk-tray-price">
+            <small>ยอดรวมทั้งหมด</small>
+            <strong id="tray-total-price">฿0.00</strong>
+          </div>
+        </div>
+        <div class="kiosk-tray-actions">
+          <button class="kiosk-tray-btn clear" id="btn-clear-cart" type="button">
+            🗑️ ล้างตะกร้า
+          </button>
+          <button class="kiosk-tray-btn checkout" id="btn-checkout" type="button" disabled>
+            <span>ดำเนินการต่อ ➔</span>
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Modifier Selection Dialog -->
+    <dialog class="kiosk-dialog" id="modifier-dialog">
+      <div class="kiosk-dialog-card">
+        <header class="kiosk-dialog-header">
+          <div>
+            <h3 id="mod-product-name">ชื่อสินค้า</h3>
+            <span class="kiosk-dialog-price" id="mod-product-price">฿0.00</span>
+          </div>
+          <button class="kiosk-dialog-close" id="mod-dialog-close" type="button">✕</button>
+        </header>
+        <div class="kiosk-dialog-body" id="mod-dialog-body"></div>
+        <footer class="kiosk-dialog-footer">
+          <div class="kiosk-qty-control">
+            <button class="kiosk-qty-btn" id="mod-qty-minus" type="button">-</button>
+            <span class="kiosk-qty-val" id="mod-qty-value">1</span>
+            <button class="kiosk-qty-btn" id="mod-qty-plus" type="button">+</button>
+          </div>
+          <button class="kiosk-btn-add" id="mod-btn-add" type="button">
+            <span>ใส่ตะกร้า</span>
+            <strong id="mod-subtotal-price">฿0.00</strong>
+          </button>
+        </footer>
+      </div>
+    </dialog>
+
+    <!-- Payment & Checkout Dialog -->
+    <dialog class="kiosk-dialog" id="checkout-dialog">
+      <div class="kiosk-dialog-card checkout-card">
+        <header class="kiosk-dialog-header">
+          <h3>เลือกวิธีการชำระเงิน</h3>
+          <button class="kiosk-dialog-close" id="checkout-dialog-close" type="button">✕</button>
+        </header>
+        <div class="kiosk-dialog-body">
+          <div class="checkout-total-banner">
+            <span>ยอดชำระสุทธิ</span>
+            <strong id="checkout-amount-text">฿0.00</strong>
+          </div>
+          <div class="payment-method-choices">
+            <button class="pay-method-btn active" id="pay-promptpay" type="button">
+              <span class="pay-icon">📱</span>
+              <strong>PromptPay QR</strong>
+              <small>สแกนจ่ายผ่านแอปธนาคาร</small>
+            </button>
+            <button class="pay-method-btn" id="pay-cash" type="button">
+              <span class="pay-icon">💵</span>
+              <strong>ชำระที่เคาน์เตอร์</strong>
+              <small>แจ้งเบอร์คิวและจ่ายเงินสด</small>
+            </button>
+          </div>
+
+          <!-- PromptPay QR Demo Box -->
+          <div class="promptpay-box" id="promptpay-box">
+            <div class="promptpay-qr-placeholder">
+              <div class="qr-matrix">
+                <span>QR CODE</span>
+              </div>
+            </div>
+            <p class="promptpay-note">กรุณาสแกน QR เพื่อชำระเงิน แล้วกด "ยืนยันการสั่ง"</p>
+          </div>
+        </div>
+        <footer class="kiosk-dialog-footer">
+          <button class="kiosk-confirm-order-btn" id="btn-confirm-order" type="button">
+            ✓ ยืนยันการสั่งซื้อ
+          </button>
+        </footer>
+      </div>
+    </dialog>
+
+    <!-- Order Completed Screen -->
+    <div class="kiosk-modal-backdrop" id="success-screen" hidden>
+      <div class="success-card">
+        <div class="success-check-icon">✓</div>
+        <h2>การสั่งซื้อสำเร็จ!</h2>
+        <p class="success-hint">กรุณารับใบเสร็จและรอเรียกคิวทางหน้าจอทีวี</p>
+        <div class="success-queue-box">
+          <small>หมายเลขคิวของคุณ</small>
+          <strong class="success-queue-num" id="success-queue-number">Q-001</strong>
+          <span class="success-order-num" id="success-order-number">SO-0000</span>
+        </div>
+        <p class="success-auto-reset">หน้าจอจะกลับสู่หน้าหลักใน <span id="success-countdown">10</span> วินาที</p>
+        <button class="kiosk-done-reset-btn" id="btn-success-reset" type="button">
+          เสร็จสิ้น (เรียบร้อย)
+        </button>
+      </div>
+    </div>
+
+    <!-- Idle Timeout Warning Modal -->
+    <div class="kiosk-modal-backdrop idle-modal" id="idle-warning" hidden>
+      <div class="idle-card">
+        <div class="idle-icon">⏱️</div>
+        <h3>คุณยังใช้งานอยู่หรือไม่?</h3>
+        <p>หากไม่มีการใช้งาน หน้าจอจะเริ่มใหม่ใน</p>
+        <div class="idle-countdown" id="idle-seconds">15</div>
+        <button class="button primary kiosk-idle-btn" id="btn-continue-session" type="button">
+          ใช้งานต่อ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .kiosk-wrapper {
+      position: fixed;
+      inset: 0;
+      background: #090d13;
+      color: #f0f6fc;
+      font-family: inherit;
+      user-select: none;
+      -webkit-user-select: none;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Attract Screen */
+    .kiosk-attract-screen {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, #1b263b 0%, #090d13 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      cursor: pointer;
+    }
+
+    .attract-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+
+    .attract-logo-mark {
+      width: 120px;
+      height: 120px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      font-weight: 900;
+      color: #fff;
+      box-shadow: 0 0 50px rgba(35, 134, 54, 0.4);
+    }
+
+    .attract-store-title {
+      font-size: 3rem;
+      font-weight: 800;
+      margin: 0;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+
+    .attract-tagline {
+      font-size: 1.5rem;
+      color: #8b949e;
+      margin: 0;
+    }
+
+    .attract-tap-indicator {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1rem;
+    }
+
+    .tap-hand {
+      font-size: 2.5rem;
+      animation: tapBounce 1.5s infinite;
+    }
+
+    .tap-ring {
+      position: absolute;
+      inset: 0;
+      border: 3px solid #58a6ff;
+      border-radius: 50%;
+      animation: ringExpand 1.5s infinite;
+    }
+
+    @keyframes tapBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    @keyframes ringExpand {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    /* Modal Backdrop */
+    .kiosk-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 90;
+      padding: 2rem;
+    }
+
+    /* Fulfillment Selection */
+    .fulfillment-card {
+      background: #161b22;
+      border: 2px solid #30363d;
+      border-radius: 24px;
+      padding: 3rem 2.5rem;
+      text-align: center;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .fulfillment-card h2 {
+      font-size: 1.75rem;
+      margin: 0 0 2rem;
+      color: #f0f6fc;
+    }
+
+    .fulfillment-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .fulfillment-btn {
+      height: 180px;
+      background: #21262d;
+      border: 2px solid #30363d;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      color: #fff;
+    }
+
+    .fulfillment-btn:hover {
+      border-color: #58a6ff;
+      background: #28303a;
+      transform: translateY(-4px);
+    }
+
+    .fulfillment-icon {
+      font-size: 3.5rem;
+    }
+
+    .fulfillment-label {
+      font-size: 1.125rem;
+      font-weight: 700;
+    }
+
+    /* Main Interface */
+    .kiosk-main-layout {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .kiosk-top-header {
+      height: 70px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kiosk-header-left {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .kiosk-btn-home {
+      height: 44px;
+      padding: 0 1rem;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #f0f6fc;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+
+    .kiosk-store-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .kiosk-store-info h2 {
+      font-size: 1.25rem;
+      margin: 0;
+      color: #fff;
+    }
+
+    .kiosk-fulfillment-pill {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.625rem;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, 0.2);
+      color: #58a6ff;
+      border: 1px solid rgba(88, 166, 255, 0.4);
+    }
+
+    .kiosk-btn-lang {
+      height: 40px;
+      padding: 0 1rem;
+      background: transparent;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #8b949e;
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    /* Body Split */
+    .kiosk-body-split {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    .kiosk-category-sidebar {
+      width: 140px;
+      background: #161b22;
+      border-right: 1px solid #30363d;
+      overflow-y: auto;
+    }
+
+    .kiosk-cat-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.75rem;
+    }
+
+    .kiosk-cat-btn {
+      min-height: 80px;
+      padding: 0.75rem 0.5rem;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      color: #8b949e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.375rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+
+    .kiosk-cat-btn span:first-child {
+      font-size: 1.5rem;
+    }
+
+    .kiosk-cat-btn.active {
+      background: #238636;
+      color: #fff;
+      border-color: #238636;
+      box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
+    }
+
+    .kiosk-products-view {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      background: #090d13;
+    }
+
+    .kiosk-product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .kiosk-prod-card {
+      background: #161b22;
+      border: 2px solid #30363d;
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      min-height: 220px;
+    }
+
+    .kiosk-prod-card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-2px);
+    }
+
+    .kiosk-prod-thumb {
+      height: 120px;
+      background: #21262d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+    }
+
+    .kiosk-prod-details {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      flex: 1;
+      gap: 0.5rem;
+    }
+
+    .kiosk-prod-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f0f6fc;
+      line-height: 1.3;
+    }
+
+    .kiosk-prod-price {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #3fb950;
+    }
+
+    /* Footer Order Tray */
+    .kiosk-tray-footer {
+      height: 90px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 20;
+    }
+
+    .kiosk-tray-summary {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .kiosk-tray-qty-pill {
+      font-size: 1.125rem;
+      font-weight: 700;
+      background: #21262d;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      border: 1px solid #30363d;
+      color: #58a6ff;
+    }
+
+    .kiosk-tray-price {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kiosk-tray-price small {
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
+
+    .kiosk-tray-price strong {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: #f0f6fc;
+    }
+
+    .kiosk-tray-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .kiosk-tray-btn {
+      height: 56px;
+      padding: 0 1.5rem;
+      border-radius: 12px;
+      font-size: 1.125rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.15s ease;
+    }
+
+    .kiosk-tray-btn.clear {
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+    }
+
+    .kiosk-tray-btn.clear:hover {
+      color: #f85149;
+    }
+
+    .kiosk-tray-btn.checkout {
+      background: #238636;
+      color: #fff;
+      min-width: 200px;
+    }
+
+    .kiosk-tray-btn.checkout:hover:not(:disabled) {
+      background: #2ea043;
+    }
+
+    .kiosk-tray-btn.checkout:disabled {
+      background: #30363d;
+      color: #8b949e;
+      cursor: not-allowed;
+    }
+
+    /* Dialogs */
+    .kiosk-dialog {
+      border: none;
+      padding: 0;
+      background: transparent;
+      max-width: 600px;
+      width: 90%;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+    }
+
+    .kiosk-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+    }
+
+    .kiosk-dialog-card {
+      background: #161b22;
+      border: 2px solid #30363d;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      max-height: 80vh;
+    }
+
+    .kiosk-dialog-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #30363d;
+      background: #21262d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kiosk-dialog-header h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      color: #fff;
+    }
+
+    .kiosk-dialog-price {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #3fb950;
+    }
+
+    .kiosk-dialog-close {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid #30363d;
+      background: #0d1117;
+      color: #8b949e;
+      font-size: 1.25rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .kiosk-dialog-body {
+      padding: 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .kiosk-dialog-footer {
+      padding: 1rem 1.5rem;
+      background: #21262d;
+      border-top: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .kiosk-qty-control {
+      display: flex;
+      align-items: center;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+    }
+
+    .kiosk-qty-btn {
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+
+    .kiosk-qty-val {
+      width: 40px;
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .kiosk-btn-add {
+      flex: 1;
+      height: 50px;
+      background: #238636;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1.125rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+    }
+
+    /* Payment choices */
+    .checkout-total-banner {
+      background: #21262d;
+      padding: 1rem;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid #30363d;
+    }
+
+    .checkout-total-banner strong {
+      font-size: 1.5rem;
+      color: #3fb950;
+    }
+
+    .payment-method-choices {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .pay-method-btn {
+      background: #0d1117;
+      border: 2px solid #30363d;
+      border-radius: 14px;
+      padding: 1.25rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 0.5rem;
+      color: #f0f6fc;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .pay-method-btn.active {
+      border-color: #58a6ff;
+      background: rgba(88, 166, 255, 0.1);
+    }
+
+    .pay-icon {
+      font-size: 2.5rem;
+    }
+
+    .promptpay-box {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .promptpay-qr-placeholder {
+      width: 180px;
+      height: 180px;
+      background: #ffffff;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #000;
+      font-weight: 800;
+    }
+
+    .promptpay-note {
+      font-size: 0.875rem;
+      color: #8b949e;
+      margin: 0;
+    }
+
+    .kiosk-confirm-order-btn {
+      width: 100%;
+      height: 56px;
+      background: #238636;
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1.25rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Success Card */
+    .success-card {
+      background: #161b22;
+      border: 2px solid #238636;
+      border-radius: 24px;
+      padding: 3rem 2.5rem;
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .success-check-icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #238636;
+      color: #fff;
+      font-size: 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .success-queue-box {
+      background: #0d1117;
+      border: 2px dashed #58a6ff;
+      border-radius: 16px;
+      padding: 1.5rem 2.5rem;
+      margin: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .success-queue-num {
+      font-size: 4rem;
+      font-weight: 900;
+      color: #58a6ff;
+      letter-spacing: -0.02em;
+    }
+
+    .success-order-num {
+      font-size: 0.875rem;
+      color: #8b949e;
+      font-family: ui-monospace, monospace;
+    }
+
+    .success-auto-reset {
+      font-size: 0.875rem;
+      color: #8b949e;
+    }
+
+    .kiosk-done-reset-btn {
+      width: 100%;
+      height: 52px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      color: #f0f6fc;
+      font-size: 1.125rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Idle Warning Card */
+    .idle-card {
+      background: #161b22;
+      border: 2px solid #f85149;
+      border-radius: 20px;
+      padding: 2.5rem;
+      text-align: center;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .idle-icon {
+      font-size: 3rem;
+    }
+
+    .idle-countdown {
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: #f85149;
+      font-family: ui-monospace, monospace;
+    }
+
+    .kiosk-idle-btn {
+      width: 100%;
+      height: 50px;
+      font-size: 1.125rem;
+      font-weight: 700;
+    }
+  </style>
+
+  <script>
+    import { enforceDeviceMode } from "../../lib/device-mode";
+    enforceDeviceMode();
+    import { api } from "../../lib/api";
+    import {
+      addKioskItem,
+      calculateKioskTotals,
+      createEmptyKioskCart,
+      formatBaht,
+      KioskIdleTracker,
+      type KioskCart,
+      type KioskCartItemModifier
+    } from "../../lib/kiosk-store";
+    import type { PublicCatalogSnapshot, PublicProductItem } from "@aevo/contracts";
+
+    const kioskApp = document.querySelector<HTMLElement>("#kiosk-app")!;
+    const configuredStoreCode = kioskApp.dataset.storeCode || "";
+    const storeCode = configuredStoreCode !== "__runtime__"
+      ? configuredStoreCode
+      : decodeURIComponent(window.location.pathname.split("/")[2] || "");
+
+    const attractScreen = document.querySelector<HTMLElement>("#attract-screen")!;
+    const attractStoreName = document.querySelector<HTMLElement>("#attract-store-name")!;
+    const fulfillmentScreen = document.querySelector<HTMLElement>("#fulfillment-screen")!;
+    const mainInterface = document.querySelector<HTMLElement>("#main-interface")!;
+    const kioskStoreTitle = document.querySelector<HTMLElement>("#kiosk-store-title")!;
+    const kioskFulfillmentBadge = document.querySelector<HTMLElement>("#kiosk-fulfillment-badge")!;
+    const btnDineIn = document.querySelector<HTMLButtonElement>("#btn-dine-in")!;
+    const btnTakeaway = document.querySelector<HTMLButtonElement>("#btn-takeaway")!;
+    const btnRestart = document.querySelector<HTMLButtonElement>("#btn-restart")!;
+    const catList = document.querySelector<HTMLElement>("#kiosk-cat-list")!;
+    const productGrid = document.querySelector<HTMLElement>("#kiosk-product-grid")!;
+
+    const trayQty = document.querySelector<HTMLElement>("#tray-total-qty")!;
+    const trayPrice = document.querySelector<HTMLElement>("#tray-total-price")!;
+    const btnClearCart = document.querySelector<HTMLButtonElement>("#btn-clear-cart")!;
+    const btnCheckout = document.querySelector<HTMLButtonElement>("#btn-checkout")!;
+
+    const modDialog = document.querySelector<HTMLDialogElement>("#modifier-dialog")!;
+    const modClose = document.querySelector<HTMLButtonElement>("#mod-dialog-close")!;
+    const modProductName = document.querySelector<HTMLElement>("#mod-product-name")!;
+    const modProductPrice = document.querySelector<HTMLElement>("#mod-product-price")!;
+    const modBody = document.querySelector<HTMLElement>("#mod-dialog-body")!;
+    const modQtyMinus = document.querySelector<HTMLButtonElement>("#mod-qty-minus")!;
+    const modQtyPlus = document.querySelector<HTMLButtonElement>("#mod-qty-plus")!;
+    const modQtyVal = document.querySelector<HTMLElement>("#mod-qty-value")!;
+    const modBtnAdd = document.querySelector<HTMLButtonElement>("#mod-btn-add")!;
+    const modSubtotalPrice = document.querySelector<HTMLElement>("#mod-subtotal-price")!;
+
+    const checkoutDialog = document.querySelector<HTMLDialogElement>("#checkout-dialog")!;
+    const checkoutClose = document.querySelector<HTMLButtonElement>("#checkout-dialog-close")!;
+    const checkoutAmountText = document.querySelector<HTMLElement>("#checkout-amount-text")!;
+    const payPromptpayBtn = document.querySelector<HTMLButtonElement>("#pay-promptpay")!;
+    const payCashBtn = document.querySelector<HTMLButtonElement>("#pay-cash")!;
+    const btnConfirmOrder = document.querySelector<HTMLButtonElement>("#btn-confirm-order")!;
+
+    const successScreen = document.querySelector<HTMLElement>("#success-screen")!;
+    const successQueueNum = document.querySelector<HTMLElement>("#success-queue-number")!;
+    const successOrderNum = document.querySelector<HTMLElement>("#success-order-number")!;
+    const successCountdown = document.querySelector<HTMLElement>("#success-countdown")!;
+    const btnSuccessReset = document.querySelector<HTMLButtonElement>("#btn-success-reset")!;
+
+    const idleWarning = document.querySelector<HTMLElement>("#idle-warning")!;
+    const idleSecondsEl = document.querySelector<HTMLElement>("#idle-seconds")!;
+    const btnContinue = document.querySelector<HTMLButtonElement>("#btn-continue-session")!;
+
+    let catalog: PublicCatalogSnapshot | null = null;
+    let cart: KioskCart = createEmptyKioskCart(storeCode);
+    let selectedCategory = "all";
+
+    // Modifier modal working state
+    let activeProduct: PublicProductItem | null = null;
+    let selectedVariantId = "";
+    let selectedModifiers: Map<string, KioskCartItemModifier> = new Map();
+    let itemQuantity = 1;
+
+    // Idle tracker (60s total, warning at 15s)
+    const idleTracker = new KioskIdleTracker(
+      60,
+      15,
+      (secRemaining) => {
+        if (idleWarning) {
+          idleWarning.hidden = false;
+          if (idleSecondsEl) idleSecondsEl.textContent = String(secRemaining);
+        }
+      },
+      () => {
+        resetToAttract();
+      }
+    );
+
+    function userActivity() {
+      if (!attractScreen.hidden) return;
+      if (idleWarning && !idleWarning.hidden) return;
+      idleTracker.reset();
+    }
+
+    ["pointerdown", "keydown", "touchstart"].forEach((evt) => {
+      window.addEventListener(evt, userActivity, { passive: true });
+    });
+
+    btnContinue?.addEventListener("click", () => {
+      if (idleWarning) idleWarning.hidden = true;
+      idleTracker.reset();
+    });
+
+    function resetToAttract() {
+      idleTracker.stop();
+      if (idleWarning) idleWarning.hidden = true;
+      if (successScreen) successScreen.hidden = true;
+      if (checkoutDialog?.open) checkoutDialog.close();
+      if (modDialog?.open) modDialog.close();
+      mainInterface.hidden = true;
+      fulfillmentScreen.hidden = true;
+      attractScreen.hidden = false;
+      cart = createEmptyKioskCart(storeCode);
+      renderTray();
+    }
+
+    attractScreen.addEventListener("click", () => {
+      attractScreen.hidden = true;
+      fulfillmentScreen.hidden = false;
+      idleTracker.start();
+    });
+
+    btnDineIn.addEventListener("click", () => {
+      cart.fulfillmentType = "DINE_IN";
+      kioskFulfillmentBadge.textContent = "ทานที่ร้าน";
+      fulfillmentScreen.hidden = true;
+      mainInterface.hidden = false;
+      idleTracker.reset();
+    });
+
+    btnTakeaway.addEventListener("click", () => {
+      cart.fulfillmentType = "TAKEAWAY";
+      kioskFulfillmentBadge.textContent = "สั่งกลับบ้าน";
+      fulfillmentScreen.hidden = true;
+      mainInterface.hidden = false;
+      idleTracker.reset();
+    });
+
+    btnRestart.addEventListener("click", resetToAttract);
+
+    async function loadCatalog() {
+      try {
+        const data = await api.get<PublicCatalogSnapshot>(`/api/public/catalog?storeCode=${storeCode}&channel=KIOSK`);
+        catalog = data;
+        attractStoreName.textContent = data.store.name;
+        kioskStoreTitle.textContent = data.store.name;
+        renderCategories();
+        renderProducts();
+      } catch (err) {
+        // Fallback to QR channel if KIOSK specific menu not created yet
+        try {
+          const fallback = await api.get<PublicCatalogSnapshot>(`/api/public/catalog?storeCode=${storeCode}&channel=QR`);
+          catalog = fallback;
+          attractStoreName.textContent = fallback.store.name;
+          kioskStoreTitle.textContent = fallback.store.name;
+          renderCategories();
+          renderProducts();
+        } catch {}
+      }
+    }
+
+    function renderCategories() {
+      if (!catalog) return;
+      let html = `
+        <button class="kiosk-cat-btn ${selectedCategory === "all" ? "active" : ""}" data-category="all" type="button">
+          <span>🍽️</span>
+          <span>ทั้งหมด</span>
+        </button>
+      `;
+
+      for (const cat of catalog.categories) {
+        html += `
+          <button class="kiosk-cat-btn ${selectedCategory === cat.id ? "active" : ""}" data-category="${cat.id}" type="button">
+            <span>☕</span>
+            <span>${escapeHtml(cat.name)}</span>
+          </button>
+        `;
+      }
+      catList.innerHTML = html;
+
+      catList.querySelectorAll<HTMLButtonElement>(".kiosk-cat-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          catList.querySelectorAll(".kiosk-cat-btn").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          selectedCategory = btn.dataset.category || "all";
+          renderProducts();
+        });
+      });
+    }
+
+    function renderProducts() {
+      if (!catalog) return;
+      const products = catalog.products.filter((p) => {
+        if (selectedCategory !== "all" && p.categoryId !== selectedCategory) return false;
+        return true;
+      });
+
+      productGrid.innerHTML = products
+        .map(
+          (p) => `
+        <article class="kiosk-prod-card" data-product-id="${p.id}">
+          <div class="kiosk-prod-thumb">🍽️</div>
+          <div class="kiosk-prod-details">
+            <div class="kiosk-prod-name">${escapeHtml(p.name)}</div>
+            <div class="kiosk-prod-price">${formatBaht(p.basePriceMinor)}</div>
+          </div>
+        </article>
+      `
+        )
+        .join("");
+
+      productGrid.querySelectorAll<HTMLElement>(".kiosk-prod-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          const prodId = card.dataset.productId;
+          const prod = catalog?.products.find((p) => p.id === prodId);
+          if (prod) openModifierModal(prod);
+        });
+      });
+    }
+
+    function openModifierModal(product: PublicProductItem) {
+      activeProduct = product;
+      itemQuantity = 1;
+      selectedModifiers.clear();
+      selectedVariantId = product.variants[0]?.id || "";
+
+      modProductName.textContent = product.name;
+      modProductPrice.textContent = formatBaht(product.basePriceMinor);
+      modQtyVal.textContent = "1";
+
+      let bodyHtml = "";
+
+      // Variants
+      if (product.variants.length > 1) {
+        bodyHtml += `
+          <div class="mod-group">
+            <h4>ขนาด / แบบ</h4>
+            <div class="mod-options">
+              ${product.variants
+                .map(
+                  (v, idx) => `
+                <label class="mod-pill-label">
+                  <input type="radio" name="variant" value="${v.id}" data-price="${v.priceMinor}" ${idx === 0 ? "checked" : ""} />
+                  <span>${escapeHtml(v.name)} (+${formatBaht(v.priceMinor)})</span>
+                </label>
+              `
+                )
+                .join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Modifier Groups
+      if (product.modifierGroups.length > 0) {
+        for (const mg of product.modifierGroups) {
+          bodyHtml += `
+            <div class="mod-group">
+              <h4>${escapeHtml(mg.name)}</h4>
+              <div class="mod-options">
+                ${mg.modifiers
+                  .map(
+                    (m) => `
+                  <label class="mod-pill-label">
+                    <input type="${mg.selectionType === "SINGLE" ? "radio" : "checkbox"}"
+                           name="mod-${mg.id}"
+                           value="${m.id}"
+                           data-name="${escapeHtml(m.name)}"
+                           data-price="${m.priceDeltaMinor}" />
+                    <span>${escapeHtml(m.name)} (+${formatBaht(m.priceDeltaMinor)})</span>
+                  </label>
+                `
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      modBody.innerHTML = bodyHtml;
+
+      // Listen for modifier option changes
+      modBody.querySelectorAll<HTMLInputElement>("input").forEach((inp) => {
+        inp.addEventListener("change", updateModSubtotal);
+      });
+
+      updateModSubtotal();
+      modDialog.showModal();
+    }
+
+    function updateModSubtotal() {
+      if (!activeProduct) return;
+      let unit = activeProduct.basePriceMinor;
+
+      const variantInp = modBody.querySelector<HTMLInputElement>('input[name="variant"]:checked');
+      if (variantInp) {
+        selectedVariantId = variantInp.value;
+        unit = Number(variantInp.dataset.price || unit);
+      }
+
+      selectedModifiers.clear();
+      modBody.querySelectorAll<HTMLInputElement>('input[name^="mod-"]:checked').forEach((inp) => {
+        selectedModifiers.set(inp.value, {
+          modifierId: inp.value,
+          name: inp.dataset.name || "",
+          priceDeltaMinor: Number(inp.dataset.price || 0)
+        });
+      });
+
+      const modTotal = Array.from(selectedModifiers.values()).reduce(
+        (sum, m) => sum + m.priceDeltaMinor,
+        0
+      );
+      const subtotal = (unit + modTotal) * itemQuantity;
+      modSubtotalPrice.textContent = formatBaht(subtotal);
+    }
+
+    modQtyMinus.addEventListener("click", () => {
+      if (itemQuantity > 1) {
+        itemQuantity -= 1;
+        modQtyVal.textContent = String(itemQuantity);
+        updateModSubtotal();
+      }
+    });
+
+    modQtyPlus.addEventListener("click", () => {
+      itemQuantity += 1;
+      modQtyVal.textContent = String(itemQuantity);
+      updateModSubtotal();
+    });
+
+    modClose.addEventListener("click", () => {
+      modDialog.close();
+    });
+
+    modBtnAdd.addEventListener("click", () => {
+      if (!activeProduct) return;
+      const variant = activeProduct.variants.find((v) => v.id === selectedVariantId);
+      const unitPrice = variant ? variant.priceMinor : activeProduct.basePriceMinor;
+
+      cart = addKioskItem(cart, {
+        productId: activeProduct.id,
+        ...(selectedVariantId ? { variantId: selectedVariantId } : {}),
+        productName: activeProduct.name,
+        ...(variant ? { variantName: variant.name } : {}),
+        unitPriceMinor: unitPrice,
+        modifiers: Array.from(selectedModifiers.values()),
+        quantity: itemQuantity
+      });
+
+      modDialog.close();
+      renderTray();
+    });
+
+    function renderTray() {
+      const totalQty = cart.items.reduce((sum, i) => sum + i.quantity, 0);
+      const totals = calculateKioskTotals(cart);
+
+      trayQty.textContent = String(totalQty);
+      trayPrice.textContent = formatBaht(totals.totalMinor);
+      btnCheckout.disabled = totalQty === 0;
+    }
+
+    btnClearCart.addEventListener("click", () => {
+      cart = createEmptyKioskCart(storeCode);
+      renderTray();
+    });
+
+    btnCheckout.addEventListener("click", () => {
+      const totals = calculateKioskTotals(cart);
+      checkoutAmountText.textContent = formatBaht(totals.totalMinor);
+      checkoutDialog.showModal();
+    });
+
+    checkoutClose.addEventListener("click", () => {
+      checkoutDialog.close();
+    });
+
+    payPromptpayBtn.addEventListener("click", () => {
+      payPromptpayBtn.classList.add("active");
+      payCashBtn.classList.remove("active");
+      cart.paymentMethod = "PROMPTPAY";
+    });
+
+    payCashBtn.addEventListener("click", () => {
+      payCashBtn.classList.add("active");
+      payPromptpayBtn.classList.remove("active");
+      cart.paymentMethod = "CASH_COUNTER";
+    });
+
+    btnConfirmOrder.addEventListener("click", async () => {
+      btnConfirmOrder.disabled = true;
+      btnConfirmOrder.textContent = "กำลังส่งออเดอร์…";
+
+      try {
+        const payload = {
+          storeCode,
+          channel: "KIOSK",
+          fulfillmentType: cart.fulfillmentType,
+          notes: cart.paymentMethod === "CASH_COUNTER" ? "ชำระเงินสดที่เคาน์เตอร์" : "ชำระผ่าน PromptPay QR",
+          items: cart.items.map((item) => ({
+            productId: item.productId,
+            ...(item.variantId ? { variantId: item.variantId } : {}),
+            ...(item.modifiers.length > 0 ? { modifierIds: item.modifiers.map((m) => m.modifierId) } : {}),
+            quantity: item.quantity
+          }))
+        };
+
+        const res = await api.post<{ order: any; queueTicket?: any }>(
+          "/api/public/orders",
+          payload
+        );
+
+        checkoutDialog.close();
+
+        // Show Success screen
+        const qNum = res.queueTicket?.queueNumber || "Q-001";
+        const oNum = res.order?.orderNumber || "SO-XXXX";
+
+        successQueueNum.textContent = qNum;
+        successOrderNum.textContent = oNum;
+        successScreen.hidden = false;
+
+        let countdown = 10;
+        successCountdown.textContent = String(countdown);
+        const timer = setInterval(() => {
+          countdown -= 1;
+          if (countdown <= 0) {
+            clearInterval(timer);
+            resetToAttract();
+          } else {
+            successCountdown.textContent = String(countdown);
+          }
+        }, 1000);
+
+        btnSuccessReset.onclick = () => {
+          clearInterval(timer);
+          resetToAttract();
+        };
+      } catch (err: any) {
+        alert(err.message || "ส่งออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        btnConfirmOrder.disabled = false;
+        btnConfirmOrder.textContent = "✓ ยืนยันการสั่งซื้อ";
+      }
+    });
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    loadCatalog();
+  </script>
+</BaseLayout>

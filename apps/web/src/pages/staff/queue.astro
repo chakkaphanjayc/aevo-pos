@@ -1,0 +1,509 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="จัดการคิวรับสินค้า" active="queue">
+  <div class="staff-page queue-management-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Queue · Customer flow</p>
+        <h1 class="staff-page-title">จัดการคิวรับสินค้า</h1>
+        <p class="staff-page-lede" id="store-summary">ควบคุมคิวเรียกรับสินค้าหน้าร้าน</p>
+      </div>
+      <div class="queue-header-actions">
+        <a class="button secondary" id="tv-display-link" href="#" target="_blank" rel="noopener">
+          <span>📺</span>
+          <span>เปิดจอทีวีแสดงคิว</span>
+        </a>
+        <button class="button secondary" id="refresh" type="button">
+          <StaffIcon name="refresh" size={16} />
+          <span>รีเฟรช</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="error" id="error" role="alert" hidden></p>
+
+    <!-- Stats summary -->
+    <div class="queue-summary" aria-label="สรุปคิว">
+      <div class="queue-summary-item surface">
+        <span class="queue-summary-label">รอดำเนินการ (Waiting)</span>
+        <strong id="waiting-count">0</strong>
+        <small>คิวใหม่ที่ยังไม่ได้เรียก</small>
+      </div>
+      <div class="queue-summary-item surface">
+        <span class="queue-summary-label">กำลังเตรียม (Preparing)</span>
+        <strong id="preparing-count">0</strong>
+        <small>กำลังปรุง / บรรจุ</small>
+      </div>
+      <div class="queue-summary-item surface">
+        <span class="queue-summary-label">พร้อมรับ (Ready)</span>
+        <strong id="ready-count">0</strong>
+        <small>รอลูกค้ามารับ</small>
+      </div>
+      <div class="queue-summary-item surface">
+        <span class="queue-summary-label">เสร็จสิ้นวันนี้</span>
+        <strong id="completed-count">0</strong>
+        <small>รับสินค้าเรียบร้อย</small>
+      </div>
+    </div>
+
+    <!-- Active Tickets Board -->
+    <section class="queue-columns-grid">
+      <!-- Waiting / Preparing Column -->
+      <div class="queue-column surface">
+        <div class="queue-column-header">
+          <h2>กำลังเตรียม / รอเรียก (<span id="col-waiting-count">0</span>)</h2>
+        </div>
+        <div class="queue-ticket-list" id="waiting-list">
+          <div class="queue-loading">กำลังโหลดคิว…</div>
+        </div>
+      </div>
+
+      <!-- Ready Column -->
+      <div class="queue-column surface ready-col">
+        <div class="queue-column-header">
+          <h2>พร้อมรับสินค้า (<span id="col-ready-count">0</span>)</h2>
+        </div>
+        <div class="queue-ticket-list" id="ready-list">
+          <div class="queue-loading">กำลังโหลดคิว…</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <style is:global>
+    .queue-management-page {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .queue-header-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .queue-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .queue-summary-item {
+      padding: 1.15rem 1.25rem;
+      border-radius: var(--radius-md, 12px);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .queue-summary-label {
+      font-size: 0.78rem;
+      color: var(--muted, #5e6d63);
+      font-weight: 600;
+    }
+
+    .queue-summary-item strong {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--ink, #1f2a24);
+      letter-spacing: -0.02em;
+    }
+
+    .queue-summary-item small {
+      font-size: 0.72rem;
+      color: var(--muted, #5e6d63);
+    }
+
+    .queue-columns-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .queue-column {
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      border-radius: var(--radius-md, 14px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 480px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .queue-column.ready-col {
+      border-color: #a8d5be;
+    }
+
+    .queue-column-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--line, #d8cebf);
+      background: var(--surface-soft, #fbf8f2);
+    }
+
+    .queue-column.ready-col .queue-column-header {
+      background: var(--brand-soft, #eef7f2);
+      border-bottom-color: #cfe5d7;
+    }
+
+    .queue-column-header h2 {
+      font-size: 1.05rem;
+      margin: 0;
+      font-weight: 750;
+      color: var(--ink, #1f2a24);
+    }
+
+    .queue-column.ready-col .queue-column-header h2 {
+      color: var(--brand, #176348);
+    }
+
+    .queue-ticket-list {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      flex: 1;
+      overflow-y: auto;
+      background: var(--surface, #ffffff);
+    }
+
+    .queue-card {
+      background: var(--paper, #fdfbf7);
+      border: 1px solid var(--line, #d8cebf);
+      border-radius: var(--radius-sm, 10px);
+      padding: 1rem 1.15rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .queue-card:hover {
+      border-color: var(--brand, #176348);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .queue-card.ready {
+      background: #f4faf6;
+      border-color: #bfe3cf;
+    }
+
+    .queue-card-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .queue-card-num {
+      font-size: 1.5rem;
+      font-weight: 850;
+      color: var(--ink, #1f2a24);
+      letter-spacing: -0.02em;
+    }
+
+    .queue-card.ready .queue-card-num {
+      color: var(--brand, #176348);
+    }
+
+    .queue-card-meta {
+      font-size: 0.75rem;
+      color: var(--muted, #5e6d63);
+      font-family: inherit;
+    }
+
+    .queue-card-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .queue-act-btn {
+      min-height: 44px;
+      padding: 0.5rem 1.15rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-radius: var(--radius-sm, 8px);
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .queue-act-btn:active {
+      transform: scale(0.98);
+    }
+
+    .queue-act-btn.call {
+      background: var(--brand, #176348);
+      color: #ffffff;
+    }
+
+    .queue-act-btn.call:hover {
+      background: var(--brand-hover, #124d38);
+    }
+
+    .queue-act-btn.complete {
+      background: var(--surface, #ffffff);
+      color: var(--brand, #176348);
+      border-color: var(--brand, #176348);
+    }
+
+    .queue-act-btn.complete:hover {
+      background: var(--brand-soft, #eef7f2);
+    }
+
+    .queue-empty-col {
+      padding: 3.5rem 1rem;
+      text-align: center;
+      color: var(--muted, #5e6d63);
+      font-size: 0.875rem;
+    }
+
+    .queue-loading {
+      padding: 3rem 1rem;
+      text-align: center;
+      color: var(--muted, #5e6d63);
+      font-size: 0.875rem;
+    }
+
+    /* Keep staff operations visually consistent with the light Aevo shell. */
+    .queue-summary-item,
+    .queue-column {
+      background: var(--surface);
+      border-color: var(--line);
+      box-shadow: var(--shadow-sm);
+      color: var(--ink);
+    }
+
+    .queue-column.ready-col { border-color: #b7dfc7; }
+    .queue-column-header { background: var(--surface-soft); border-color: var(--line); }
+    .queue-column-header h2 { color: var(--ink); }
+    .queue-summary-label,
+    .queue-summary-item small,
+    .queue-card-meta { color: var(--muted); }
+    .queue-summary-item strong { color: var(--ink); }
+    .queue-card { background: var(--surface-soft); border-color: var(--line); }
+    .queue-card:hover { border-color: var(--brand); }
+    .queue-card-num { color: var(--brand); }
+    .queue-card.ready .queue-card-num { color: var(--brand); }
+    .queue-empty-col,
+    .queue-loading { color: var(--muted); }
+  </style>
+
+  <script>
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { QueueTicketSummary } from "@aevo/contracts";
+
+    const waitingList = document.querySelector<HTMLElement>("#waiting-list")!;
+    const readyList = document.querySelector<HTMLElement>("#ready-list")!;
+    const waitingCountEl = document.querySelector<HTMLElement>("#waiting-count")!;
+    const preparingCountEl = document.querySelector<HTMLElement>("#preparing-count")!;
+    const readyCountEl = document.querySelector<HTMLElement>("#ready-count")!;
+    const completedCountEl = document.querySelector<HTMLElement>("#completed-count")!;
+    const colWaitingCountEl = document.querySelector<HTMLElement>("#col-waiting-count")!;
+    const colReadyCountEl = document.querySelector<HTMLElement>("#col-ready-count")!;
+    const tvLink = document.querySelector<HTMLAnchorElement>("#tv-display-link")!;
+    const refreshBtn = document.querySelector<HTMLButtonElement>("#refresh")!;
+    const errorEl = document.querySelector<HTMLElement>("#error")!;
+
+    let storeId = "";
+    let storeCode = "";
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function loadTickets() {
+      if (!storeId) return;
+      try {
+        const res = await api.get<{ tickets: QueueTicketSummary[] }>(`/api/queue?storeId=${storeId}`);
+        const tickets = res.tickets ?? [];
+
+        let waiting = 0;
+        let preparing = 0;
+        let ready = 0;
+        let completed = 0;
+
+        const waitingTickets: QueueTicketSummary[] = [];
+        const readyTickets: QueueTicketSummary[] = [];
+
+        for (const t of tickets) {
+          if (t.status === "WAITING") {
+            waiting++;
+            waitingTickets.push(t);
+          } else if (t.status === "PREPARING") {
+            preparing++;
+            waitingTickets.push(t);
+          } else if (t.status === "READY") {
+            ready++;
+            readyTickets.push(t);
+          } else if (t.status === "COMPLETED") {
+            completed++;
+          }
+        }
+
+        waitingCountEl.textContent = String(waiting);
+        preparingCountEl.textContent = String(preparing);
+        readyCountEl.textContent = String(ready);
+        completedCountEl.textContent = String(completed);
+        colWaitingCountEl.textContent = String(waitingTickets.length);
+        colReadyCountEl.textContent = String(readyTickets.length);
+
+        renderWaitingList(waitingTickets);
+        renderReadyList(readyTickets);
+        if (errorEl) errorEl.hidden = true;
+      } catch (err: any) {
+        if (errorEl) {
+          errorEl.textContent = friendlyErrorMessage(err, "ไม่สามารถโหลดรายการคิวได้ กรุณาลองใหม่อีกครั้ง");
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    function renderWaitingList(tickets: QueueTicketSummary[]) {
+      if (tickets.length === 0) {
+        waitingList.innerHTML = '<div class="queue-empty-col">ไม่มีคิวที่รอดำเนินการ</div>';
+        return;
+      }
+
+      waitingList.innerHTML = tickets
+        .map(
+          (t) => `
+          <div class="queue-card" data-ticket-id="${t.id}">
+            <div class="queue-card-left">
+              <span class="queue-card-num">${escapeHtml(t.queueNumber)}</span>
+              <span class="queue-card-meta">${t.orderNumber ? escapeHtml(t.orderNumber) : "ออเดอร์"} · ${t.status}</span>
+            </div>
+            <div class="queue-card-actions">
+              <button class="queue-act-btn call" data-action="call" data-ticket-id="${t.id}" type="button">
+                📢 เรียกคิว (Ready)
+              </button>
+            </div>
+          </div>
+        `
+        )
+        .join("");
+
+      bindTicketActions(waitingList);
+    }
+
+    function renderReadyList(tickets: QueueTicketSummary[]) {
+      if (tickets.length === 0) {
+        readyList.innerHTML = '<div class="queue-empty-col">ไม่มีคิวที่รอรับสินค้า</div>';
+        return;
+      }
+
+      readyList.innerHTML = tickets
+        .map(
+          (t) => `
+          <div class="queue-card ready" data-ticket-id="${t.id}">
+            <div class="queue-card-left">
+              <span class="queue-card-num">${escapeHtml(t.queueNumber)}</span>
+              <span class="queue-card-meta">เรียกล่าสุด · รอลูกค้ามารับ</span>
+            </div>
+            <div class="queue-card-actions">
+              <button class="queue-act-btn call" data-action="call" data-ticket-id="${t.id}" type="button" title="เรียกซ้ำ">
+                🔔 เรียกซ้ำ
+              </button>
+              <button class="queue-act-btn complete" data-action="complete" data-ticket-id="${t.id}" type="button">
+                ✓ รับแล้ว
+              </button>
+            </div>
+          </div>
+        `
+        )
+        .join("");
+
+      bindTicketActions(readyList);
+    }
+
+    function bindTicketActions(container: HTMLElement) {
+      container.querySelectorAll<HTMLButtonElement>('[data-action="call"]').forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const ticketId = btn.dataset.ticketId!;
+          btn.disabled = true;
+          try {
+            await api.post(`/api/queue/${ticketId}/call`, {});
+            await loadTickets();
+          } catch (err: any) {
+            btn.disabled = false;
+            alert(err.message || "เรียกคิวไม่สำเร็จ");
+          }
+        });
+      });
+
+      container.querySelectorAll<HTMLButtonElement>('[data-action="complete"]').forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const ticketId = btn.dataset.ticketId!;
+          btn.disabled = true;
+          try {
+            await api.post(`/api/queue/${ticketId}/complete`, {});
+            await loadTickets();
+          } catch (err: any) {
+            btn.disabled = false;
+            alert(err.message || "ปิดคิวไม่สำเร็จ");
+          }
+        });
+      });
+    }
+
+    async function init() {
+      try {
+        const { user, stores } = await loadStaffContext();
+        const store = findSelectedStore(stores, getSelectedStoreId());
+        if (!store) {
+          window.location.assign("/staff");
+          return;
+        }
+        storeId = store.id;
+        storeCode = store.code;
+        if (tvLink) tvLink.href = `/queue/${storeCode}`;
+        sessionStorage.setItem("aevo.selectedStoreId", storeId);
+        document.querySelector<HTMLElement>("#store-summary")!.textContent = `${store.name} · ${store.code} · ควบคุมคิวเรียกรับสินค้าหน้าร้าน`;
+
+        initStaffShell({
+          user,
+          stores,
+          selectedStoreId: storeId,
+          onStoreChange: async (nextStoreId) => {
+            storeId = nextStoreId;
+            const nextStore = stores.find((s) => s.id === nextStoreId);
+            if (!nextStore) return;
+            storeCode = nextStore.code;
+            if (tvLink) tvLink.href = `/queue/${storeCode}`;
+            history.replaceState(null, "", storeUrl("/staff/queue", nextStoreId));
+            document.querySelector<HTMLElement>("#store-summary")!.textContent = `${nextStore.name} · ${nextStore.code} · ควบคุมคิวเรียกรับสินค้าหน้าร้าน`;
+            await loadTickets();
+          }
+        });
+
+        await loadTickets();
+      } catch (cause) {
+        if (errorEl) {
+          errorEl.textContent = friendlyErrorMessage(cause, "ไม่สามารถเชื่อมต่อระบบคิวได้ กรุณาลองใหม่อีกครั้ง");
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    refreshBtn.addEventListener("click", loadTickets);
+    setInterval(loadTickets, 3000);
+    init();
+  </script>
+</StaffShell>

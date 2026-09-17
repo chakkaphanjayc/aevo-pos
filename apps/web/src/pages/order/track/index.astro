@@ -1,0 +1,69 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="ติดตามออเดอร์ — Aevo">
+  <main class="public-status-page" id="tracking-page">
+    <div class="public-status-card">
+      <span class="public-eyebrow">AEVO ORDER TRACKING</span>
+      <h1>ติดตามออเดอร์</h1>
+      <p class="public-muted" id="tracking-store">กำลังตรวจสอบรายการ…</p>
+      <div class="tracking-status" id="tracking-status">กำลังโหลดสถานะ…</div>
+      <div class="tracking-meta" id="tracking-meta"></div>
+      <div class="tracking-items" id="tracking-items"></div>
+      <a class="public-button" id="receipt-link" href="#" hidden>ดูใบเสร็จอิเล็กทรอนิกส์</a>
+      <p class="public-error" id="tracking-error" hidden role="alert"></p>
+    </div>
+  </main>
+</BaseLayout>
+
+<style is:global>
+  .public-status-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--canvas, #f5f8f5); }
+  .public-status-card { width: min(560px, 100%); padding: 32px; background: var(--surface, #fff); border: 1px solid var(--line, #dce8df); border-radius: 24px; box-shadow: var(--shadow-md, 0 12px 32px rgba(23,99,72,.1)); }
+  .public-eyebrow { color: var(--brand, #176348); font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+  .public-status-card h1 { margin: 8px 0 4px; color: var(--ink, #1b2a22); }
+  .public-muted { color: var(--muted, #66756c); }
+  .tracking-status { margin: 24px 0 12px; padding: 18px; border-radius: 16px; background: var(--brand-soft, #e8f4ed); color: var(--brand, #176348); font-size: 1.35rem; font-weight: 800; text-align: center; }
+  .tracking-meta { color: var(--muted, #66756c); font-size: .88rem; }
+  .tracking-items { display: grid; gap: 8px; margin: 18px 0; }
+  .tracking-item { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line, #dce8df); }
+  .public-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 16px; border-radius: 10px; background: var(--brand, #176348); color: #fff; text-decoration: none; font-weight: 700; }
+  .public-error { margin-top: 16px; color: #b42318; }
+</style>
+
+<script>
+  import { api, ApiError } from "../../../lib/api";
+
+  type TrackingResponse = {
+    order: { orderNumber: string; status: string; paymentStatus: string; totalMinor: number; currency: string; items: Array<{ productName: string; quantity: number; subtotalMinor: number }> ; trackingToken?: string };
+    queue: { number: string; status: string } | null;
+  };
+
+  const query = new URLSearchParams(window.location.search);
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const storeCode = query.get("storeCode") || decodeURIComponent(pathParts[1] || "");
+  const token = query.get("token") || decodeURIComponent(pathParts[3] || "");
+  const statusLabels: Record<string, string> = { WAITING: "รอคิว", PREPARING: "กำลังเตรียม", READY: "พร้อมรับสินค้า", COMPLETED: "เสร็จสิ้น", CANCELLED: "ยกเลิก" };
+  const orderLabels: Record<string, string> = { DRAFT: "กำลังสร้างรายการ", PAID: "ชำระเงินแล้ว", CONFIRMED: "ยืนยันออเดอร์แล้ว", PREPARING: "กำลังเตรียม", READY: "พร้อมรับสินค้า", COMPLETED: "เสร็จสิ้น", CANCELLED: "ยกเลิก" };
+  const money = (minor: number, currency: string) => new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
+  const escapeHtml = (value: string) => { const el = document.createElement("span"); el.textContent = value; return el.innerHTML; };
+
+  async function loadTracking(): Promise<void> {
+    try {
+      const result = await api<TrackingResponse>(`/api/public/orders/track/${encodeURIComponent(token)}?storeCode=${encodeURIComponent(storeCode)}`);
+      document.querySelector<HTMLElement>("#tracking-status")!.textContent = result.queue ? `${statusLabels[result.queue.status] ?? result.queue.status} · คิว ${result.queue.number}` : (orderLabels[result.order.status] ?? result.order.status);
+      document.querySelector<HTMLElement>("#tracking-store")!.textContent = `ออเดอร์ ${result.order.orderNumber}`;
+      document.querySelector<HTMLElement>("#tracking-meta")!.textContent = `ยอดรวม ${money(result.order.totalMinor, result.order.currency)} · ${result.order.paymentStatus === "PAID" ? "ชำระเงินแล้ว" : "รอชำระเงิน"}`;
+      document.querySelector<HTMLElement>("#tracking-items")!.innerHTML = result.order.items.map((item) => `<div class="tracking-item"><span>${escapeHtml(item.productName)} × ${item.quantity}</span><strong>${money(item.subtotalMinor, result.order.currency)}</strong></div>`).join("");
+      const receiptLink = document.querySelector<HTMLAnchorElement>("#receipt-link")!;
+      receiptLink.href = `/order/${encodeURIComponent(storeCode)}/receipt/${encodeURIComponent(token)}`;
+      receiptLink.hidden = result.order.paymentStatus === "UNPAID";
+    } catch (cause) {
+      const error = document.querySelector<HTMLElement>("#tracking-error")!;
+      error.textContent = cause instanceof ApiError ? cause.message : "ไม่สามารถโหลดสถานะออเดอร์ได้ กรุณาลองใหม่อีกครั้ง";
+      error.hidden = false;
+      document.querySelector<HTMLElement>("#tracking-status")!.textContent = "โหลดข้อมูลไม่สำเร็จ";
+    }
+  }
+  if (storeCode && token) void loadTracking();
+</script>

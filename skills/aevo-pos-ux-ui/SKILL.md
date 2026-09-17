@@ -24,6 +24,7 @@ Treat Aevo as a Thai-first touch-oriented retail operations workspace.
   as POS, SKU, QR, Kiosk, Draft, and Sold out.
 - Prefer product evidence and real data hierarchy over decorative dashboard
   elements or invented metrics.
+- Reuse the existing `StaffIcon` system; do not add a remote icon dependency.
 
 ## Repository constraints
 

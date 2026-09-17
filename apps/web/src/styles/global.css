@@ -246,6 +246,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .staff-sidebar-section-label { padding: 0 12px 10px; color: var(--subtle); font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .staff-nav { display: grid; gap: 3px; }
+.staff-nav-group-label { margin: 14px 12px 4px; color: var(--subtle); font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.staff-nav-group-label:first-child { margin-top: 0; }
 .staff-nav-link {
   display: flex;
   align-items: center;

@@ -1,0 +1,59 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="ใบเสร็จอิเล็กทรอนิกส์ — Aevo">
+  <main class="public-receipt-page">
+    <article class="public-receipt-card" id="receipt-card">
+      <span class="public-eyebrow">AEVO E-RECEIPT</span>
+      <h1>ใบเสร็จอิเล็กทรอนิกส์</h1>
+      <p class="public-muted" id="receipt-loading">กำลังโหลดใบเสร็จ…</p>
+      <div id="receipt-content" hidden></div>
+      <p class="public-error" id="receipt-error" hidden role="alert"></p>
+    </article>
+  </main>
+</BaseLayout>
+
+<style is:global>
+  .public-receipt-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--canvas, #f5f8f5); }
+  .public-receipt-card { width: min(560px, 100%); padding: 32px; background: var(--surface, #fff); border: 1px solid var(--line, #dce8df); border-radius: 24px; box-shadow: var(--shadow-md, 0 12px 32px rgba(23,99,72,.1)); }
+  .public-eyebrow { color: var(--brand, #176348); font-size: .72rem; font-weight: 800; letter-spacing: .12em; }
+  .public-receipt-card h1 { margin: 8px 0 4px; color: var(--ink, #1b2a22); }
+  .public-muted { color: var(--muted, #66756c); }
+  .receipt-heading { display: flex; justify-content: space-between; gap: 16px; margin: 24px 0 8px; }
+  .receipt-heading strong { color: var(--brand, #176348); }
+  .receipt-items { display: grid; gap: 8px; margin: 18px 0; }
+  .receipt-row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line, #dce8df); }
+  .receipt-total { display: flex; justify-content: space-between; margin-top: 16px; font-size: 1.2rem; font-weight: 800; }
+  .receipt-print { margin-top: 24px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--brand, #176348); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+  .public-error { margin-top: 16px; color: #b42318; }
+  @media print { .public-receipt-page { padding: 0; background: white; } .public-receipt-card { box-shadow: none; border: 0; } .receipt-print { display: none; } }
+</style>
+
+<script>
+  import { api, ApiError } from "../../../lib/api";
+  type ReceiptResponse = { receipt: { receiptNumber: string; orderNumber: string; store: { name: string; code: string }; items: Array<{ productName: string; variantName?: string | null; quantity: number; subtotalMinor: number }>; subtotalMinor: number; discountMinor: number; taxMinor: number; totalMinor: number; payments: Array<{ method: string; amountMinor: number }>; createdAt: string; isVoid: boolean } };
+  const query = new URLSearchParams(window.location.search);
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const storeCode = query.get("storeCode") || decodeURIComponent(pathParts[1] || "");
+  const token = query.get("token") || decodeURIComponent(pathParts[3] || "");
+  const money = (minor: number) => new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB" }).format(minor / 100);
+  const escapeHtml = (value: string) => { const el = document.createElement("span"); el.textContent = value; return el.innerHTML; };
+
+  async function loadReceipt(): Promise<void> {
+    try {
+      const result = await api<ReceiptResponse>(`/api/public/orders/receipt/${encodeURIComponent(token)}?storeCode=${encodeURIComponent(storeCode)}`);
+      const receipt = result.receipt;
+      document.querySelector<HTMLElement>("#receipt-loading")!.hidden = true;
+      const content = document.querySelector<HTMLElement>("#receipt-content")!;
+      content.hidden = false;
+      content.innerHTML = `<div class="receipt-heading"><span>${escapeHtml(receipt.store.name)} · ${escapeHtml(receipt.store.code)}</span><strong>${escapeHtml(receipt.receiptNumber)}</strong></div><p class="public-muted">ออเดอร์ ${escapeHtml(receipt.orderNumber)} · ${new Date(receipt.createdAt).toLocaleString("th-TH")}</p><div class="receipt-items">${receipt.items.map((item) => `<div class="receipt-row"><span>${escapeHtml(item.productName)}${item.variantName ? ` (${escapeHtml(item.variantName)})` : ""} × ${item.quantity}</span><strong>${money(item.subtotalMinor)}</strong></div>`).join("")}</div><div class="receipt-row"><span>ยอดสินค้า</span><strong>${money(receipt.subtotalMinor)}</strong></div>${receipt.discountMinor ? `<div class="receipt-row"><span>ส่วนลด</span><strong>-฿${(receipt.discountMinor / 100).toFixed(2)}</strong></div>` : ""}${receipt.taxMinor ? `<div class="receipt-row"><span>ภาษี</span><strong>${money(receipt.taxMinor)}</strong></div>` : ""}<div class="receipt-total"><span>ยอดสุทธิ</span><strong>${money(receipt.totalMinor)}</strong></div>${receipt.isVoid ? `<p class="public-error">ใบเสร็จนี้ถูกยกเลิก</p>` : ""}<button class="receipt-print" type="button" onclick="window.print()">พิมพ์ใบเสร็จ</button>`;
+    } catch (cause) {
+      const error = document.querySelector<HTMLElement>("#receipt-error")!;
+      error.textContent = cause instanceof ApiError ? cause.message : "ไม่สามารถโหลดใบเสร็จได้ กรุณาลองใหม่อีกครั้ง";
+      error.hidden = false;
+      document.querySelector<HTMLElement>("#receipt-loading")!.hidden = true;
+    }
+  }
+  if (storeCode && token) void loadReceipt();
+</script>

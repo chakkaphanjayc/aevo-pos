@@ -1,0 +1,698 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="ระบบเตรียมสินค้า (KDS)" active="prep" fullHeight={true}>
+  <div class="kds-container">
+    <!-- Header Controls -->
+    <header class="kds-header surface">
+      <div class="kds-header-left">
+        <div class="kds-title-group">
+          <span class="staff-eyebrow">Kitchen Display System</span>
+          <h1 class="kds-title">กระดานเตรียมสินค้า (KDS)</h1>
+        </div>
+        <div class="kds-station-tabs" id="station-tabs" role="tablist" aria-label="เลือกสเตชันครัว">
+          <button class="kds-tab active" data-station-id="" type="button" role="tab" aria-selected="true">
+            <span>ทั้งหมด</span>
+            <span class="kds-tab-count" id="count-all">0</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="kds-header-right">
+        <div class="kds-status-indicator">
+          <span class="kds-live-dot" aria-hidden="true"></span>
+          <span id="kds-sync-status">กำลังเชื่อมต่อ…</span>
+        </div>
+        <button class="button secondary icon-only" id="kds-sound-toggle" type="button" title="เปิด/ปิดเสียงแจ้งเตือน" aria-label="เปิด/ปิดเสียงแจ้งเตือน">
+          <span id="sound-icon">🔔</span>
+        </button>
+        <button class="button secondary" id="kds-refresh" type="button">
+          <StaffIcon name="refresh" size={16} />
+          <span>รีเฟรช</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Error Alert -->
+    <p class="error" id="kds-error" role="alert" hidden></p>
+
+    <!-- Task Cards Board -->
+    <main class="kds-board" id="kds-board" aria-live="polite">
+      <div class="kds-loading">
+        <div class="kds-spinner"></div>
+        <p>กำลังโหลดรายการสั่งทำ…</p>
+      </div>
+    </main>
+
+    <!-- Empty State Template -->
+    <template id="empty-state-tmpl">
+      <div class="kds-empty">
+        <div class="kds-empty-icon">🍳</div>
+        <h2>ไม่มีรายการค้างในสเตชันนี้</h2>
+        <p>ออเดอร์ใหม่จะแสดงบนหน้าจอนี้โดยอัตโนมัติ</p>
+      </div>
+    </template>
+  </div>
+
+  <style is:global>
+    .kds-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: calc(100vh - 4rem);
+      padding: 1.5rem;
+      gap: 1.25rem;
+      background: var(--canvas, #f4efe6);
+      color: var(--ink, #1f2a24);
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+
+    .kds-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      border-radius: var(--radius-md, 14px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .kds-header-left {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .kds-title-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kds-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin: 0;
+      color: var(--ink, #1f2a24);
+      letter-spacing: -0.02em;
+    }
+
+    .kds-station-tabs {
+      display: flex;
+      gap: 0.35rem;
+      background: var(--surface-soft, #fbf8f2);
+      padding: 0.3rem;
+      border-radius: var(--radius-sm, 8px);
+      border: 1px solid var(--line, #d8cebf);
+    }
+
+    .kds-tab {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      min-height: 40px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--muted, #5e6d63);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .kds-tab:hover {
+      color: var(--ink, #1f2a24);
+      background: var(--surface, #ffffff);
+    }
+
+    .kds-tab.active {
+      color: #ffffff;
+      background: var(--brand, #176348);
+    }
+
+    .kds-tab-count {
+      font-size: 0.75rem;
+      padding: 0.125rem 0.45rem;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.15);
+      color: currentColor;
+    }
+
+    .kds-tab.active .kds-tab-count {
+      background: rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+    }
+
+    .kds-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .kds-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+      color: var(--muted, #5e6d63);
+      padding: 0.375rem 0.75rem;
+      background: var(--surface-soft, #fbf8f2);
+      border-radius: var(--radius-sm, 6px);
+      border: 1px solid var(--line, #d8cebf);
+    }
+
+    .kds-live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--brand, #176348);
+      box-shadow: 0 0 6px rgba(23, 99, 72, 0.4);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .kds-board {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 1.25rem;
+      flex: 1;
+      align-content: start;
+      overflow-y: auto;
+    }
+
+    .kds-card {
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      border-radius: var(--radius-md, 14px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.15s ease;
+    }
+
+    .kds-card:hover {
+      border-color: var(--brand, #176348);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .kds-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1.15rem;
+      border-bottom: 1px solid var(--line, #d8cebf);
+      background: var(--surface-soft, #fbf8f2);
+    }
+
+    .kds-queue-num {
+      font-size: 1.5rem;
+      font-weight: 850;
+      color: var(--brand, #176348);
+      letter-spacing: -0.02em;
+    }
+
+    .kds-order-num {
+      font-size: 0.75rem;
+      color: var(--muted, #5e6d63);
+      font-family: inherit;
+    }
+
+    .kds-timer {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.25rem 0.625rem;
+      border-radius: 6px;
+      font-family: inherit;
+    }
+
+    .kds-timer.green {
+      background: var(--brand-soft, #eef7f2);
+      color: var(--brand, #176348);
+      border: 1px solid #cfe5d7;
+    }
+
+    .kds-timer.yellow {
+      background: #fef8ec;
+      color: #b45309;
+      border: 1px solid #fde68a;
+    }
+
+    .kds-timer.red {
+      background: #fdf2f2;
+      color: var(--danger, #c62828);
+      border: 1px solid #fecaca;
+      animation: alertPulse 1.5s infinite;
+    }
+
+    @keyframes alertPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .kds-card-body {
+      padding: 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      flex: 1;
+      background: var(--surface, #ffffff);
+    }
+
+    .kds-station-pill {
+      align-self: flex-start;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      background: var(--surface-soft, #fbf8f2);
+      color: var(--muted, #5e6d63);
+      border: 1px solid var(--line, #d8cebf);
+    }
+
+    .kds-item-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.65rem;
+    }
+
+    .kds-qty {
+      font-size: 1.25rem;
+      font-weight: 850;
+      color: var(--ink, #1f2a24);
+      background: var(--surface-soft, #fbf8f2);
+      border: 1px solid var(--line, #d8cebf);
+      min-width: 2.2rem;
+      height: 2.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+    }
+
+    .kds-item-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kds-item-name {
+      font-size: 1.05rem;
+      font-weight: 750;
+      color: var(--ink, #1f2a24);
+      line-height: 1.3;
+    }
+
+    .kds-item-variant {
+      font-size: 0.82rem;
+      color: var(--brand, #176348);
+      font-weight: 600;
+    }
+
+    .kds-modifiers-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding-left: 0.5rem;
+      border-left: 2px solid var(--line, #d8cebf);
+      margin-top: 0.25rem;
+    }
+
+    .kds-modifier-tag {
+      font-size: 0.8125rem;
+      color: var(--muted, #5e6d63);
+      font-weight: 500;
+    }
+
+    .kds-note-box {
+      font-size: 0.8125rem;
+      color: var(--danger, #c62828);
+      background: #fdf2f2;
+      border: 1px dashed #fecaca;
+      padding: 0.5rem;
+      border-radius: 6px;
+    }
+
+    .kds-card-footer {
+      padding: 0.85rem 1.15rem;
+      background: var(--surface, #ffffff);
+      border-top: 1px solid var(--line, #d8cebf);
+    }
+
+    .kds-done-btn {
+      width: 100%;
+      min-height: 48px;
+      font-size: 1rem;
+      font-weight: 750;
+      color: #ffffff;
+      background: var(--brand, #176348);
+      border: none;
+      border-radius: var(--radius-sm, 8px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: background 0.15s ease, transform 0.1s active;
+    }
+
+    .kds-done-btn:hover {
+      background: var(--brand-hover, #124d38);
+    }
+
+    .kds-done-btn:active {
+      transform: scale(0.98);
+    }
+
+    .kds-done-btn:disabled {
+      background: var(--surface-soft, #fbf8f2);
+      color: var(--muted, #5e6d63);
+      border: 1px solid var(--line, #d8cebf);
+      cursor: not-allowed;
+    }
+
+    .kds-empty {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 5rem 1rem;
+      color: var(--muted, #5e6d63);
+      text-align: center;
+    }
+
+    .kds-empty-icon {
+      font-size: 3.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .kds-loading {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 1rem;
+      color: var(--muted, #5e6d63);
+      gap: 1rem;
+    }
+
+    .kds-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--line, #d8cebf);
+      border-top-color: var(--brand, #176348);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+
+  <script>
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { PreparationStationSummary, PreparationTaskSummary } from "@aevo/contracts";
+
+    const board = document.querySelector<HTMLElement>("#kds-board")!;
+    const stationTabs = document.querySelector<HTMLElement>("#station-tabs")!;
+    const errorEl = document.querySelector<HTMLElement>("#kds-error")!;
+    const syncStatus = document.querySelector<HTMLElement>("#kds-sync-status")!;
+    const refreshBtn = document.querySelector<HTMLButtonElement>("#kds-refresh")!;
+    const soundToggle = document.querySelector<HTMLButtonElement>("#kds-sound-toggle")!;
+    const soundIcon = document.querySelector<HTMLElement>("#sound-icon")!;
+
+    let currentStationId = "";
+    let stations: PreparationStationSummary[] = [];
+    let tasks: PreparationTaskSummary[] = [];
+    let soundEnabled = true;
+    let storeId = "";
+
+    // Web Audio synthesizer for done chime
+    function playBeep(freq = 600, duration = 0.15) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch {}
+    }
+
+    function formatElapsed(createdAt: string): { text: string; level: "green" | "yellow" | "red" } {
+      const start = new Date(createdAt).getTime();
+      const now = Date.now();
+      const elapsedSec = Math.max(0, Math.floor((now - start) / 1000));
+      const min = Math.floor(elapsedSec / 60);
+      const sec = elapsedSec % 60;
+      const text = `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+
+      if (min < 3) return { text, level: "green" };
+      if (min < 5) return { text, level: "yellow" };
+      return { text, level: "red" };
+    }
+
+    function renderTabs() {
+      const activeTab = stationTabs.querySelector(".kds-tab.active");
+      const activeId = activeTab ? (activeTab as HTMLElement).dataset.stationId ?? "" : "";
+
+      const allCount = tasks.filter((t) => t.status === "PENDING" || t.status === "IN_PROGRESS").length;
+
+      let html = `
+        <button class="kds-tab ${activeId === "" ? "active" : ""}" data-station-id="" type="button" role="tab">
+          <span>ทั้งหมด</span>
+          <span class="kds-tab-count">${allCount}</span>
+        </button>
+      `;
+
+      for (const s of stations) {
+        const count = tasks.filter(
+          (t) => (t.status === "PENDING" || t.status === "IN_PROGRESS") && t.stationId === s.id
+        ).length;
+        html += `
+          <button class="kds-tab ${activeId === s.id ? "active" : ""}" data-station-id="${s.id}" type="button" role="tab">
+            <span>${escapeHtml(s.name)}</span>
+            <span class="kds-tab-count">${count}</span>
+          </button>
+        `;
+      }
+
+      stationTabs.innerHTML = html;
+
+      stationTabs.querySelectorAll<HTMLButtonElement>(".kds-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          stationTabs.querySelectorAll(".kds-tab").forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentStationId = tab.dataset.stationId || "";
+          renderBoard();
+        });
+      });
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function renderBoard() {
+      const visibleTasks = tasks.filter((t) => {
+        const activeStatus = t.status === "PENDING" || t.status === "IN_PROGRESS";
+        if (!activeStatus) return false;
+        if (currentStationId && t.stationId !== currentStationId) return false;
+        return true;
+      });
+
+      if (visibleTasks.length === 0) {
+        const tmpl = document.querySelector<HTMLTemplateElement>("#empty-state-tmpl")!;
+        board.innerHTML = "";
+        board.appendChild(tmpl.content.cloneNode(true));
+        return;
+      }
+
+      board.innerHTML = visibleTasks
+        .map((task) => {
+          const { text: timerText, level: timerLevel } = formatElapsed(task.createdAt);
+          const queueDisplay = task.queueNumber || "QUEUE";
+          const modifiersHtml =
+            task.modifiers && task.modifiers.length > 0
+              ? `<div class="kds-modifiers-list">
+                  ${task.modifiers.map((m) => `<span class="kds-modifier-tag">+ ${escapeHtml(m.name)}</span>`).join("")}
+                </div>`
+              : "";
+          const noteHtml = task.note
+            ? `<div class="kds-note-box">📝 ${escapeHtml(task.note)}</div>`
+            : "";
+
+          return `
+            <article class="kds-card" data-task-id="${task.id}" id="task-${task.id}">
+              <header class="kds-card-header">
+                <div>
+                  <div class="kds-queue-num">${escapeHtml(queueDisplay)}</div>
+                  <div class="kds-order-num">${escapeHtml(task.orderNumber)}</div>
+                </div>
+                <div class="kds-timer ${timerLevel}" data-created-at="${task.createdAt}">
+                  <span>⏱</span>
+                  <span class="timer-display">${timerText}</span>
+                </div>
+              </header>
+
+              <div class="kds-card-body">
+                <span class="kds-station-pill">${escapeHtml(task.stationName)}</span>
+                <div class="kds-item-row">
+                  <div class="kds-qty">${task.quantity}</div>
+                  <div class="kds-item-info">
+                    <div class="kds-item-name">${escapeHtml(task.productName)}</div>
+                    ${task.variantName ? `<div class="kds-item-variant">${escapeHtml(task.variantName)}</div>` : ""}
+                  </div>
+                </div>
+                ${modifiersHtml}
+                ${noteHtml}
+              </div>
+
+              <footer class="kds-card-footer">
+                <button class="kds-done-btn" data-action="complete" data-task-id="${task.id}" type="button">
+                  <span>✓</span>
+                  <span>เสร็จสิ้น (Done)</span>
+                </button>
+              </footer>
+            </article>
+          `;
+        })
+        .join("");
+
+      // Bind complete buttons
+      board.querySelectorAll<HTMLButtonElement>('[data-action="complete"]').forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const taskId = btn.dataset.taskId!;
+          btn.disabled = true;
+          btn.textContent = "กำลังบันทึก…";
+          try {
+            await api.post(`/api/preparation/tasks/${taskId}/complete`, {});
+            playBeep(880, 0.15); // Confirmation high beep
+            // Remove locally
+            tasks = tasks.filter((t) => t.id !== taskId);
+            renderTabs();
+            renderBoard();
+          } catch (err: any) {
+            btn.disabled = false;
+            btn.textContent = "✓ เสร็จสิ้น (Done)";
+            showError(err.message || "บันทึกสถานะไม่สำเร็จ");
+          }
+        });
+      });
+    }
+
+    function showError(msg: string) {
+      if (!errorEl) return;
+      errorEl.textContent = msg;
+      errorEl.hidden = false;
+      setTimeout(() => {
+        errorEl.hidden = true;
+      }, 5000);
+    }
+
+    async function fetchKdsData() {
+      if (!storeId) return;
+      try {
+        syncStatus.textContent = "กำลังซิงก์…";
+        const [stationRes, taskRes] = await Promise.all([
+          api.get<{ stations: PreparationStationSummary[] }>(`/api/preparation/stations?storeId=${storeId}`),
+          api.get<{ tasks: PreparationTaskSummary[] }>(`/api/preparation/tasks?storeId=${storeId}&status=PENDING,IN_PROGRESS`)
+        ]);
+
+        stations = stationRes.stations ?? [];
+        tasks = taskRes.tasks ?? [];
+        syncStatus.textContent = "เชื่อมต่อแล้ว";
+
+        renderTabs();
+        renderBoard();
+      } catch (err: any) {
+        syncStatus.textContent = "ขัดข้อง (จะลองใหม่)";
+      }
+    }
+
+    // Live timer ticking every second
+    setInterval(() => {
+      board.querySelectorAll<HTMLElement>(".kds-timer").forEach((timerEl) => {
+        const createdAt = timerEl.dataset.createdAt;
+        if (!createdAt) return;
+        const { text, level } = formatElapsed(createdAt);
+        const display = timerEl.querySelector(".timer-display");
+        if (display) display.textContent = text;
+        timerEl.className = `kds-timer ${level}`;
+      });
+    }, 1000);
+
+    // Auto-polling every 4 seconds
+    setInterval(fetchKdsData, 4000);
+
+    refreshBtn.addEventListener("click", () => {
+      fetchKdsData();
+    });
+
+    soundToggle.addEventListener("click", () => {
+      soundEnabled = !soundEnabled;
+      soundIcon.textContent = soundEnabled ? "🔔" : "🔕";
+    });
+
+    // Initialize
+    async function init() {
+      try {
+        const { user, stores } = await loadStaffContext();
+        const store = findSelectedStore(stores, getSelectedStoreId());
+        if (!store) {
+          window.location.assign("/staff");
+          return;
+        }
+        storeId = store.id;
+        sessionStorage.setItem("aevo.selectedStoreId", storeId);
+
+        initStaffShell({
+          user,
+          stores,
+          selectedStoreId: storeId,
+          onStoreChange: async (nextStoreId) => {
+            storeId = nextStoreId;
+            const nextStore = stores.find((s) => s.id === nextStoreId);
+            if (!nextStore) return;
+            history.replaceState(null, "", storeUrl("/staff/kds", nextStoreId));
+            await fetchKdsData();
+          }
+        });
+
+        await fetchKdsData();
+      } catch (err: any) {
+        showError(friendlyErrorMessage(err, "เกิดข้อผิดพลาดในการโหลดระบบครัว"));
+      }
+    }
+
+    init();
+  </script>
+</StaffShell>

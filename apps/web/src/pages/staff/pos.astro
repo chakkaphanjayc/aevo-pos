@@ -3,6 +3,9 @@ import StaffShell from "../../components/staff/StaffShell.astro";
 ---
 <StaffShell title="POS" active="pos" fullHeight>
   <div slot="top-actions" class="pos-top-actions">
+    <button class="pos-top-action" id="shift-btn" type="button" title="กะเงินสดในลิ้นชัก">
+      <span aria-hidden="true">💵</span> <span id="shift-status-text">ตรวจกะ</span>
+    </button>
     <button class="pos-top-action" id="held-orders-btn" type="button" title="ออเดอร์ที่พัก" aria-label="ออเดอร์ที่พัก"><span aria-hidden="true">▤</span><span class="held-badge" id="held-badge" hidden>0</span></button>
     <button class="outbox-badge" id="outbox-badge" type="button" hidden title="กดเพื่อซิงค์ข้อมูล">รอซิงค์ 0</button>
   </div>
@@ -120,6 +123,19 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       </div>
       <div class="pos-modal-body" id="held-body">
         <p class="pos-cart-empty">ไม่มีออเดอร์ที่พัก</p>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Cash Shift modal -->
+  <dialog class="pos-modal" id="shift-modal">
+    <div class="pos-modal-content">
+      <div class="pos-modal-header">
+        <h3 id="shift-modal-title">กะเงินสดในลิ้นชัก</h3>
+        <button class="pos-modal-close" id="shift-close" type="button" aria-label="ปิด">✕</button>
+      </div>
+      <div class="pos-modal-body" id="shift-body">
+        <p class="pos-cart-empty">กำลังโหลดข้อมูลกะ…</p>
       </div>
     </div>
   </dialog>
@@ -283,9 +299,11 @@ import StaffShell from "../../components/staff/StaffShell.astro";
           history.replaceState(null, "", storeUrl("/staff/pos", nextStoreId));
           renderCart();
           await loadCatalogForStore(nextStore);
+          void refreshShiftStatus();
         }
       });
       await loadCatalogForStore(store);
+      void refreshShiftStatus();
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
       else showToast(friendlyErrorMessage(cause, "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่"), true);
@@ -680,7 +698,16 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     /* ---------------------------------------------------------------- */
     /* Cash payment                                                     */
     /* ---------------------------------------------------------------- */
-    function openCashModal() {
+    async function openCashModal() {
+      if (!currentShift || currentShift.status !== "OPEN") {
+        await refreshShiftStatus();
+      }
+      if (!currentShift || currentShift.status !== "OPEN") {
+        showToast("กรุณาเปิดกะการขายก่อนรับชำระเงิน", true);
+        renderShiftModal();
+        shiftModal.showModal();
+        return;
+      }
       const totals = cartTotals(cart);
       $<HTMLElement>("cash-total").textContent = formatMoney(totals.totalMinor);
       const input = $<HTMLInputElement>("cash-received");
@@ -898,10 +925,220 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       `;
       $<HTMLElement>("receipt-body").innerHTML = html;
       receiptModal.showModal();
+
+      // Persist receipt in background to database
+      if (!order.id.startsWith("offline-")) {
+        api<{ receipt: any }>("/api/receipts", {
+          method: "POST",
+          body: JSON.stringify({
+            storeId: selectedStoreId,
+            orderId: order.id,
+            cashReceivedMinor: receivedMinor,
+            cashierName: principal?.displayName || principal?.email || "Staff"
+          })
+        }).catch(() => undefined);
+      }
     }
 
     $<HTMLButtonElement>("receipt-print").addEventListener("click", () => window.print());
     $<HTMLButtonElement>("receipt-close").addEventListener("click", () => receiptModal.close());
+
+    /* ---------------------------------------------------------------- */
+    /* Cash Shift Management                                            */
+    /* ---------------------------------------------------------------- */
+    const shiftBtn = $<HTMLButtonElement>("shift-btn");
+    const shiftModal = $<HTMLDialogElement>("shift-modal");
+    const shiftClose = $<HTMLButtonElement>("shift-close");
+    const shiftBody = $<HTMLElement>("shift-body");
+    const shiftTitle = $<HTMLElement>("shift-modal-title");
+    let currentShift: any = null;
+
+    async function refreshShiftStatus(): Promise<void> {
+      if (!selectedStoreId) return;
+      try {
+        const res = await api<{ session: any }>(`/api/cash-sessions/current?storeId=${encodeURIComponent(selectedStoreId)}`);
+        currentShift = res.session;
+        const textEl = document.getElementById("shift-status-text");
+        if (textEl) {
+          if (currentShift && currentShift.status === "OPEN") {
+            textEl.textContent = `🟢 กะเปิด (฿${(currentShift.openingAmountMinor / 100).toFixed(2)})`;
+          } else {
+            textEl.textContent = "🔴 ปิดกะอยู่";
+          }
+        }
+      } catch {
+        // Best effort
+      }
+    }
+
+    function renderShiftModal(): void {
+      if (!currentShift || currentShift.status !== "OPEN") {
+        shiftTitle.textContent = "เปิดกะการขาย (Opening Shift)";
+        shiftBody.innerHTML = `
+          <div class="shift-open-form">
+            <p class="shift-open-desc">ยังไม่มีกะที่เปิดอยู่ กรุณาระบุเงินทอนเริ่มต้นในลิ้นชักเพื่อเริ่มการขาย</p>
+            <label class="shift-field-group">
+              <span class="shift-field-label">เงินทอนเริ่มต้น (บาท)</span>
+              <input id="shift-open-amount" class="shift-input-amount" type="number" step="1" min="0" value="2000" />
+            </label>
+            <label class="shift-field-group">
+              <span class="shift-field-label">บันทึกเพิ่มเติม</span>
+              <input id="shift-open-notes" class="shift-input-text" type="text" placeholder="เช่น กะเช้า / แคชเชียร์ 1" />
+            </label>
+            <button id="shift-open-submit" class="pos-action-btn pos-pay-btn" type="button">ยืนยันเปิดกะ</button>
+          </div>
+        `;
+        document.getElementById("shift-open-submit")?.addEventListener("click", async () => {
+          const input = document.getElementById("shift-open-amount") as HTMLInputElement;
+          const notesInput = document.getElementById("shift-open-notes") as HTMLInputElement;
+          const amount = Math.round(Number(input?.value || 0) * 100);
+          try {
+            await api("/api/cash-sessions/open", {
+              method: "POST",
+              body: JSON.stringify({
+                storeId: selectedStoreId,
+                openingAmountMinor: amount,
+                notes: notesInput?.value || undefined
+              })
+            });
+            showToast("เปิดกะเรียบร้อยแล้ว");
+            await refreshShiftStatus();
+            renderShiftModal();
+          } catch (cause) {
+            showToast(friendlyErrorMessage(cause, "เปิดกะไม่สำเร็จ"), true);
+          }
+        });
+        return;
+      }
+
+      // Session is OPEN
+      const openFloat = (currentShift.openingAmountMinor / 100).toFixed(2);
+      const cashSales = ((currentShift.cashSalesMinor || 0) / 100).toFixed(2);
+      const expectedTotal = ((currentShift.openingAmountMinor + (currentShift.cashSalesMinor || 0)) / 100).toFixed(2);
+
+      shiftTitle.textContent = "จัดการกะเงินสด (สถานะ: เปิดกะ)";
+      shiftBody.innerHTML = `
+        <div class="shift-open-form">
+          <div class="shift-summary-grid">
+            <div><small class="shift-metric-label">เงินทอนเริ่มต้น</small><div class="shift-metric-val">฿${openFloat}</div></div>
+            <div><small class="shift-metric-label">ยอดขายเงินสดในกะ</small><div class="shift-metric-val brand">฿${cashSales}</div></div>
+            <div class="shift-expected-box">
+              <small class="shift-metric-label">ยอดที่คาดว่ามีในลิ้นชัก</small>
+              <div class="shift-expected-val">฿${expectedTotal}</div>
+            </div>
+          </div>
+
+          <details class="shift-movement-details">
+            <summary class="shift-movement-summary">💵 นำเงินเข้า / นำเงินออก (Cash In/Out)</summary>
+            <div class="shift-movement-fields">
+              <select id="movement-type" class="shift-select">
+                <option value="PAID_IN">สำรองเงินทอนเพิ่ม (PAID_IN)</option>
+                <option value="IN">นำเงินเข้า (IN)</option>
+                <option value="PAID_OUT">จ่ายค่าใช้จ่ายหน้าร้าน (PAID_OUT)</option>
+                <option value="OUT">นำเงินออก (OUT)</option>
+              </select>
+              <input id="movement-amount" class="shift-input-text" type="number" min="1" step="1" placeholder="จำนวนเงิน (บาท)" />
+              <input id="movement-reason" class="shift-input-text" type="text" placeholder="เหตุผล (เช่น ซื้อน้ำแข็ง)" />
+              <button id="movement-submit" class="button secondary" type="button">บันทึกเงินเข้า/ออก</button>
+            </div>
+          </details>
+
+          <div class="shift-close-section">
+            <h4 class="shift-close-title">ปิดกะและตรวจนับเงิน (Close Shift)</h4>
+            <label class="shift-field-group">
+              <span class="shift-field-label">ยอดเงินสดที่นับได้จริงในลิ้นชัก (บาท)</span>
+              <input id="counted-cash" class="shift-input-amount" type="number" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <div id="counted-diff" class="shift-diff-badge">ระบุยอดเงินที่นับได้เพื่อคำนวณส่วนต่าง</div>
+            <button id="close-shift-submit" class="pos-action-btn shift-close-submit" type="button">ยืนยันปิดกะ</button>
+          </div>
+        </div>
+      `;
+
+      // Wire movement handler
+      document.getElementById("movement-submit")?.addEventListener("click", async () => {
+        const typeEl = document.getElementById("movement-type") as HTMLSelectElement;
+        const amtEl = document.getElementById("movement-amount") as HTMLInputElement;
+        const reasonEl = document.getElementById("movement-reason") as HTMLInputElement;
+        const amtMinor = Math.round(Number(amtEl?.value || 0) * 100);
+        const reason = reasonEl?.value.trim();
+        if (!amtMinor || !reason) {
+          showToast("กรุณาระบุจำนวนเงินและเหตุผล", true);
+          return;
+        }
+        try {
+          await api("/api/cash-sessions/movement", {
+            method: "POST",
+            body: JSON.stringify({
+              storeId: selectedStoreId,
+              cashSessionId: currentShift.id,
+              movementType: typeEl.value,
+              amountMinor: amtMinor,
+              reason
+            })
+          });
+          showToast("บันทึกเงินเข้า/ออกแล้ว");
+          await refreshShiftStatus();
+          renderShiftModal();
+        } catch (cause) {
+          showToast(friendlyErrorMessage(cause, "บันทึกไม่สำเร็จ"), true);
+        }
+      });
+
+      // Wire live diff calculation
+      const countedInput = document.getElementById("counted-cash") as HTMLInputElement;
+      const diffEl = document.getElementById("counted-diff");
+      countedInput?.addEventListener("input", () => {
+        const counted = Number(countedInput.value || 0);
+        const exp = currentShift.openingAmountMinor / 100 + (currentShift.cashSalesMinor || 0) / 100;
+        const diff = counted - exp;
+        if (diffEl) {
+          if (Math.abs(diff) < 0.01) {
+            diffEl.textContent = "✅ ยอดเงินตรงกับระบบพอดี (฿0.00)";
+            diffEl.style.color = "#23a36d";
+          } else if (diff > 0) {
+            diffEl.textContent = `⚠️ เงินเกิน +฿${diff.toFixed(2)}`;
+            diffEl.style.color = "#b45309";
+          } else {
+            diffEl.textContent = `❌ เงินขาด -฿${Math.abs(diff).toFixed(2)}`;
+            diffEl.style.color = "#dc2626";
+          }
+        }
+      });
+
+      // Wire close shift submit
+      document.getElementById("close-shift-submit")?.addEventListener("click", async () => {
+        const counted = Number(countedInput?.value || 0);
+        if (countedInput && !countedInput.value) {
+          showToast("กรุณาระบุยอดเงินที่นับได้", true);
+          return;
+        }
+        if (!window.confirm("ต้องการปิดกะการขายนี้หรือไม่ ยอดขายหลังจากนี้จะต้องเปิดกะใหม่")) return;
+        try {
+          await api("/api/cash-sessions/close", {
+            method: "POST",
+            body: JSON.stringify({
+              storeId: selectedStoreId,
+              cashSessionId: currentShift.id,
+              countedAmountMinor: Math.round(counted * 100)
+            })
+          });
+          showToast("ปิดกะเรียบร้อยแล้ว");
+          await refreshShiftStatus();
+          shiftModal.close();
+        } catch (cause) {
+          showToast(friendlyErrorMessage(cause, "ปิดกะไม่สำเร็จ"), true);
+        }
+      });
+    }
+
+    shiftBtn.addEventListener("click", async () => {
+      await refreshShiftStatus();
+      renderShiftModal();
+      shiftModal.showModal();
+    });
+
+    shiftClose.addEventListener("click", () => shiftModal.close());
 
     /* ---------------------------------------------------------------- */
     /* Hold / Retrieve                                                  */
@@ -1318,8 +1555,29 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     .pos-modal { width: min(480px, calc(100% - 28px)); border-radius: var(--radius-lg); }
     .pos-modal-header { padding: 18px 20px 14px; }
     .pos-modal-footer { padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); }
-    .pos-mod-option { min-height: 48px; padding: 10px 11px; }
     .pos-toast { bottom: calc(86px + env(safe-area-inset-bottom)); border-radius: 10px; font-size: .76rem; }
+
+    /* Shift Modal Classes */
+    .shift-open-form { display: flex; flex-direction: column; gap: 14px; }
+    .shift-open-desc { color: var(--muted); font-size: 0.88rem; margin: 0; }
+    .shift-field-group { display: flex; flex-direction: column; gap: 6px; }
+    .shift-field-label { font-weight: 700; font-size: 0.85rem; color: var(--ink); }
+    .shift-input-amount { padding: 12px; border: 1.5px solid var(--line); border-radius: var(--radius-sm, 10px); font-size: 1.2rem; font-weight: 700; color: var(--ink); background: var(--surface); }
+    .shift-input-text { padding: 10px; border: 1.5px solid var(--line); border-radius: var(--radius-sm, 10px); color: var(--ink); background: var(--surface); }
+    .shift-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--paper, #f6f8f7); padding: 12px; border-radius: var(--radius-md, 12px); border: 1px solid var(--line); }
+    .shift-metric-label { color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+    .shift-metric-val { font-weight: 800; font-size: 1.1rem; color: var(--ink); }
+    .shift-metric-val.brand { color: var(--brand); }
+    .shift-expected-box { grid-column: span 2; border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+    .shift-expected-val { font-weight: 800; font-size: 1.3rem; color: var(--brand); }
+    .shift-movement-details { border: 1px solid var(--line); border-radius: var(--radius-md, 10px); padding: 10px; background: var(--surface); }
+    .shift-movement-summary { cursor: pointer; font-weight: 700; font-size: 0.88rem; color: var(--ink); }
+    .shift-movement-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .shift-select { padding: 8px; border-radius: var(--radius-sm, 8px); border: 1px solid var(--line); color: var(--ink); background: var(--surface); }
+    .shift-close-section { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .shift-close-title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--ink); }
+    .shift-diff-badge { font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+    .shift-close-submit { background: var(--danger, #e53935) !important; color: white !important; }
     @media (max-width: 1024px) {
       .pos-body { grid-template-columns: minmax(0, 1fr) minmax(310px, 35%); grid-template-rows: auto minmax(0, 1fr); }
       .pos-categories { grid-column: 1 / -1; flex-direction: row; gap: 4px; padding: 7px 12px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }

@@ -11,4 +11,8 @@ export class FixedWindowRateLimiter {
     bucket.count += 1;
     return bucket.count <= this.limit;
   }
+
+  allow(key: string, now = Date.now()): boolean {
+    return this.consume(key, now);
+  }
 }

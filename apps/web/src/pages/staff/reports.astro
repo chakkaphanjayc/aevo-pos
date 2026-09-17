@@ -1,0 +1,687 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="รายงานยอดขายและวิเคราะห์" active="reports">
+  <div class="staff-page reports-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Reports & Analytics</p>
+        <h1 class="staff-page-title">รายงานยอดขายและวิเคราะห์</h1>
+        <p class="staff-page-lede">สรุปผลประกอบการและสินค้าขายดีประจำสาขา</p>
+      </div>
+      <div class="reports-header-actions">
+        <label class="report-date-picker">
+          <span>วันที่:</span>
+          <input type="date" id="report-date-input" />
+        </label>
+        <button class="button secondary" id="btn-export-csv" type="button">
+          <span>📥</span>
+          <span>ส่งออก CSV</span>
+        </button>
+        <button class="button secondary" id="btn-refresh-reports" type="button">
+          <StaffIcon name="refresh" size={16} />
+          <span>รีเฟรช</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="error" id="reports-error" role="alert" hidden></p>
+
+    <!-- Daily KPI Cards -->
+    <div class="reports-kpi-grid" aria-label="สรุปยอดขาย">
+      <div class="kpi-card surface">
+        <span class="kpi-label">ยอดขายรวมสุทธิ</span>
+        <strong class="kpi-value highlight" id="kpi-revenue">฿0.00</strong>
+        <small id="kpi-date-label">ประจำวันที่เลือก</small>
+      </div>
+      <div class="kpi-card surface">
+        <span class="kpi-label">จำนวนออเดอร์</span>
+        <strong class="kpi-value" id="kpi-orders">0</strong>
+        <small>บิลที่สำเร็จ</small>
+      </div>
+      <div class="kpi-card surface">
+        <span class="kpi-label">ยอดเฉลี่ยต่อบิล</span>
+        <strong class="kpi-value" id="kpi-average">฿0.00</strong>
+        <small>Average Ticket</small>
+      </div>
+      <div class="kpi-card surface">
+        <span class="kpi-label">ช่องทางชำระเงิน</span>
+        <div class="kpi-payment-split">
+          <div><small>💵 เงินสด</small><strong id="kpi-cash">฿0.00</strong></div>
+          <div><small>📱 PromptPay</small><strong id="kpi-qr">฿0.00</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts and Product Mix Grid -->
+    <div class="reports-layout-columns">
+      <!-- Hourly Distribution Section -->
+      <section class="report-section surface">
+        <div class="section-header">
+          <h2>ยอดขายตามช่วงเวลา (Hourly Sales)</h2>
+        </div>
+        <div class="hourly-chart" id="hourly-chart">
+          <!-- Populated by JS -->
+          <div class="chart-loading">กำลังคำนวณช่วงเวลา…</div>
+        </div>
+      </section>
+
+      <!-- Product Mix Section -->
+      <section class="report-section surface">
+        <div class="section-header">
+          <h2>สินค้าขายดี (Product Mix)</h2>
+        </div>
+        <div class="product-mix-wrap">
+          <table class="product-mix-table">
+            <thead>
+              <tr>
+                <th>สินค้า</th>
+                <th>จำนวน</th>
+                <th>ยอดขาย</th>
+                <th>สัดส่วน</th>
+              </tr>
+            </thead>
+            <tbody id="product-mix-tbody">
+              <tr><td colspan="4" class="text-center">กำลังคำนวณสินค้าขายดี…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Daily Closing / Operational Sales Ledger -->
+    <section class="report-section surface closing-section">
+      <div class="section-header reports-closing-header">
+        <div>
+          <h2>ปิดยอดประจำวัน & บัญชีเบื้องต้น (Daily Closing & Sales Ledger)</h2>
+          <p class="reports-closing-subtitle">บันทึกยอดขาย ภาษี ส่วนลด และตรวจยอดเงินสด/โอนประจำวัน</p>
+        </div>
+        <button class="button" id="btn-execute-closing" type="button">
+          <span>🔒</span> <span>บันทึกปิดยอดขายวันนี้</span>
+        </button>
+      </div>
+      <div class="closing-summary-card" id="closing-summary-area">
+        <p class="closing-pending-text">กำลังตรวจสอบสถานะการปิดยอด…</p>
+      </div>
+    </section>
+  </div>
+
+  <style is:global>
+    .reports-page {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .reports-header-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .report-date-picker {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.875rem;
+      color: var(--muted);
+      min-height: 44px;
+    }
+
+    .report-date-picker input {
+      background: transparent;
+      border: none;
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 0.875rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .reports-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .kpi-label {
+      font-size: 0.8125rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .kpi-value {
+      font-size: 1.875rem;
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -0.02em;
+    }
+
+    .kpi-value.highlight {
+      color: var(--brand);
+    }
+
+    .kpi-card small {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .kpi-payment-split {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.25rem;
+    }
+
+    .kpi-payment-split div {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kpi-payment-split strong {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .reports-layout-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 900px) {
+      .reports-layout-columns {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .report-section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .section-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-soft, #fbf8f2);
+    }
+
+    .section-header h2 {
+      font-size: 1.125rem;
+      margin: 0;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .reports-closing-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .reports-closing-subtitle {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin: 4px 0 0;
+    }
+
+    .closing-section {
+      margin-top: 1.5rem;
+    }
+
+    .closing-summary-card {
+      margin-top: 1rem;
+      padding: 1.25rem;
+      background: var(--paper, #fbf8f2);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+    }
+
+    .closing-pending-text {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin: 0;
+    }
+
+    .closing-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .closing-metric-card {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .closing-metric-label {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 0.75rem;
+    }
+
+    .closing-metric-val {
+      font-weight: 800;
+      font-size: 1.15rem;
+      color: var(--ink);
+    }
+
+    .closing-metric-val.brand {
+      color: var(--brand);
+      font-size: 1.25rem;
+    }
+
+    .closing-metric-val.danger {
+      color: var(--danger, #c62828);
+    }
+
+    .closing-footer-row {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .closing-success-badge {
+      color: var(--brand);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .closing-timestamp {
+      color: var(--muted);
+    }
+
+    .closing-empty-state {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .closing-empty-text {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .closing-empty-hint {
+      font-size: 0.8rem;
+      color: var(--brand);
+      font-weight: 700;
+    }
+
+    /* Hourly Bar Chart */
+    .hourly-chart {
+      padding: 1.5rem;
+      display: flex;
+      align-items: flex-end;
+      gap: 0.5rem;
+      height: 240px;
+      overflow-x: auto;
+      background: var(--surface);
+    }
+
+    .hourly-bar-col {
+      flex: 1;
+      min-width: 18px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.25rem;
+    }
+
+    .bar-fill {
+      width: 100%;
+      background: var(--brand);
+      border-radius: 4px 4px 0 0;
+      min-height: 4px;
+      transition: height 0.3s ease;
+    }
+
+    .bar-label {
+      font-size: 0.6875rem;
+      color: var(--muted);
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      margin-top: 0.25rem;
+    }
+
+    /* Product Mix Table */
+    .product-mix-wrap {
+      padding: 1rem;
+      overflow-x: auto;
+    }
+
+    .product-mix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    .product-mix-table th {
+      text-align: left;
+      padding: 0.75rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--line);
+      font-weight: 600;
+      background: var(--surface-soft, #fbf8f2);
+    }
+
+    .product-mix-table td {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+    }
+
+    .mix-progress-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mix-bar {
+      flex: 1;
+      height: 6px;
+      background: var(--line);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .mix-fill {
+      height: 100%;
+      background: var(--brand);
+      border-radius: 3px;
+    }
+
+    .text-center {
+      text-align: center;
+      color: var(--muted);
+      padding: 2rem !important;
+    }
+
+    .chart-loading {
+      margin: auto;
+      color: var(--muted);
+    }
+  </style>
+
+  <script>
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+
+    const dateInput = document.querySelector<HTMLInputElement>("#report-date-input")!;
+    const btnRefresh = document.querySelector<HTMLButtonElement>("#btn-refresh-reports")!;
+    const btnExport = document.querySelector<HTMLButtonElement>("#btn-export-csv")!;
+    const errorEl = document.querySelector<HTMLElement>("#reports-error")!;
+
+    const kpiRev = document.querySelector<HTMLElement>("#kpi-revenue")!;
+    const kpiOrders = document.querySelector<HTMLElement>("#kpi-orders")!;
+    const kpiAvg = document.querySelector<HTMLElement>("#kpi-average")!;
+    const kpiCash = document.querySelector<HTMLElement>("#kpi-cash")!;
+    const kpiQr = document.querySelector<HTMLElement>("#kpi-qr")!;
+    const kpiDateLabel = document.querySelector<HTMLElement>("#kpi-date-label")!;
+
+    const hourlyChart = document.querySelector<HTMLElement>("#hourly-chart")!;
+    const mixTbody = document.querySelector<HTMLElement>("#product-mix-tbody")!;
+
+    let storeId = "";
+    let currentDailyData: any = null;
+    let currentMixData: any[] = [];
+
+    function formatBaht(minorUnits: number): string {
+      return `฿${(minorUnits / 100).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    async function loadReports() {
+      if (!storeId) return;
+      const targetDate = dateInput.value || new Date().toISOString().split("T")[0];
+      kpiDateLabel.textContent = `ประจำวันที่ ${targetDate}`;
+
+      try {
+        const [dailyRes, mixRes, hourlyRes] = await Promise.all([
+          api.get<{ summary: any }>(`/api/reports/daily?storeId=${storeId}&date=${targetDate}`),
+          api.get<{ productMix: any[] }>(`/api/reports/product-mix?storeId=${storeId}`),
+          api.get<{ hourly: any[] }>(`/api/reports/hourly?storeId=${storeId}&date=${targetDate}`)
+        ]);
+
+        currentDailyData = dailyRes.summary;
+        currentMixData = mixRes.productMix ?? [];
+
+        renderKPIs(currentDailyData);
+        renderHourly(hourlyRes.hourly ?? []);
+        renderMix(currentMixData);
+        await checkDailyClosing();
+      } catch (err: any) {
+        if (errorEl) {
+          errorEl.textContent = err.message || "เกิดข้อผิดพลาดในการโหลดรายงาน";
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    async function checkDailyClosing(): Promise<void> {
+      const date = dateInput.value || new Date().toISOString().split("T")[0];
+      const area = document.getElementById("closing-summary-area");
+      if (!area || !storeId) return;
+      try {
+        const res = await api<{ closing: any }>(`/api/reports/closing/daily?storeId=${encodeURIComponent(storeId)}&date=${encodeURIComponent(date)}`);
+        if (res.closing) {
+          const c = res.closing;
+          area.innerHTML = `
+            <div class="closing-summary-grid">
+              <div class="closing-metric-card"><small class="closing-metric-label">ยอดขายรวม (Gross Sales)</small><div class="closing-metric-val">฿${(c.grossSalesMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">ส่วนลดรวม (Discounts)</small><div class="closing-metric-val danger">-฿${(c.discountsMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">ภาษีมูลค่าเพิ่ม (VAT 7%)</small><div class="closing-metric-val">฿${(c.taxMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">ยอดขายสุทธิ (Net Sales)</small><div class="closing-metric-val brand">฿${(c.netSalesMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">💵 เงินสด (Cash)</small><div class="closing-metric-val">฿${(c.cashSalesMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">📱 PromptPay</small><div class="closing-metric-val">฿${(c.promptpaySalesMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">💳 บัตรเครดิต</small><div class="closing-metric-val">฿${(c.cardSalesMinor/100).toFixed(2)}</div></div>
+              <div class="closing-metric-card"><small class="closing-metric-label">จำนวนบิลสำเร็จ</small><div class="closing-metric-val">${c.totalOrders} บิล</div></div>
+            </div>
+            <div class="closing-footer-row">
+              <span class="closing-success-badge">✅ บันทึกปิดยอดขายประจำวันเข้าสู่ระบบเรียบร้อยแล้ว</span>
+              <small class="closing-timestamp">${new Date(c.createdAt).toLocaleString("th-TH")}</small>
+            </div>
+          `;
+        } else {
+          area.innerHTML = `
+            <div class="closing-empty-state">
+              <span class="closing-empty-text">ยังไม่มีการบันทึกปิดยอดสำหรับวันที่ ${date}</span>
+              <span class="closing-empty-hint">กดปุ่ม "บันทึกปิดยอดขายวันนี้" ด้านบน เพื่อสรุปยอดขายเข้าสู่ Operational Ledger</span>
+            </div>
+          `;
+        }
+      } catch {
+        area.innerHTML = `<span class="closing-empty-text">ยังไม่มีการบันทึกปิดยอดสำหรับวันที่เลือก</span>`;
+      }
+    }
+
+    document.getElementById("btn-execute-closing")?.addEventListener("click", async () => {
+      const date = dateInput.value || new Date().toISOString().split("T")[0];
+      if (!window.confirm(`ต้องการบันทึกปิดยอดขายประจำวันที่ ${date} หรือไม่?`)) return;
+      try {
+        await api("/api/reports/closing/daily", {
+          method: "POST",
+          body: JSON.stringify({
+            storeId,
+            closingDate: date
+          })
+        });
+        alert(`บันทึกปิดยอดขายวันที่ ${date} เรียบร้อยแล้ว`);
+        await checkDailyClosing();
+      } catch (cause: any) {
+        alert(cause?.message || "บันทึกปิดยอดไม่สำเร็จ");
+      }
+    });
+
+    function renderKPIs(summary: any) {
+      if (!summary) return;
+      kpiRev.textContent = formatBaht(summary.totalRevenueMinor || 0);
+      kpiOrders.textContent = String(summary.orderCount || 0);
+      kpiAvg.textContent = formatBaht(summary.averageTicketMinor || 0);
+      kpiCash.textContent = formatBaht(summary.cashRevenueMinor || 0);
+      kpiQr.textContent = formatBaht(summary.promptpayRevenueMinor || 0);
+    }
+
+    function renderHourly(buckets: any[]) {
+      if (buckets.length === 0) {
+        hourlyChart.innerHTML = '<div class="chart-loading">ไม่มีข้อมูลยอดขายในวันนี้</div>';
+        return;
+      }
+
+      const maxRev = Math.max(...buckets.map((b) => b.revenueMinor || 0), 1);
+
+      hourlyChart.innerHTML = buckets
+        .filter((b) => b.hour >= 7 && b.hour <= 22) // show 07:00 - 22:00
+        .map((b) => {
+          const pct = Math.max(4, Math.round(((b.revenueMinor || 0) / maxRev) * 100));
+          const hourStr = `${String(b.hour).padStart(2, "0")}:00`;
+          return `
+            <div class="hourly-bar-col" title="${hourStr} · ${formatBaht(b.revenueMinor || 0)} (${b.orderCount} บิล)">
+              <div class="bar-fill" style="height: ${pct}%;"></div>
+              <span class="bar-label">${hourStr}</span>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function renderMix(items: any[]) {
+      if (items.length === 0) {
+        mixTbody.innerHTML = '<tr><td colspan="4" class="text-center">ยังไม่มีข้อมูลสินค้าขายดี</td></tr>';
+        return;
+      }
+
+      mixTbody.innerHTML = items
+        .slice(0, 10)
+        .map(
+          (item) => `
+          <tr>
+            <td><strong>${escapeHtml(item.productName)}</strong></td>
+            <td>${item.quantitySold}</td>
+            <td>${formatBaht(item.revenueMinor)}</td>
+            <td>
+              <div class="mix-progress-wrap">
+                <div class="mix-bar"><div class="mix-fill" style="width: ${item.percentage}%;"></div></div>
+                <small>${item.percentage}%</small>
+              </div>
+            </td>
+          </tr>
+        `
+        )
+        .join("");
+    }
+
+    function exportCSV() {
+      if (!currentDailyData && currentMixData.length === 0) {
+        alert("ไม่มีข้อมูลที่จะส่งออก");
+        return;
+      }
+
+      let csv = "\uFEFF"; // UTF-8 BOM
+      csv += "Aevo POS - Sales Summary Report\n";
+      csv += `Date,${dateInput.value}\n`;
+      csv += `Total Revenue,${(currentDailyData?.totalRevenueMinor || 0) / 100}\n`;
+      csv += `Total Orders,${currentDailyData?.orderCount || 0}\n`;
+      csv += `Cash Revenue,${(currentDailyData?.cashRevenueMinor || 0) / 100}\n`;
+      csv += `PromptPay Revenue,${(currentDailyData?.promptpayRevenueMinor || 0) / 100}\n\n`;
+
+      csv += "Product,Quantity Sold,Revenue (THB),Percentage (%)\n";
+      for (const item of currentMixData) {
+        csv += `"${item.productName.replace(/"/g, '""')}",${item.quantitySold},${item.revenueMinor / 100},${item.percentage}%\n`;
+      }
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sales-report-${dateInput.value || "today"}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function init() {
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        dateInput.value = today;
+
+        const { user, stores } = await loadStaffContext();
+        const store = findSelectedStore(stores, getSelectedStoreId());
+        if (!store) {
+          window.location.assign("/staff");
+          return;
+        }
+        storeId = store.id;
+        sessionStorage.setItem("aevo.selectedStoreId", storeId);
+
+        initStaffShell({
+          user,
+          stores,
+          selectedStoreId: storeId,
+          onStoreChange: async (nextStoreId) => {
+            storeId = nextStoreId;
+            const nextStore = stores.find((s) => s.id === nextStoreId);
+            if (!nextStore) return;
+            history.replaceState(null, "", storeUrl("/staff/reports", nextStoreId));
+            await loadReports();
+          }
+        });
+
+        await loadReports();
+      } catch (err: any) {
+        if (errorEl) {
+          errorEl.textContent = friendlyErrorMessage(err, "ไม่สามารถโหลดรายงานได้ กรุณาลองใหม่อีกครั้ง");
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    btnRefresh.addEventListener("click", loadReports);
+    dateInput.addEventListener("change", loadReports);
+    btnExport.addEventListener("click", exportCSV);
+
+    init();
+  </script>
+</StaffShell>

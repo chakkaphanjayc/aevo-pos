@@ -110,6 +110,8 @@ function mapProduct(row: Row, variants: ProductVariantSummary[], availability: P
     basePriceMinor: Number(row.base_price_minor ?? 0),
     currency: String(row.currency ?? "THB"),
     status: row.status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE",
+    ...(optionalString(row.image_url) ? { imageUrl: String(row.image_url) } : {}),
+    displayOrder: Number(row.display_order ?? 0),
     variants,
     availability
   };

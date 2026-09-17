@@ -1,0 +1,7 @@
+---
+export function getStaticPaths() {
+  return [] as { params: { store: string; token: string } }[];
+}
+
+return Astro.redirect(`/order/receipt/?storeCode=${encodeURIComponent((Astro.params as { store?: string }).store ?? "")}&token=${encodeURIComponent((Astro.params as { token?: string }).token ?? "")}`);
+---

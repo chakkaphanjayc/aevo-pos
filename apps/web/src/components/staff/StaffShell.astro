@@ -1,8 +1,9 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import StaffIcon from "./StaffIcon.astro";
+import type { Permission } from "@aevo/contracts";
 
-type StaffSection = "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "settings";
+type StaffSection = "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "tables" | "reports" | "users" | "devices" | "audit" | "settings";
 
 interface Props {
   title: string;
@@ -13,13 +14,18 @@ interface Props {
 const { title, active, fullHeight = false } = Astro.props;
 
 const navItems = [
-  { key: "workspace", label: "ภาพรวม", helper: "Workspace", icon: "dashboard", href: "/staff/workspace", ready: true },
-  { key: "catalog", label: "สินค้า", helper: "Catalog", icon: "catalog", href: "/staff/catalog", ready: true },
-  { key: "pos", label: "ขายหน้าร้าน", helper: "POS", icon: "pos", href: "/staff/pos", ready: true },
-  { key: "orders", label: "ออเดอร์", helper: "Orders", icon: "orders", href: "/staff/orders", ready: true },
-  { key: "queue", label: "คิวรับสินค้า", helper: "Queue", icon: "queue", href: "/staff/queue", ready: false },
-  { key: "prep", label: "เตรียมสินค้า", helper: "Preparation", icon: "prep", href: "/staff/preparation", ready: false },
-  { key: "settings", label: "ตั้งค่า", helper: "Settings", icon: "settings", href: "/staff/settings", ready: false }
+  { key: "workspace", group: "Workspace", label: "ภาพรวม", helper: "Workspace", icon: "dashboard", href: "/staff/workspace", permission: "store.read" as Permission, ready: true },
+  { key: "catalog", group: "Store", label: "สินค้า", helper: "Catalog", icon: "catalog", href: "/staff/catalog", permission: "catalog.read" as Permission, ready: true },
+  { key: "pos", group: "Sales", label: "ขายหน้าร้าน", helper: "POS", icon: "pos", href: "/staff/pos", permission: "order.create" as Permission, ready: true },
+  { key: "orders", group: "Sales", label: "ออเดอร์", helper: "Orders", icon: "orders", href: "/staff/orders", permission: "order.read" as Permission, ready: true },
+  { key: "queue", group: "Sales", label: "คิวรับสินค้า", helper: "Queue", icon: "queue", href: "/staff/queue", permission: "store.read" as Permission, ready: true },
+  { key: "prep", group: "Sales", label: "เตรียมสินค้า", helper: "Preparation", icon: "prep", href: "/staff/preparation", permission: "order.create" as Permission, ready: true },
+  { key: "tables", group: "Store", label: "ผังโต๊ะ", helper: "Tables", icon: "utensils", href: "/staff/tables", permission: "store.read" as Permission, ready: true },
+  { key: "reports", group: "Finance", label: "รายงาน", helper: "Reports", icon: "receipt", href: "/staff/reports", permission: "audit.read" as Permission, ready: true },
+  { key: "users", group: "Settings", label: "ผู้ใช้งาน", helper: "Users & Roles", icon: "user", href: "/staff/users", permission: "member.manage" as Permission, ready: true },
+  { key: "devices", group: "Settings", label: "อุปกรณ์", helper: "Devices", icon: "settings", href: "/staff/devices", permission: "devices.manage" as Permission, ready: true },
+  { key: "audit", group: "Settings", label: "ประวัติการใช้งาน", helper: "Audit Log", icon: "receipt", href: "/staff/audit", permission: "audit.read" as Permission, ready: true },
+  { key: "settings", group: "Settings", label: "ตั้งค่า", helper: "Settings", icon: "settings", href: "/staff/settings", permission: "store.manage" as Permission, ready: false }
 ] as const;
 
 const primaryMobileItems = navItems.slice(0, 4);
@@ -68,24 +74,28 @@ const primaryMobileItems = navItems.slice(0, 4);
       <aside class="staff-sidebar" aria-label="เมนู Staff">
         <div class="staff-sidebar-section-label">เมนูหลัก</div>
         <nav class="staff-nav">
-          {navItems.map((item) => (
-            item.ready ? (
-              <a
-                class:list={["staff-nav-link", { "is-active": item.key === active }]}
-                href={item.href}
-                data-staff-store-link={item.key === "workspace" || item.key === "catalog" || item.key === "pos" || item.key === "orders" ? "true" : undefined}
-                data-staff-nav-link
-              >
-                <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
-                <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
-              </a>
-            ) : (
-              <span class="staff-nav-link is-disabled" aria-disabled="true" title="ฟีเจอร์นี้กำลังพัฒนา">
-                <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
-                <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
-                <span class="staff-nav-status">เร็ว ๆ นี้</span>
-              </span>
-            )
+          {navItems.map((item, index) => (
+            <Fragment>
+              {(index === 0 || navItems[index - 1]?.group !== item.group) && <div class="staff-nav-group-label">{item.group}</div>}
+              {item.ready ? (
+                <a
+                  class:list={["staff-nav-link", { "is-active": item.key === active }]}
+                  href={item.href}
+                  data-staff-store-link="true"
+                  data-staff-permission={item.permission}
+                  data-staff-nav-link
+                >
+                  <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+                  <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+                </a>
+              ) : (
+                <span class="staff-nav-link is-disabled" data-staff-permission={item.permission} aria-disabled="true" title="ฟีเจอร์นี้กำลังพัฒนา">
+                  <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+                  <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+                  <span class="staff-nav-status">เร็ว ๆ นี้</span>
+                </span>
+              )}
+            </Fragment>
           ))}
         </nav>
         <div class="staff-sidebar-footer">
@@ -115,13 +125,14 @@ const primaryMobileItems = navItems.slice(0, 4);
               class:list={["staff-nav-link", { "is-active": item.key === active }]}
               href={item.href}
               data-staff-store-link="true"
+              data-staff-permission={item.permission}
               data-staff-nav-link
             >
               <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
               <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
             </a>
           ) : (
-            <span class="staff-nav-link is-disabled" aria-disabled="true">
+              <span class="staff-nav-link is-disabled" data-staff-permission={item.permission} aria-disabled="true">
               <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
               <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
               <span class="staff-nav-status">กำลังพัฒนา</span>
@@ -137,6 +148,7 @@ const primaryMobileItems = navItems.slice(0, 4);
           class:list={["staff-bottom-nav-link", { "is-active": item.key === active }]}
           href={item.href}
           data-staff-store-link="true"
+          data-staff-permission={item.permission}
           data-staff-nav-link
         >
           <StaffIcon name={item.icon} size={18} />

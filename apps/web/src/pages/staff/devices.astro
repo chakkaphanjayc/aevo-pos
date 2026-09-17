@@ -1,0 +1,149 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="จัดการอุปกรณ์" active="devices">
+  <div class="staff-page devices-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Settings · Device operations</p>
+        <h1 class="staff-page-title">จัดการอุปกรณ์</h1>
+        <p class="staff-page-lede" id="store-summary">ลงทะเบียนและล็อกโหมดการใช้งานของอุปกรณ์ในสาขา</p>
+      </div>
+      <button class="button" id="new-device" type="button"><span>＋</span>เพิ่มอุปกรณ์</button>
+    </div>
+
+    <div class="device-callout surface">
+      <span class="device-callout-icon">⌁</span>
+      <div><strong>Mode lock</strong><p>อุปกรณ์ที่จับคู่แล้วจะทำงานตามโหมดที่กำหนดเท่านั้น และสามารถเพิกถอน token ได้จากหน้านี้</p></div>
+      <a class="button secondary" href="/device/pair">เปิดหน้าจับคู่อุปกรณ์</a>
+    </div>
+
+    <p class="error" id="devices-error" role="alert" hidden></p>
+    <section class="device-list surface" aria-labelledby="devices-heading">
+      <div class="device-list-header"><div><span class="staff-eyebrow">Registered devices</span><h2 id="devices-heading">อุปกรณ์ในสาขา</h2></div><button class="button secondary" id="refresh-devices" type="button"><StaffIcon name="refresh" size={16} />รีเฟรช</button></div>
+      <div id="device-list" class="device-grid"><div class="device-loading">กำลังโหลดอุปกรณ์…</div></div>
+    </section>
+
+    <dialog class="device-dialog" id="device-dialog" aria-labelledby="device-dialog-title">
+      <form method="dialog" class="device-dialog-card" id="device-form">
+        <div class="device-dialog-header"><div><span class="staff-eyebrow">Register device</span><h2 id="device-dialog-title">เพิ่มอุปกรณ์</h2></div><button class="staff-icon-button" value="cancel" type="submit" aria-label="ปิด">×</button></div>
+        <label>ชื่ออุปกรณ์<input id="device-name" required maxlength="120" placeholder="เช่น Tablet POS 01" /></label>
+        <label>โหมดการใช้งาน<select id="device-mode"><option value="POS">POS · รับออเดอร์และชำระเงิน</option><option value="KIOSK">Kiosk · ลูกค้าสั่งเอง</option><option value="KDS">KDS · เตรียมสินค้า</option><option value="QUEUE_DISPLAY">Queue Display · แสดงคิว</option></select></label>
+        <p class="device-form-error" id="device-form-error" hidden role="alert"></p>
+        <div class="device-dialog-actions"><button class="button secondary" value="cancel" type="submit">ยกเลิก</button><button class="button" id="create-device" value="default" type="submit">สร้างรหัสจับคู่</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="pairing-dialog" id="pairing-dialog" aria-labelledby="pairing-title">
+      <div class="pairing-card"><span class="staff-eyebrow">Pairing code</span><h2 id="pairing-title">รหัสจับคู่อุปกรณ์</h2><p>เปิด <code>/device/pair</code> บนอุปกรณ์ แล้วกรอกรหัสนี้ภายใน 10 นาที</p><strong class="pairing-code" id="pairing-code">--------</strong><small id="pairing-expiry"></small><button class="button" id="pairing-close" type="button">เสร็จสิ้น</button></div>
+    </dialog>
+  </div>
+
+  <style is:global>
+    .devices-page { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+    .device-callout { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 1px solid #cfe5d7; background: var(--brand-quiet, #f1f8f3); }
+    .device-callout-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 1.35rem; }
+    .device-callout p { margin: 4px 0 0; color: var(--muted); font-size: .82rem; }
+    .device-callout .button { margin-left: auto; white-space: nowrap; }
+    .device-list { padding: 18px; }
+    .device-list-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .device-list-header h2 { margin: 4px 0 0; font-size: 1.15rem; }
+    .device-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; }
+    .device-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
+    .device-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .device-card-name { font-weight: 800; color: var(--ink); }
+    .device-card-id { color: var(--muted); font-size: .72rem; }
+    .device-mode-pill, .device-status-pill { display: inline-flex; width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: .7rem; font-weight: 800; }
+    .device-mode-pill { background: var(--brand-soft); color: var(--brand); }
+    .device-status-pill.active { background: #e8f7ee; color: #18794e; }
+    .device-status-pill.revoked { background: #fff1f0; color: #b42318; }
+    .device-card-meta { display: grid; gap: 3px; color: var(--muted); font-size: .78rem; }
+    .device-card-actions { display: flex; justify-content: flex-end; }
+    .device-revoke { color: #b42318; border-color: #f2c7c4; }
+    .device-loading, .device-empty { padding: 40px 12px; text-align: center; color: var(--muted); }
+    .device-dialog, .pairing-dialog { border: 0; padding: 0; background: transparent; }
+    .device-dialog::backdrop, .pairing-dialog::backdrop { background: rgba(16, 40, 28, .32); backdrop-filter: blur(3px); }
+    .device-dialog-card, .pairing-card { display: grid; gap: 16px; width: min(460px, calc(100vw - 32px)); padding: 24px; border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg, 0 20px 50px rgba(16,49,34,.2)); }
+    .device-dialog-header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .device-dialog-card label { display: grid; gap: 6px; font-size: .82rem; font-weight: 700; color: var(--muted); }
+    .device-dialog-card input, .device-dialog-card select { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+    .device-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .device-form-error { color: #b42318; font-size: .8rem; }
+    .pairing-card { text-align: center; justify-items: center; }
+    .pairing-card h2 { margin: 0; }
+    .pairing-card p, .pairing-card small { color: var(--muted); margin: 0; }
+    .pairing-code { padding: 12px 18px; border: 2px dashed var(--brand); border-radius: 12px; color: var(--brand); font: 800 2rem/1.1 ui-monospace, monospace; letter-spacing: .18em; }
+    @media (max-width: 640px) { .device-callout { align-items: flex-start; flex-wrap: wrap; } .device-callout .button { margin-left: 50px; } .devices-page { padding: 1rem; } }
+  </style>
+
+  <script>
+    import type { DeviceMode, DeviceSummary } from "@aevo/contracts";
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, findSelectedStore, getSelectedStoreId, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+
+    const list = document.querySelector<HTMLElement>("#device-list")!;
+    const error = document.querySelector<HTMLElement>("#devices-error")!;
+    const dialog = document.querySelector<HTMLDialogElement>("#device-dialog")!;
+    const pairingDialog = document.querySelector<HTMLDialogElement>("#pairing-dialog")!;
+    const formError = document.querySelector<HTMLElement>("#device-form-error")!;
+    const modeLabels: Record<DeviceMode, string> = { POS: "POS", KIOSK: "Kiosk", KDS: "KDS", QUEUE_DISPLAY: "Queue Display" };
+    let storeId = "";
+    let stores: Awaited<ReturnType<typeof loadStaffContext>>["stores"] = [];
+
+    function renderDevices(devices: DeviceSummary[]): void {
+      if (!devices.length) { list.innerHTML = '<div class="device-empty">ยังไม่มีอุปกรณ์ในสาขานี้ กด “เพิ่มอุปกรณ์” เพื่อสร้างรหัสจับคู่</div>'; return; }
+      list.innerHTML = devices.map((device) => `<article class="device-card"><div class="device-card-top"><div><div class="device-card-name">${escapeHtml(device.name)}</div><div class="device-card-id">${device.id.slice(0, 8)}…</div></div><span class="device-mode-pill">${modeLabels[device.mode]}</span></div><div class="device-card-meta"><span>สถานะ: <strong class="device-status-pill ${device.status === "ACTIVE" ? "active" : "revoked"}">${device.status === "ACTIVE" ? "พร้อมใช้" : "เพิกถอนแล้ว"}</strong></span><span>${device.pairedAt ? `จับคู่แล้ว ${new Date(device.pairedAt).toLocaleString("th-TH")}` : "ยังไม่จับคู่"}</span><span>${device.lastSeenAt ? `ใช้งานล่าสุด ${new Date(device.lastSeenAt).toLocaleString("th-TH")}` : "ยังไม่มีการใช้งาน"}</span></div>${device.status === "ACTIVE" ? `<div class="device-card-actions"><button class="button secondary device-revoke" data-revoke-id="${device.id}" type="button">เพิกถอนอุปกรณ์</button></div>` : ""}</article>`).join("");
+      list.querySelectorAll<HTMLButtonElement>("[data-revoke-id]").forEach((button) => button.addEventListener("click", () => void revokeDevice(button.dataset.revokeId!)));
+    }
+
+    function escapeHtml(value: string): string { const el = document.createElement("span"); el.textContent = value; return el.innerHTML; }
+
+    async function loadDevices(): Promise<void> {
+      if (!storeId) return;
+      error.hidden = true;
+      try { const result = await api<{ devices: DeviceSummary[] }>(`/api/devices?storeId=${encodeURIComponent(storeId)}`); renderDevices(result.devices); }
+      catch (cause) { error.textContent = friendlyErrorMessage(cause, "โหลดอุปกรณ์ไม่สำเร็จ"); error.hidden = false; list.innerHTML = '<div class="device-empty">ไม่สามารถโหลดรายการอุปกรณ์ได้ กรุณาลองใหม่</div>'; }
+    }
+
+    async function revokeDevice(deviceId: string): Promise<void> {
+      if (!window.confirm("ต้องการเพิกถอนอุปกรณ์นี้หรือไม่ อุปกรณ์จะใช้งานต่อไม่ได้ทันที")) return;
+      try { await api(`/api/devices/${encodeURIComponent(deviceId)}/revoke`, { method: "POST", body: JSON.stringify({ storeId }) }); await loadDevices(); }
+      catch (cause) { error.textContent = friendlyErrorMessage(cause, "เพิกถอนอุปกรณ์ไม่สำเร็จ"); error.hidden = false; }
+    }
+
+    document.querySelector<HTMLButtonElement>("#new-device")!.addEventListener("click", () => { formError.hidden = true; dialog.showModal(); });
+    document.querySelector<HTMLButtonElement>("#refresh-devices")!.addEventListener("click", () => void loadDevices());
+    document.querySelector<HTMLButtonElement>("#pairing-close")!.addEventListener("click", () => { pairingDialog.close(); void loadDevices(); });
+    document.querySelector<HTMLFormElement>("#device-form")!.addEventListener("submit", async (event) => {
+      if ((event.submitter as HTMLButtonElement | null)?.value !== "default") return;
+      event.preventDefault();
+      const button = document.querySelector<HTMLButtonElement>("#create-device")!;
+      button.disabled = true;
+      formError.hidden = true;
+      try {
+        const result = await api<{ pairingCode: string; pairingExpiresAt: string }>("/api/devices", { method: "POST", body: JSON.stringify({ storeId, name: (document.querySelector<HTMLInputElement>("#device-name")!).value.trim(), mode: (document.querySelector<HTMLSelectElement>("#device-mode")!).value }) });
+        dialog.close();
+        document.querySelector<HTMLElement>("#pairing-code")!.textContent = result.pairingCode;
+        document.querySelector<HTMLElement>("#pairing-expiry")!.textContent = `หมดอายุ ${new Date(result.pairingExpiresAt).toLocaleTimeString("th-TH")}`;
+        pairingDialog.showModal();
+        (document.querySelector<HTMLFormElement>("#device-form")!).reset();
+      } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "สร้างอุปกรณ์ไม่สำเร็จ"); formError.hidden = false; }
+      finally { button.disabled = false; }
+    });
+
+    async function init(): Promise<void> {
+      const context = await loadStaffContext();
+      stores = context.stores;
+      const store = findSelectedStore(stores, getSelectedStoreId());
+      if (!store) { window.location.assign("/staff"); return; }
+      storeId = store.id;
+      sessionStorage.setItem("aevo.selectedStoreId", storeId);
+      document.querySelector<HTMLElement>("#store-summary")!.textContent = `${store.name} · ${store.code} · ควบคุมอุปกรณ์แยกตามโหมด`;
+      initStaffShell({ user: context.user, stores, selectedStoreId: storeId, onStoreChange: async (nextStoreId) => { storeId = nextStoreId; const next = stores.find((item) => item.id === nextStoreId); if (next) document.querySelector<HTMLElement>("#store-summary")!.textContent = `${next.name} · ${next.code} · ควบคุมอุปกรณ์แยกตามโหมด`; history.replaceState(null, "", storeUrl("/staff/devices", nextStoreId)); await loadDevices(); } });
+      await loadDevices();
+    }
+    void init().catch((cause) => { error.textContent = friendlyErrorMessage(cause, "ไม่สามารถโหลดหน้าจัดการอุปกรณ์ได้"); error.hidden = false; });
+  </script>
+</StaffShell>

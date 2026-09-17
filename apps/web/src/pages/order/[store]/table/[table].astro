@@ -1,7 +1,7 @@
 ---
 export function getStaticPaths() {
-  return [];
+  return [] as { params: { store: string; table: string } }[];
 }
 
-return Astro.redirect(`/order/${encodeURIComponent(Astro.params.store ?? "")}?table=${encodeURIComponent(Astro.params.table ?? "")}`);
+return Astro.redirect(`/order/${encodeURIComponent((Astro.params as { store?: string; table?: string }).store ?? "")}?table=${encodeURIComponent((Astro.params as { store?: string; table?: string }).table ?? "")}`);
 ---

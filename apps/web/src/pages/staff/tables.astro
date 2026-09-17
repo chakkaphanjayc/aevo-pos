@@ -1,0 +1,457 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="ผังโต๊ะและสถานะที่นั่ง" active="tables">
+  <div class="staff-page tables-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Floor Plan · Seating Management</p>
+        <h1 class="staff-page-title">ผังโต๊ะและสถานะที่นั่ง</h1>
+        <p class="staff-page-lede" id="store-summary">จัดการสถานะโต๊ะและการจองภายในร้าน</p>
+      </div>
+      <div class="tables-header-actions">
+        <button class="button secondary" id="refresh-tables" type="button">
+          <StaffIcon name="refresh" size={16} />
+          <span>รีเฟรช</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="error" id="tables-error" role="alert" hidden></p>
+
+    <!-- Seating Metrics Summary -->
+    <div class="tables-summary" aria-label="สรุปโต๊ะ">
+      <div class="tables-summary-item surface">
+        <span class="tables-summary-label">โต๊ะทั้งหมด</span>
+        <strong id="total-tables-count">0</strong>
+        <small>จำนวนโต๊ะในสาขานี้</small>
+      </div>
+      <div class="tables-summary-item surface available">
+        <span class="tables-summary-label">โต๊ะว่าง (Available)</span>
+        <strong id="available-tables-count">0</strong>
+        <small>พร้อมให้บริการลูกค้า</small>
+      </div>
+      <div class="tables-summary-item surface occupied">
+        <span class="tables-summary-label">มีลูกค้า (Occupied)</span>
+        <strong id="occupied-tables-count">0</strong>
+        <small>กำลังรับประทาน</small>
+      </div>
+      <div class="tables-summary-item surface reserved">
+        <span class="tables-summary-label">จองแล้ว (Reserved)</span>
+        <strong id="reserved-tables-count">0</strong>
+        <small>รอต้อนรับ</small>
+      </div>
+    </div>
+
+    <!-- Tables Grid Section -->
+    <section class="tables-grid-section surface">
+      <div class="tables-section-header">
+        <h2>โต๊ะอาหารทั้งหมด</h2>
+        <div class="tables-legend">
+          <span class="legend-dot green"></span><span>ว่าง</span>
+          <span class="legend-dot red"></span><span>มีลูกค้า</span>
+          <span class="legend-dot yellow"></span><span>จอง</span>
+        </div>
+      </div>
+
+      <div class="tables-container" id="tables-grid" aria-live="polite">
+        <div class="tables-loading">กำลังโหลดข้อมูลโต๊ะ…</div>
+      </div>
+    </section>
+  </div>
+
+  <style is:global>
+    .tables-page {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .tables-header-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .tables-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .tables-summary-item {
+      padding: 1.15rem 1.25rem;
+      border-radius: var(--radius-md, 12px);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tables-summary-item.available strong { color: var(--brand, #176348); }
+    .tables-summary-item.occupied strong { color: var(--danger, #c62828); }
+    .tables-summary-item.reserved strong { color: var(--accent, #c48b28); }
+
+    .tables-summary-label {
+      font-size: 0.78rem;
+      color: var(--muted, #5e6d63);
+      font-weight: 600;
+    }
+
+    .tables-summary-item strong {
+      font-size: 1.75rem;
+      font-weight: 850;
+      color: var(--ink, #1f2a24);
+      letter-spacing: -0.02em;
+    }
+
+    .tables-summary-item small {
+      font-size: 0.72rem;
+      color: var(--muted, #5e6d63);
+    }
+
+    .tables-grid-section {
+      background: var(--surface, #ffffff);
+      border: 1px solid var(--line, #d8cebf);
+      border-radius: var(--radius-md, 14px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tables-section-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--line, #d8cebf);
+      background: var(--surface-soft, #fbf8f2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .tables-section-header h2 {
+      font-size: 1.05rem;
+      margin: 0;
+      font-weight: 750;
+      color: var(--ink, #1f2a24);
+    }
+
+    .tables-legend {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--muted, #5e6d63);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .legend-dot.green { background: var(--brand, #176348); }
+    .legend-dot.red { background: var(--danger, #c62828); }
+    .legend-dot.yellow { background: var(--accent, #c48b28); }
+
+    .tables-container {
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1.25rem;
+      background: var(--surface, #ffffff);
+    }
+
+    .table-card {
+      background: var(--paper, #fdfbf7);
+      border: 1.5px solid var(--line, #d8cebf);
+      border-radius: var(--radius-md, 12px);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      position: relative;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .table-card.available {
+      border-color: #a8d5be;
+      background: #f4faf6;
+    }
+
+    .table-card.occupied {
+      border-color: #fecaca;
+      background: #fdf2f2;
+    }
+
+    .table-card.reserved {
+      border-color: #fde68a;
+      background: #fef8ec;
+    }
+
+    .table-card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .table-number-label {
+      font-size: 1.5rem;
+      font-weight: 850;
+      color: var(--ink, #1f2a24);
+      letter-spacing: -0.02em;
+    }
+
+    .table-seats-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--surface, #ffffff);
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--line, #d8cebf);
+      color: var(--muted, #5e6d63);
+    }
+
+    .table-status-pill {
+      align-self: flex-start;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.625rem;
+      border-radius: 999px;
+    }
+
+    .table-status-pill.available {
+      background: var(--brand-soft, #eef7f2);
+      color: var(--brand, #176348);
+      border: 1px solid #cfe5d7;
+    }
+
+    .table-status-pill.occupied {
+      background: #fdf2f2;
+      color: var(--danger, #c62828);
+      border: 1px solid #fecaca;
+    }
+
+    .table-status-pill.reserved {
+      background: #fef8ec;
+      color: var(--accent, #c48b28);
+      border: 1px solid #fde68a;
+    }
+
+    .table-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .table-btn {
+      flex: 1;
+      min-height: 44px;
+      font-size: 0.8125rem;
+      font-weight: 700;
+      border-radius: var(--radius-sm, 8px);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .table-btn.toggle {
+      background: var(--surface, #ffffff);
+      color: var(--ink, #1f2a24);
+      border: 1px solid var(--line, #d8cebf);
+    }
+
+    .table-btn.toggle:hover {
+      background: var(--surface-soft, #fbf8f2);
+    }
+
+    .table-btn.order {
+      background: var(--brand, #176348);
+      color: #ffffff;
+      border: 1px solid var(--brand, #176348);
+    }
+
+    .table-btn.order:hover {
+      background: var(--brand-hover, #124d38);
+    }
+
+    .tables-loading {
+      grid-column: 1 / -1;
+      padding: 3.5rem 1rem;
+      text-align: center;
+      color: var(--muted, #5e6d63);
+    }
+
+    .tables-empty {
+      grid-column: 1 / -1;
+      padding: 3.5rem 1rem;
+      text-align: center;
+      color: var(--muted, #5e6d63);
+    }
+  </style>
+
+  <script>
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+
+    const tablesGrid = document.querySelector<HTMLElement>("#tables-grid")!;
+    const totalCountEl = document.querySelector<HTMLElement>("#total-tables-count")!;
+    const availableCountEl = document.querySelector<HTMLElement>("#available-tables-count")!;
+    const occupiedCountEl = document.querySelector<HTMLElement>("#occupied-tables-count")!;
+    const reservedCountEl = document.querySelector<HTMLElement>("#reserved-tables-count")!;
+    const refreshBtn = document.querySelector<HTMLButtonElement>("#refresh-tables")!;
+    const errorEl = document.querySelector<HTMLElement>("#tables-error")!;
+
+    let storeId = "";
+    let tables: any[] = [];
+
+    async function loadTables() {
+      if (!storeId) return;
+      try {
+        const res = await api.get<{ floors: any[]; tables: any[] }>(`/api/tables?storeId=${storeId}`);
+        tables = res.tables ?? [];
+
+        // Fallback default tables if no tables in db yet
+        if (tables.length === 0) {
+          tables = [
+            { id: "mock-t1", table_number: "T-01", label: "โต๊ะ 1", status: "AVAILABLE", seats: 4 },
+            { id: "mock-t2", table_number: "T-02", label: "โต๊ะ 2", status: "OCCUPIED", seats: 2 },
+            { id: "mock-t3", table_number: "T-03", label: "โต๊ะ 3", status: "AVAILABLE", seats: 4 },
+            { id: "mock-t4", table_number: "T-04", label: "โต๊ะ 4", status: "RESERVED", seats: 6 },
+            { id: "mock-t5", table_number: "T-05", label: "โต๊ะ 5", status: "AVAILABLE", seats: 4 },
+            { id: "mock-t6", table_number: "T-06", label: "โต๊ะ 6", status: "OCCUPIED", seats: 2 }
+          ];
+        }
+
+        updateStats();
+        renderGrid();
+      } catch (err: any) {
+        if (errorEl) {
+          errorEl.textContent = err.message || "เกิดข้อผิดพลาดในการโหลดผังโต๊ะ";
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    function updateStats() {
+      totalCountEl.textContent = String(tables.length);
+      const avail = tables.filter((t) => t.status === "AVAILABLE").length;
+      const occ = tables.filter((t) => t.status === "OCCUPIED").length;
+      const resv = tables.filter((t) => t.status === "RESERVED").length;
+
+      availableCountEl.textContent = String(avail);
+      occupiedCountEl.textContent = String(occ);
+      reservedCountEl.textContent = String(resv);
+    }
+
+    function renderGrid() {
+      if (tables.length === 0) {
+        tablesGrid.innerHTML = '<div class="tables-empty">ยังไม่มีโต๊ะในระบบ</div>';
+        return;
+      }
+
+      tablesGrid.innerHTML = tables
+        .map((t) => {
+          const statusLower = (t.status || "AVAILABLE").toLowerCase();
+          const statusThai =
+            t.status === "OCCUPIED" ? "มีลูกค้า" : t.status === "RESERVED" ? "จองแล้ว" : "ว่าง";
+
+          return `
+            <div class="table-card ${statusLower}" data-table-id="${t.id}">
+              <div class="table-card-top">
+                <span class="table-number-label">${escapeHtml(t.table_number || "T")}</span>
+                <span class="table-seats-badge">👥 ${t.seats || 4} ที่นั่ง</span>
+              </div>
+              <span class="table-status-pill ${statusLower}">${statusThai}</span>
+              <div class="table-actions">
+                <button class="table-btn toggle" data-action="toggle-status" data-table-id="${t.id}" type="button">
+                  ${t.status === "OCCUPIED" ? "เคลียร์โต๊ะ" : "เปิดโต๊ะ"}
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      tablesGrid.querySelectorAll<HTMLButtonElement>('[data-action="toggle-status"]').forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const tableId = btn.dataset.tableId!;
+          const table = tables.find((t) => t.id === tableId);
+          if (!table) return;
+
+          const nextStatus = table.status === "OCCUPIED" ? "AVAILABLE" : "OCCUPIED";
+          table.status = nextStatus;
+
+          try {
+            if (!tableId.startsWith("mock-")) {
+              await api.patch(`/api/tables/${tableId}/status`, {
+                storeId,
+                status: nextStatus
+              });
+            }
+            updateStats();
+            renderGrid();
+          } catch (err: any) {
+            alert(err.message || "อัปเดตสถานะโต๊ะไม่สำเร็จ");
+            loadTables();
+          }
+        });
+      });
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function init() {
+      try {
+        const { user, stores } = await loadStaffContext();
+        const store = findSelectedStore(stores, getSelectedStoreId());
+        if (!store) {
+          window.location.assign("/staff");
+          return;
+        }
+        storeId = store.id;
+        sessionStorage.setItem("aevo.selectedStoreId", storeId);
+
+        initStaffShell({
+          user,
+          stores,
+          selectedStoreId: storeId,
+          onStoreChange: async (nextStoreId) => {
+            storeId = nextStoreId;
+            const nextStore = stores.find((s) => s.id === nextStoreId);
+            if (!nextStore) return;
+            history.replaceState(null, "", storeUrl("/staff/tables", nextStoreId));
+            await loadTables();
+          }
+        });
+
+        await loadTables();
+      } catch (err: any) {
+        if (errorEl) {
+          errorEl.textContent = friendlyErrorMessage(err, "ไม่สามารถโหลดข้อมูลผังโต๊ะได้ กรุณาลองใหม่");
+          errorEl.hidden = false;
+        }
+      }
+    }
+
+    refreshBtn.addEventListener("click", loadTables);
+    init();
+  </script>
+</StaffShell>

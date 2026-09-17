@@ -4,7 +4,8 @@
   "scripts": { "dev": "bun --env-file=../../.env --env-file=.env --watch src/index.ts", "start": "bun --env-file=../../.env --env-file=.env src/index.ts", "typecheck": "tsc --noEmit", "test": "bun test", "build": "bun build src/index.ts --target bun --outdir dist" },
   "dependencies": {
     "@aevo/auth": "workspace:*", "@aevo/config": "workspace:*", "@aevo/contracts": "workspace:*",
-    "@aevo/db": "workspace:*", "@aevo/ordering": "workspace:*", "@aevo/realtime": "workspace:*", "elysia": "^1.4.15"
+    "@aevo/db": "workspace:*", "@aevo/ordering": "workspace:*", "@aevo/realtime": "workspace:*",
+    "@aevo/reporting": "workspace:*", "elysia": "^1.4.15"
   },
   "devDependencies": { "@types/bun": "^1.2.21", "typescript": "^5.9.2" }
 }

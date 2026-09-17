@@ -1,0 +1,129 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="ผู้ใช้งานและสิทธิ์" active="users">
+  <div class="staff-page users-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading"><p class="staff-eyebrow">Settings · Access control</p><h1 class="staff-page-title">ผู้ใช้งานและสิทธิ์</h1><p class="staff-page-lede">กำหนด Role และสาขาที่สมาชิกแต่ละคนเข้าถึงได้</p></div>
+      <button class="button secondary" id="refresh-users" type="button"><StaffIcon name="refresh" size={16} />รีเฟรช</button>
+    </div>
+    <div class="access-callout surface"><strong>โครงสร้างสิทธิ์</strong><span>User → Organization Membership → Store Access → Role → Permissions</span></div>
+    <p class="error" id="users-error" role="alert" hidden></p>
+    <section class="users-list surface"><div class="users-list-heading"><div><span class="staff-eyebrow">Organization members</span><h2>สมาชิกองค์กร</h2></div><span id="users-count" class="users-count">— คน</span></div><div id="users-grid" class="users-grid"><div class="users-loading">กำลังโหลดสมาชิก…</div></div></section>
+
+    <dialog class="user-dialog" id="user-dialog" aria-labelledby="user-dialog-title">
+      <form class="user-dialog-card" id="user-form" method="dialog">
+        <div class="user-dialog-heading"><div><span class="staff-eyebrow">Permission preview</span><h2 id="user-dialog-title">แก้ไขสิทธิ์สมาชิก</h2></div><button class="staff-icon-button" value="cancel" type="submit" aria-label="ปิด">×</button></div>
+        <p id="user-dialog-email" class="user-dialog-email"></p>
+        <label>Role<select id="user-role"><option value="OWNER">Owner</option><option value="ADMIN">Admin</option><option value="BRANCH_MANAGER">Branch Manager</option><option value="CASHIER">Cashier</option><option value="KITCHEN">Kitchen</option><option value="STAFF">Staff</option><option value="VIEWER">Viewer</option></select></label>
+        <fieldset><legend>Store access</legend><div id="user-stores" class="user-stores"></div></fieldset>
+        <label>สถานะ<select id="user-status"><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option></select></label>
+        <p class="user-form-error" id="user-form-error" hidden role="alert"></p>
+        <div class="user-dialog-actions"><button value="cancel" class="button secondary" type="submit">ยกเลิก</button><button value="default" class="button" id="save-user" type="submit">บันทึกสิทธิ์</button></div>
+      </form>
+    </dialog>
+  </div>
+
+  <style is:global>
+    .users-page { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+    .access-callout { display: flex; gap: 12px; align-items: center; padding: 15px 18px; background: var(--brand-quiet, #f1f8f3); border: 1px solid #cfe5d7; color: var(--brand); }
+    .access-callout span { color: var(--muted); font-size: .82rem; }
+    .users-list { padding: 18px; }
+    .users-list-heading { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
+    .users-list-heading h2 { margin: 4px 0 0; font-size: 1.15rem; }
+    .users-count { color: var(--muted); font-size: .82rem; }
+    .users-grid { display: grid; gap: 10px; }
+    .user-card { display: grid; grid-template-columns: minmax(180px, 1.5fr) 1fr 1fr auto; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
+    .user-name { color: var(--ink); font-weight: 800; }
+    .user-email, .user-created { color: var(--muted); font-size: .78rem; }
+    .user-role-pill, .user-status-pill { width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: .7rem; font-weight: 800; }
+    .user-role-pill { background: var(--brand-soft); color: var(--brand); }
+    .user-status-pill.active { background: #e8f7ee; color: #18794e; }
+    .user-status-pill.suspended { background: #fff1f0; color: #b42318; }
+    .users-loading, .users-empty { padding: 36px 12px; text-align: center; color: var(--muted); }
+    .user-dialog { padding: 0; border: 0; background: transparent; }
+    .user-dialog::backdrop { background: rgba(16, 40, 28, .32); backdrop-filter: blur(3px); }
+    .user-dialog-card { display: grid; gap: 14px; width: min(500px, calc(100vw - 32px)); padding: 24px; border-radius: 18px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg, 0 20px 50px rgba(16,49,34,.2)); }
+    .user-dialog-heading { display: flex; justify-content: space-between; align-items: flex-start; }
+    .user-dialog-card label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
+    .user-dialog-card select { min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+    .user-dialog-email { margin: 0; color: var(--ink); font-weight: 700; }
+    .user-dialog-card fieldset { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+    .user-dialog-card legend { padding: 0 5px; color: var(--muted); font-size: .8rem; font-weight: 700; }
+    .user-stores { display: grid; gap: 8px; }
+    .user-store-option { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .82rem; }
+    .user-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .user-form-error { color: #b42318; font-size: .8rem; }
+    @media (max-width: 760px) { .user-card { grid-template-columns: 1fr 1fr; } .user-card .button { grid-column: 1 / -1; } .users-page { padding: 1rem; } }
+  </style>
+
+  <script>
+    import type { MemberSummary, Role, StoreSummary } from "@aevo/contracts";
+    import { api } from "../../lib/api";
+    import { friendlyErrorMessage, findSelectedStore, getSelectedStoreId, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+
+    const grid = document.querySelector<HTMLElement>("#users-grid")!;
+    const error = document.querySelector<HTMLElement>("#users-error")!;
+    const count = document.querySelector<HTMLElement>("#users-count")!;
+    const dialog = document.querySelector<HTMLDialogElement>("#user-dialog")!;
+    const formError = document.querySelector<HTMLElement>("#user-form-error")!;
+    const roleLabels: Record<Role, string> = { OWNER: "Owner", ADMIN: "Admin", BRANCH_MANAGER: "Branch Manager", CASHIER: "Cashier", KITCHEN: "Kitchen", STAFF: "Staff", VIEWER: "Viewer" };
+    let members: MemberSummary[] = [];
+    let stores: StoreSummary[] = [];
+    let editing: MemberSummary | null = null;
+
+    function escapeHtml(value: string): string { const el = document.createElement("span"); el.textContent = value; return el.innerHTML; }
+    function renderMembers(): void {
+      count.textContent = `${members.length} คน`;
+      if (!members.length) { grid.innerHTML = '<div class="users-empty">ยังไม่มีสมาชิกในองค์กร</div>'; return; }
+      grid.innerHTML = members.map((member) => `<article class="user-card"><div><div class="user-name">${escapeHtml(member.displayName || member.email)}</div><div class="user-email">${escapeHtml(member.email)}</div></div><span class="user-role-pill">${roleLabels[member.role]}</span><div><span class="user-status-pill ${member.status === "ACTIVE" ? "active" : "suspended"}">${member.status === "ACTIVE" ? "ใช้งาน" : "ระงับ"}</span><div class="user-created">เข้าร่วม ${new Date(member.createdAt).toLocaleDateString("th-TH")}</div></div><button class="button secondary" data-edit-member="${member.membershipId}" type="button">แก้ไขสิทธิ์</button></article>`).join("");
+      grid.querySelectorAll<HTMLButtonElement>("[data-edit-member]").forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.editMember!)));
+    }
+
+    function openEditor(membershipId: string): void {
+      editing = members.find((member) => member.membershipId === membershipId) ?? null;
+      if (!editing) return;
+      document.querySelector<HTMLElement>("#user-dialog-email")!.textContent = `${editing.displayName || "สมาชิก"} · ${editing.email}`;
+      document.querySelector<HTMLSelectElement>("#user-role")!.value = editing.role;
+      document.querySelector<HTMLSelectElement>("#user-status")!.value = editing.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE";
+      document.querySelector<HTMLElement>("#user-stores")!.innerHTML = stores.map((store) => `<label class="user-store-option"><input type="checkbox" value="${store.id}" ${editing?.storeIds.includes(store.id) ? "checked" : ""} />${escapeHtml(store.name)} · ${escapeHtml(store.code)}</label>`).join("");
+      formError.hidden = true;
+      dialog.showModal();
+    }
+
+    async function load(): Promise<void> {
+      error.hidden = true;
+      try { const result = await api<{ members: MemberSummary[] }>("/api/members"); members = result.members; renderMembers(); }
+      catch (cause) { error.textContent = friendlyErrorMessage(cause, "โหลดสมาชิกไม่สำเร็จ"); error.hidden = false; grid.innerHTML = '<div class="users-empty">ไม่สามารถโหลดสมาชิกได้ กรุณาลองใหม่</div>'; }
+    }
+
+    document.querySelector<HTMLButtonElement>("#refresh-users")!.addEventListener("click", () => void load());
+    document.querySelector<HTMLFormElement>("#user-form")!.addEventListener("submit", async (event) => {
+      if ((event.submitter as HTMLButtonElement | null)?.value !== "default" || !editing) return;
+      event.preventDefault();
+      const save = document.querySelector<HTMLButtonElement>("#save-user")!;
+      save.disabled = true;
+      formError.hidden = true;
+      try {
+        const storeIds = Array.from(document.querySelectorAll<HTMLInputElement>("#user-stores input:checked"), (input) => input.value);
+        await api(`/api/members/${encodeURIComponent(editing.membershipId)}`, { method: "PATCH", body: JSON.stringify({ role: document.querySelector<HTMLSelectElement>("#user-role")!.value, status: document.querySelector<HTMLSelectElement>("#user-status")!.value, storeIds }) });
+        dialog.close();
+        await load();
+      } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "บันทึกสิทธิ์ไม่สำเร็จ"); formError.hidden = false; }
+      finally { save.disabled = false; }
+    });
+
+    async function init(): Promise<void> {
+      const context = await loadStaffContext();
+      stores = context.stores;
+      const store = findSelectedStore(stores, getSelectedStoreId());
+      if (!store) { window.location.assign("/staff"); return; }
+      sessionStorage.setItem("aevo.selectedStoreId", store.id);
+      initStaffShell({ user: context.user, stores, selectedStoreId: store.id, onStoreChange: async (nextStoreId) => { history.replaceState(null, "", storeUrl("/staff/users", nextStoreId)); await load(); } });
+      await load();
+    }
+    void init().catch((cause) => { error.textContent = friendlyErrorMessage(cause, "ไม่สามารถโหลดหน้าผู้ใช้งานได้"); error.hidden = false; });
+  </script>
+</StaffShell>

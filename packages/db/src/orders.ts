@@ -117,10 +117,13 @@ function mapOrder(row: Row, items: ReturnType<typeof mapItem>[]): OrderSummary {
     ...(optionalString(row.customer_phone) ? { customerPhone: String(row.customer_phone) } : {}),
     ...(optionalString(row.customer_email) ? { customerEmail: String(row.customer_email) } : {}),
     ...(optionalString(row.notes) ? { notes: String(row.notes) } : {}),
+    ...(optionalString(row.scheduled_pickup_at) ? { scheduledPickupAt: String(row.scheduled_pickup_at) } : {}),
+    ...(optionalString(row.prepare_at) ? { prepareAt: String(row.prepare_at) } : {}),
     items,
     ...(optionalString(row.created_by) ? { createdBy: String(row.created_by) } : {}),
     createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at)
+    updatedAt: String(row.updated_at),
+    ...(optionalString(row.public_tracking_token) ? { publicTrackingToken: String(row.public_tracking_token) } : {})
   };
 }
 
@@ -144,6 +147,8 @@ function mapListOrder(row: Row, itemCount: number): OrderListItem {
     currency: String(row.currency),
     totalMinor: Number(row.total_minor ?? 0),
     itemCount,
+    ...(optionalString(row.scheduled_pickup_at) ? { scheduledPickupAt: String(row.scheduled_pickup_at) } : {}),
+    ...(optionalString(row.prepare_at) ? { prepareAt: String(row.prepare_at) } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -183,6 +188,8 @@ function normalizeCreateInput(input: CreateOrderInput): CreateOrderInput {
     ...(customerPhone ? { customerPhone } : {}),
     ...(customerEmail ? { customerEmail } : {}),
     ...(notes ? { notes } : {}),
+    ...(input.scheduledPickupAt ? { scheduledPickupAt: input.scheduledPickupAt } : {}),
+    ...(input.prepareAt ? { prepareAt: input.prepareAt } : {}),
     items: input.items.map((item) => {
       if (!item.productId || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 999) {
         throw new OrderValidationError("Each order item needs a valid productId and quantity");
@@ -199,7 +206,7 @@ function normalizeCreateInput(input: CreateOrderInput): CreateOrderInput {
   };
 }
 
-const orderSelect = "id,organization_id,store_id,order_number,channel,fulfillment_type,status,payment_status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,customer_name,customer_phone,customer_email,notes,created_by,created_at,updated_at";
+const orderSelect = "id,organization_id,store_id,order_number,channel,fulfillment_type,status,payment_status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,customer_name,customer_phone,customer_email,notes,created_by,created_at,updated_at,scheduled_pickup_at,prepare_at,public_tracking_token";
 const itemSelect = "id,organization_id,order_id,line_number,product_id,variant_id,menu_item_id,sku,product_name,product_description,variant_code,variant_name,unit_price_minor,quantity,subtotal_minor,note";
 const modifierSelect = "id,organization_id,order_item_id,modifier_id,modifier_group_id,name,price_delta_minor,quantity";
 
@@ -214,19 +221,18 @@ export async function getOrder(database: Database, principal: SessionPrincipal, 
   throwOrderError(orderResult.error, "order lookup");
   if (!orderResult.data) throw new OrderNotFoundError("Order was not found in the selected store");
   const itemsResult = await database.client.from("order_items").select(itemSelect)
-    .eq("organization_id", principal.organizationId).eq("order_id", orderId).order("line_number", { ascending: true });
-  // Fetch modifiers for the actual item ids in a second bounded query. This
-  // avoids relying on PostgREST relationship names, which vary with generated
-  // foreign-key metadata.
-  throwOrderError(itemsResult.error, "order item lookup");
+    .eq("organization_id", principal.organizationId).eq("order_id", orderId)
+    .order("line_number", { ascending: true });
+  throwOrderError(itemsResult.error, "order items lookup");
   const itemRows = (itemsResult.data ?? []) as Row[];
-  const itemIds = itemRows.map((row) => String(row.id));
+  const itemIds = itemRows.map((item) => String(item.id));
   let modifierRows: Row[] = [];
-  if (itemIds.length) {
-    const result = await database.client.from("order_item_modifiers").select(modifierSelect)
-      .eq("organization_id", principal.organizationId).in("order_item_id", itemIds);
-    throwOrderError(result.error, "order modifier lookup");
-    modifierRows = (result.data ?? []) as Row[];
+  if (itemIds.length > 0) {
+    const modifiersResult = await database.client.from("order_item_modifiers").select(modifierSelect)
+      .eq("organization_id", principal.organizationId)
+      .in("order_item_id", itemIds);
+    throwOrderError(modifiersResult.error, "order modifiers lookup");
+    modifierRows = (modifiersResult.data ?? []) as Row[];
   }
   const modifiersByItem = new Map<string, ReturnType<typeof mapModifier>[]>();
   for (const row of modifierRows) {
@@ -290,7 +296,19 @@ export async function createOrder(
   throwOrderError(result.error, "order creation");
   const row = firstRow(result.data);
   if (!row?.order_id) throw new Error("Supabase order creation returned no order");
-  return getOrder(database, principal, normalized.storeId, String(row.order_id));
+  const orderId = String(row.order_id);
+
+  if (normalized.scheduledPickupAt) {
+    const pickupDate = new Date(normalized.scheduledPickupAt);
+    const prepMinutes = 15;
+    const prepareAt = new Date(pickupDate.getTime() - prepMinutes * 60 * 1000).toISOString();
+    await database.client.from("orders").update({
+      scheduled_pickup_at: pickupDate.toISOString(),
+      prepare_at: prepareAt
+    }).eq("id", orderId);
+  }
+
+  return getOrder(database, principal, normalized.storeId, orderId);
 }
 
 export async function createPublicOrder(
@@ -308,11 +326,12 @@ export async function createPublicOrder(
 
   const orderInput: CreateOrderInput = {
     storeId: store.id,
-    channel: "QR",
+    channel: input.channel || "QR",
     fulfillmentType: input.fulfillmentType,
     ...(input.customerName ? { customerName: input.customerName.trim() } : {}),
     ...(input.customerPhone ? { customerPhone: input.customerPhone.trim() } : {}),
     ...(combinedNotes ? { notes: combinedNotes } : {}),
+    ...(input.scheduledPickupAt ? { scheduledPickupAt: input.scheduledPickupAt } : {}),
     items: input.items
   };
 
@@ -326,6 +345,39 @@ export async function createPublicOrder(
   };
 
   return createOrder(database, anonymousPrincipal, orderInput, idempotencyKey);
+}
+
+/**
+ * Resolve a customer order using the opaque token issued by the database.
+ * This deliberately returns the normal aggregate so the API can apply a
+ * public projection without exposing organization/store internals.
+ */
+export async function getPublicOrderByToken(
+  database: Database,
+  storeCode: string,
+  token: string
+): Promise<OrderSummary | null> {
+  const store = await getStoreByCode(database, storeCode);
+  if (!store || store.status !== "ACTIVE" || !/^[a-f0-9]{32,128}$/i.test(token)) return null;
+
+  const result = await database.client
+    .from("orders")
+    .select("id")
+    .eq("organization_id", store.organizationId)
+    .eq("store_id", store.id)
+    .eq("public_tracking_token", token)
+    .maybeSingle();
+  if (result.error || !result.data) return null;
+
+  const anonymousPrincipal: SessionPrincipal = {
+    userId: "",
+    email: "anonymous@customer",
+    organizationId: store.organizationId,
+    membershipId: "",
+    role: "VIEWER",
+    permissions: []
+  };
+  return getOrder(database, anonymousPrincipal, store.id, String((result.data as Row).id));
 }
 
 export async function transitionOrder(

@@ -19,6 +19,7 @@
         "@aevo/db": "workspace:*",
         "@aevo/ordering": "workspace:*",
         "@aevo/realtime": "workspace:*",
+        "@aevo/reporting": "workspace:*",
         "elysia": "^1.4.15",
       },
       "devDependencies": {
@@ -93,6 +94,28 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/line": {
+      "name": "@aevo/line",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
+    "packages/odoo": {
+      "name": "@aevo/odoo",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
     "packages/ordering": {
       "name": "@aevo/ordering",
       "version": "0.0.1",
@@ -104,8 +127,30 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/push": {
+      "name": "@aevo/push",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
     "packages/realtime": {
       "name": "@aevo/realtime",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
+    "packages/reporting": {
+      "name": "@aevo/reporting",
       "version": "0.0.1",
       "dependencies": {
         "@aevo/contracts": "workspace:*",
@@ -127,9 +172,17 @@
 
     "@aevo/db": ["@aevo/db@workspace:packages/db"],
 
+    "@aevo/line": ["@aevo/line@workspace:packages/line"],
+
+    "@aevo/odoo": ["@aevo/odoo@workspace:packages/odoo"],
+
     "@aevo/ordering": ["@aevo/ordering@workspace:packages/ordering"],
 
+    "@aevo/push": ["@aevo/push@workspace:packages/push"],
+
     "@aevo/realtime": ["@aevo/realtime@workspace:packages/realtime"],
+
+    "@aevo/reporting": ["@aevo/reporting@workspace:packages/reporting"],
 
     "@aevo/web": ["@aevo/web@workspace:apps/web"],
 

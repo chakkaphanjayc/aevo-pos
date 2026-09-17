@@ -1,0 +1,548 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const { store: storeCode = "" } = Astro.params as { store?: string };
+
+export function getStaticPaths() {
+  return [{ params: { store: "__runtime__" } }];
+}
+---
+
+<BaseLayout title={`คิวออเดอร์ — ${storeCode}`}>
+  <div class="queue-tv-container" id="queue-tv" data-store-code={storeCode}>
+    <header class="queue-header">
+      <div class="header-brand">
+        <div class="brand-badge">AEVO QUEUE</div>
+        <h1 id="store-name" class="store-name">กำลังโหลดคิว...</h1>
+      </div>
+      <div class="header-controls">
+        <div id="live-clock" class="live-clock">--:--:--</div>
+        <button id="sound-btn" class="tv-btn" type="button" title="เปิด/ปิดเสียงเรียกคิว">
+          <span id="sound-icon">🔔</span>
+          <span id="sound-text">เสียง: เปิด</span>
+        </button>
+        <button id="fullscreen-btn" class="tv-btn" type="button" title="เต็มจอ">
+          <span>⛶</span> เต็มจอ
+        </button>
+      </div>
+    </header>
+
+    <!-- Recently Called Hero Announcement Banner -->
+    <div id="recently-called-banner" class="recently-called-banner hidden">
+      <div class="called-tag">📢 เรียกล่าสุด / NOW SERVING</div>
+      <div id="recently-called-number" class="called-number">-</div>
+    </div>
+
+    <!-- Main Split Columns -->
+    <main class="queue-board">
+      <!-- Preparing Column -->
+      <section class="queue-column column-preparing">
+        <div class="column-header">
+          <div class="column-title-group">
+            <span class="status-dot dot-amber"></span>
+            <h2>กำลังเตรียม</h2>
+          </div>
+          <span id="count-preparing" class="count-badge">0</span>
+        </div>
+        <div id="list-preparing" class="ticket-grid">
+          <div class="empty-state">ไม่มีออเดอร์ที่กำลังเตรียม</div>
+        </div>
+      </section>
+
+      <!-- Ready Column -->
+      <section class="queue-column column-ready">
+        <div class="column-header">
+          <div class="column-title-group">
+            <span class="status-dot dot-emerald"></span>
+            <h2>พร้อมรับ</h2>
+          </div>
+          <span id="count-ready" class="count-badge badge-emerald">0</span>
+        </div>
+        <div id="list-ready" class="ticket-grid">
+          <div class="empty-state">ไม่มีออเดอร์ที่พร้อมรับ</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="queue-footer">
+      <div class="footer-hint">💡 กรุณารอเรียกหมายเลขคิวเพื่อรับอาหารและเครื่องดื่มที่เคาน์เตอร์</div>
+      <div id="connection-status" class="connection-status online">🟢 เชื่อมต่อสด</div>
+    </footer>
+  </div>
+</BaseLayout>
+
+<style>
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    background: #080c10;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .queue-tv-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 24px 32px;
+    box-sizing: border-box;
+    background: radial-gradient(circle at 50% 10%, #151e28 0%, #080c10 100%);
+  }
+
+  .queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .brand-badge {
+    background: #185f48;
+    color: #e2f7ed;
+    font-weight: 800;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    padding: 6px 14px;
+    border-radius: 999px;
+  }
+
+  .store-name {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.02em;
+  }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .live-clock {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .tv-btn {
+    background: rgba(255, 255, 255, 0.07);
+    color: #e2e8f0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 10px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+
+  .tv-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+  }
+
+  .recently-called-banner {
+    margin-top: 16px;
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.35) 50%, rgba(16, 185, 129, 0.25) 100%);
+    border: 2px solid #10b981;
+    border-radius: 16px;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.3);
+    animation: glow-pulse 2s infinite ease-in-out;
+  }
+
+  .recently-called-banner.hidden {
+    display: none;
+  }
+
+  .called-tag {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #a7f3d0;
+    letter-spacing: 0.05em;
+  }
+
+  .called-number {
+    font-size: 3.2rem;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
+  }
+
+  .queue-board {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    flex: 1;
+    margin-top: 20px;
+    min-height: 0;
+  }
+
+  .queue-column {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .column-preparing {
+    border-top: 6px solid #f59e0b;
+  }
+
+  .column-ready {
+    border-top: 6px solid #10b981;
+    background: rgba(16, 185, 129, 0.02);
+  }
+
+  .column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .column-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .column-title-group h2 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 800;
+  }
+
+  .status-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-amber {
+    background: #f59e0b;
+    box-shadow: 0 0 10px #f59e0b;
+  }
+
+  .dot-emerald {
+    background: #10b981;
+    box-shadow: 0 0 12px #10b981;
+  }
+
+  .count-badge {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: 1.25rem;
+    padding: 4px 16px;
+    border-radius: 999px;
+  }
+
+  .count-badge.badge-emerald {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+  }
+
+  .ticket-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    padding-top: 20px;
+    overflow-y: auto;
+    align-content: flex-start;
+    flex: 1;
+  }
+
+  :global(.ticket-card) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    padding: 20px 16px;
+    text-align: center;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  :global(.ticket-card-preparing) {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+
+  :global(.ticket-card-ready) {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: #10b981;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
+    animation: pop-in 0.4s ease-out;
+  }
+
+  :global(.ticket-number) {
+    font-size: 2.8rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    color: #ffffff;
+  }
+
+  :global(.ticket-card-ready .ticket-number) {
+    color: #ecfdf5;
+    text-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
+  }
+
+  :global(.ticket-time) {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-top: 6px;
+  }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #475569;
+    font-size: 1.2rem;
+    padding-top: 60px;
+    font-style: italic;
+  }
+
+  .queue-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: #64748b;
+    font-size: 0.95rem;
+  }
+
+  .connection-status.online {
+    color: #10b981;
+    font-weight: 600;
+  }
+
+  .connection-status.offline {
+    color: #ef4444;
+    font-weight: 600;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.25); }
+    50% { box-shadow: 0 0 45px rgba(16, 185, 129, 0.6); }
+  }
+
+  @keyframes pop-in {
+    0% { transform: scale(0.8); opacity: 0; }
+    70% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+</style>
+
+<script>
+  import { enforceDeviceMode } from "../../lib/device-mode";
+  enforceDeviceMode();
+  import type { QueueDisplaySnapshot } from "@aevo/contracts";
+
+  // Elements
+  const container = document.getElementById("queue-tv")!;
+  const configuredStoreCode = container.dataset.storeCode || "";
+  const storeCode = configuredStoreCode !== "__runtime__"
+    ? configuredStoreCode
+    : decodeURIComponent(window.location.pathname.split("/")[2] || "");
+  const storeNameEl = document.getElementById("store-name")!;
+  const clockEl = document.getElementById("live-clock")!;
+  const soundBtn = document.getElementById("sound-btn")!;
+  const soundText = document.getElementById("sound-text")!;
+  const soundIcon = document.getElementById("sound-icon")!;
+  const fullscreenBtn = document.getElementById("fullscreen-btn")!;
+  const bannerEl = document.getElementById("recently-called-banner")!;
+  const calledNumberEl = document.getElementById("recently-called-number")!;
+  const listPreparing = document.getElementById("list-preparing")!;
+  const listReady = document.getElementById("list-ready")!;
+  const countPreparing = document.getElementById("count-preparing")!;
+  const countReady = document.getElementById("count-ready")!;
+  const connectionStatus = document.getElementById("connection-status")!;
+
+  let soundEnabled = true;
+  let lastAnnouncedTicketId: string | null = null;
+  let knownReadyTicketIds = new Set<string>();
+
+  // Audio chime synthesizer using Web Audio API
+  function playChime() {
+    if (!soundEnabled) return;
+    try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioContextClass();
+
+      // Two-tone bell: Tone 1 (554Hz, C#5), then Tone 2 (880Hz, A5)
+      const now = ctx.currentTime;
+
+      // Note 1
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(554.37, now);
+      gain1.gain.setValueAtTime(0.4, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.6);
+
+      // Note 2
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(880.0, now + 0.25);
+      gain2.gain.setValueAtTime(0.5, now + 0.25);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.25);
+      osc2.stop(now + 1.2);
+    } catch {
+      // Audio context might be restricted before user gesture
+    }
+  }
+
+  // Live Clock
+  function updateClock() {
+    const now = new Date();
+    clockEl.textContent = now.toLocaleTimeString("th-TH", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    });
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // Fullscreen button
+  fullscreenBtn?.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  });
+
+  // Sound toggle
+  soundBtn?.addEventListener("click", () => {
+    soundEnabled = !soundEnabled;
+    if (soundEnabled) {
+      soundText.textContent = "เสียง: เปิด";
+      soundIcon.textContent = "🔔";
+      playChime(); // test chime
+    } else {
+      soundText.textContent = "เสียง: ปิด";
+      soundIcon.textContent = "🔕";
+    }
+  });
+
+  // Render tickets
+  function renderBoard(snapshot: QueueDisplaySnapshot) {
+    storeNameEl.textContent = snapshot.store.name;
+
+    // Preparing
+    countPreparing.textContent = String(snapshot.preparing.length);
+    if (snapshot.preparing.length === 0) {
+      listPreparing.innerHTML = '<div class="empty-state">ไม่มีออเดอร์ที่กำลังเตรียม</div>';
+    } else {
+      listPreparing.innerHTML = snapshot.preparing
+        .map(
+          (t) => `
+          <div class="ticket-card ticket-card-preparing">
+            <div class="ticket-number">${t.queueNumber}</div>
+            <div class="ticket-time">${new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+          </div>
+        `
+        )
+        .join("");
+    }
+
+    // Ready
+    countReady.textContent = String(snapshot.ready.length);
+    if (snapshot.ready.length === 0) {
+      listReady.innerHTML = '<div class="empty-state">ไม่มีออเดอร์ที่พร้อมรับ</div>';
+    } else {
+      listReady.innerHTML = snapshot.ready
+        .map(
+          (t) => `
+          <div class="ticket-card ticket-card-ready">
+            <div class="ticket-number">${t.queueNumber}</div>
+            <div class="ticket-time">${t.calledAt ? new Date(t.calledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+          </div>
+        `
+        )
+        .join("");
+    }
+
+    // Recently Called Banner
+    if (snapshot.recentlyCalled) {
+      bannerEl.classList.remove("hidden");
+      calledNumberEl.textContent = snapshot.recentlyCalled.queueNumber;
+
+      // If this is a newly called ticket, chime!
+      if (snapshot.recentlyCalled.id !== lastAnnouncedTicketId) {
+        lastAnnouncedTicketId = snapshot.recentlyCalled.id;
+        playChime();
+      }
+    } else {
+      bannerEl.classList.add("hidden");
+    }
+
+    // Check newly ready tickets for chime
+    for (const t of snapshot.ready) {
+      if (!knownReadyTicketIds.has(t.id)) {
+        knownReadyTicketIds.add(t.id);
+      }
+    }
+  }
+
+  // Fetch queue data
+  async function pollQueue() {
+    try {
+      const res = await fetch(`/api/public/queue/${encodeURIComponent(storeCode)}`);
+      if (res.ok) {
+        const data: QueueDisplaySnapshot = await res.json();
+        renderBoard(data);
+        connectionStatus.textContent = "🟢 เชื่อมต่อสด";
+        connectionStatus.className = "connection-status online";
+      } else {
+        connectionStatus.textContent = "🟡 รอดึงข้อมูลใหม่";
+        connectionStatus.className = "connection-status offline";
+      }
+    } catch {
+      connectionStatus.textContent = "🔴 หลุดการเชื่อมต่อ (กำลังลองใหม่)";
+      connectionStatus.className = "connection-status offline";
+    }
+  }
+
+  // Initial load and polling every 2.5 seconds
+  pollQueue();
+  setInterval(pollQueue, 2500);
+</script>

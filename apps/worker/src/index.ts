@@ -26,6 +26,39 @@ function requestIdFor(request: Request): string {
   return request.headers.get("x-request-id")?.slice(0, 128) || crypto.randomUUID();
 }
 
+/**
+ * Map tenant-scoped public URLs to build-time shell assets. Store codes and
+ * customer tokens are runtime data, so Astro cannot pre-render every URL.
+ * The browser URL stays unchanged while ASSETS serves the correct shell.
+ */
+function publicShellRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+
+  if (parts[0] === "order" && parts.length === 2) {
+    url.pathname = "/order/__runtime__/";
+  } else if (parts[0] === "order" && parts.length === 4 && parts[2] === "table") {
+    url.pathname = "/order/__runtime__/";
+    url.searchParams.set("table", parts[3] ?? "");
+  } else if (parts[0] === "order" && parts.length === 4 && parts[2] === "track") {
+    url.pathname = "/order/track/";
+    url.search = "";
+    url.searchParams.set("storeCode", parts[1] ?? "");
+    url.searchParams.set("token", parts[3] ?? "");
+  } else if (parts[0] === "order" && parts.length === 4 && parts[2] === "receipt") {
+    url.pathname = "/order/receipt/";
+    url.search = "";
+    url.searchParams.set("storeCode", parts[1] ?? "");
+    url.searchParams.set("token", parts[3] ?? "");
+  } else if (parts[0] === "kiosk" && parts.length === 2) {
+    url.pathname = "/kiosk/__runtime__/";
+  } else if (parts[0] === "queue" && parts.length === 2) {
+    url.pathname = "/queue/__runtime__/";
+  }
+
+  return new Request(url, request);
+}
+
 function runtimeErrorResponse(requestId: string, status: 500 | 503): Response {
   return new Response(JSON.stringify({
     error: {
@@ -107,7 +140,7 @@ export function createWorker(
         }
         return runtime.app.handle(request);
       }
-      return env.ASSETS.fetch(request);
+      return env.ASSETS.fetch(publicShellRequest(request));
     }
   };
 }

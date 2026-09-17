@@ -8,10 +8,13 @@ export const permissions = [
   "organization.manage", "store.read", "store.manage", "member.manage",
   "catalog.read", "catalog.manage", "order.read", "order.create",
   "payment.receive", "refund.create", "order.void", "price.override",
-  "cash_drawer.open", "integration.manage", "audit.read"
+  "cash_drawer.open", "integration.manage", "audit.read", "devices.manage"
 ] as const;
 
 export type Permission = (typeof permissions)[number];
+
+export const deviceModes = ["POS", "KIOSK", "KDS", "QUEUE_DISPLAY"] as const;
+export type DeviceMode = (typeof deviceModes)[number];
 
 export const catalogChannels = ["POS", "QR", "KIOSK", "PICKUP", "STAFF", "API"] as const;
 export type CatalogChannel = (typeof catalogChannels)[number];
@@ -76,6 +79,8 @@ export interface ProductSummary {
   basePriceMinor: number;
   currency: string;
   status: ProductStatus;
+  imageUrl?: string | null;
+  displayOrder?: number;
   variants: ProductVariantSummary[];
   availability: ProductAvailabilitySummary[];
 }
@@ -228,6 +233,8 @@ export interface CreateOrderInput {
   customerPhone?: string;
   customerEmail?: string;
   notes?: string;
+  scheduledPickupAt?: string;
+  prepareAt?: string;
   items: CreateOrderItemInput[];
 }
 
@@ -274,10 +281,14 @@ export interface OrderSummary {
   customerPhone?: string;
   customerEmail?: string;
   notes?: string;
+  scheduledPickupAt?: string;
+  prepareAt?: string;
   items: OrderItemSummary[];
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
+  /** Opaque customer-facing token; never use the internal order id in public URLs. */
+  publicTrackingToken?: string;
 }
 
 export interface OrderListItem {
@@ -292,6 +303,8 @@ export interface OrderListItem {
   currency: string;
   totalMinor: number;
   itemCount: number;
+  scheduledPickupAt?: string;
+  prepareAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -328,6 +341,42 @@ export interface StoreSummary {
   name: string;
   code: string;
   timezone: string;
+}
+
+export interface DeviceSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  name: string;
+  mode: DeviceMode;
+  stationId?: string | null;
+  status: "ACTIVE" | "REVOKED";
+  pairedAt?: string | null;
+  lastSeenAt?: string | null;
+  pairingExpiresAt?: string | null;
+  createdAt: string;
+}
+
+export interface MemberSummary {
+  membershipId: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  status: "INVITED" | "ACTIVE" | "SUSPENDED";
+  storeIds: string[];
+  createdAt: string;
+}
+
+export interface AuditLogSummary {
+  id: string;
+  organizationId: string;
+  userId?: string | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface TableSummary {
@@ -373,12 +422,13 @@ export interface PublicCatalogSnapshot {
 
 export interface CreatePublicOrderInput {
   storeCode: string;
-  channel: "QR";
-  fulfillmentType: "TAKEAWAY" | "DINE_IN";
+  channel: "QR" | "KIOSK";
+  fulfillmentType: "TAKEAWAY" | "DINE_IN" | "PICKUP";
   tableNumber?: string;
   customerName?: string;
   customerPhone?: string;
   notes?: string;
+  scheduledPickupAt?: string;
   items: Array<{
     productId: string;
     variantId?: string;
@@ -390,4 +440,218 @@ export interface CreatePublicOrderInput {
 
 export interface ApiErrorBody {
   error: { code: string; message: string; requestId: string; details?: unknown };
+}
+
+// Phase 5: Queue contracts
+export type QueueTicketStatus = "WAITING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+
+export interface QueueConfigSummary {
+  organizationId: string;
+  storeId: string;
+  prefix: string;
+  resetDaily: boolean;
+  displayMode: "NUMBER" | "LETTER_NUMBER";
+}
+
+export interface QueueTicketSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  orderId: string;
+  orderNumber?: string;
+  queueNumber: string;
+  status: QueueTicketStatus;
+  calledAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+export interface QueueDisplaySnapshot {
+  store: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  preparing: QueueTicketSummary[];
+  ready: QueueTicketSummary[];
+  recentlyCalled?: QueueTicketSummary | null;
+}
+
+// Phase 6: Preparation / KDS contracts
+export type PreparationStationStatus = "ACTIVE" | "INACTIVE";
+export type PreparationTaskStatus = "PENDING" | "IN_PROGRESS" | "DONE" | "CANCELLED";
+export type StationMatchRuleType = "PRODUCT" | "CATEGORY" | "ALL";
+export type OrderReadinessResult = "STILL_PREPARING" | "PARTIALLY_READY" | "READY";
+
+export interface PreparationStationSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  code: string;
+  name: string;
+  displayOrder: number;
+  status: PreparationStationStatus;
+}
+
+export interface StationRoutingRuleSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  stationId: string;
+  matchType: StationMatchRuleType;
+  matchId?: string | null;
+  priority: number;
+}
+
+export interface PreparationTaskSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  orderId: string;
+  orderNumber: string;
+  queueNumber?: string | null;
+  orderItemId: string;
+  productName: string;
+  variantName?: string | null;
+  quantity: number;
+  modifiers: Array<{ name: string }>;
+  note?: string | null;
+  stationId: string;
+  stationName: string;
+  stationCode: string;
+  status: PreparationTaskStatus;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+}
+
+// Store Core: Receipts Domain
+export interface ReceiptItemSnapshot {
+  productName: string;
+  variantName?: string | null;
+  quantity: number;
+  unitPriceMinor: number;
+  subtotalMinor: number;
+  modifiers?: Array<{ name: string; priceMinor: number }>;
+  discountMinor?: number;
+}
+
+export interface ReceiptSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  orderId: string;
+  receiptNumber: string;
+  orderNumber: string;
+  storeSnapshot: {
+    name: string;
+    code: string;
+    address?: string;
+    taxId?: string;
+    phone?: string;
+  };
+  itemsSnapshot: ReceiptItemSnapshot[];
+  subtotalMinor: number;
+  discountMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  paymentsSummary: Array<{
+    method: PaymentMethod;
+    amountMinor: number;
+    reference?: string | null;
+    paidAt: string;
+  }>;
+  cashReceivedMinor?: number | null;
+  changeMinor?: number | null;
+  cashierName?: string | null;
+  reprintCount: number;
+  lastReprintedAt?: string | null;
+  isVoid: boolean;
+  voidReason?: string | null;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  createdAt: string;
+}
+
+// Store Core: Cash Movements & Cash Session Details
+export type CashMovementType = "IN" | "OUT" | "PAID_IN" | "PAID_OUT";
+
+export interface CashMovementSummary {
+  id: string;
+  cashSessionId: string;
+  organizationId: string;
+  storeId: string;
+  movementType: CashMovementType;
+  amountMinor: number;
+  reason: string;
+  performedBy: string;
+  createdAt: string;
+}
+
+export interface CashSessionDetail {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  openedBy: string;
+  closedBy?: string | null;
+  openingAmountMinor: number;
+  closingAmountMinor?: number | null;
+  expectedAmountMinor?: number | null;
+  cashDifferenceMinor?: number | null;
+  status: "OPEN" | "CLOSED";
+  openedAt: string;
+  closedAt?: string | null;
+  notes?: string | null;
+  movements?: CashMovementSummary[];
+  cashSalesMinor?: number;
+  cashRefundsMinor?: number;
+}
+
+// Store Core: Basic Sales Ledger & Daily Closing
+export interface SalesLedgerEntrySummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  cashSessionId?: string | null;
+  orderId?: string | null;
+  entryType: "SALE" | "DISCOUNT" | "TAX" | "REFUND" | "VOID";
+  paymentMethod?: string | null;
+  amountMinor: number;
+  createdAt: string;
+}
+
+export interface DailyClosingSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  closingDate: string;
+  grossSalesMinor: number;
+  netSalesMinor: number;
+  discountsMinor: number;
+  taxMinor: number;
+  cashSalesMinor: number;
+  promptpaySalesMinor: number;
+  cardSalesMinor: number;
+  refundsMinor: number;
+  voidsMinor: number;
+  totalOrders: number;
+  closedBy: string;
+  createdAt: string;
+}
+
+// Store Core: Integration Jobs
+export interface IntegrationJobSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  targetSystem: string;
+  jobType: string;
+  payload: Record<string, unknown>;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "DEAD_LETTER";
+  attemptCount: number;
+  lastError?: string | null;
+  nextRetryAt?: string | null;
+  externalReference?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

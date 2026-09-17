@@ -5,7 +5,8 @@ export type RealtimeEventName =
   | "order.status"
   | "order.payment"
   | "catalog.updated"
-  | "queue.ticket";
+  | "queue.ticket"
+  | "preparation.task";
 
 export interface OrderCreatedPayload {
   order: OrderSummary;
@@ -38,12 +39,21 @@ export interface QueueTicketPayload {
   occurredAt: string;
 }
 
+export interface PreparationTaskPayload {
+  taskId: string;
+  orderId: string;
+  stationId: string;
+  status: string;
+  occurredAt: string;
+}
+
 export type RealtimePayloadMap = {
   "order.created": OrderCreatedPayload;
   "order.status": OrderStatusPayload;
   "order.payment": OrderPaymentPayload;
   "catalog.updated": CatalogUpdatedPayload;
   "queue.ticket": QueueTicketPayload;
+  "preparation.task": PreparationTaskPayload;
 };
 
 export interface RealtimeEnvelope<T = unknown> {

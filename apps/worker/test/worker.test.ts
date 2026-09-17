@@ -24,6 +24,27 @@ test("Worker routes API paths to Elysia and everything else to assets", async ()
   expect(await assetResponse.text()).toBe("asset");
 });
 
+test("Worker serves runtime public shells without enumerating tenant codes", async () => {
+  const requestedPaths: string[] = [];
+  const worker = createWorker(() => ({
+    app: { handle: async () => new Response("api", { status: 200 }) },
+    database: {} as never
+  }));
+  const shellEnv = {
+    ...env,
+    ASSETS: {
+      fetch: async (request: Request) => {
+        requestedPaths.push(new URL(request.url).pathname + new URL(request.url).search);
+        return new Response("shell", { status: 200 });
+      }
+    }
+  };
+
+  const response = await worker.fetch(new Request("http://localhost:8787/order/MAIN/track/abcdef0123456789abcdef0123456789"), shellEnv);
+  expect(response.status).toBe(200);
+  expect(requestedPaths[0]).toBe("/order/track/?storeCode=MAIN&token=abcdef0123456789abcdef0123456789");
+});
+
 test("health remains a liveness check when runtime configuration is missing", async () => {
   let runtimeCalls = 0;
   const worker = createWorker(() => {
