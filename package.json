@@ -4,9 +4,9 @@
   "packageManager": "bun@1.2.21",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "bun run --filter '*' dev",
-    "dev:api": "bun run --filter @aevo/api dev",
-    "dev:web": "bun run --filter @aevo/web dev",
+    "dev": "bun --env-file=.env run --filter '*' dev",
+    "dev:api": "bun --env-file=.env run --filter @aevo/api dev",
+    "dev:web": "bun --env-file=.env run --filter @aevo/web dev",
     "build": "bun run --filter '*' build",
     "deploy": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc",
     "deploy:web": "npm exec --yes --package=wrangler@4.132.0 -- wrangler deploy --config wrangler.jsonc",
@@ -14,7 +14,7 @@
     "test": "bun test packages apps",
     "test:integration": "bun test packages/db/test apps/api/test",
     "db:migrate": "npx --yes supabase@2.117.0 db push",
-    "db:seed": "bun run --filter @aevo/db seed"
+    "db:seed": "bun --env-file=.env run --filter @aevo/db seed"
   },
   "devDependencies": {
     "@types/bun": "^1.2.21",

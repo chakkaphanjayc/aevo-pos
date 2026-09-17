@@ -1,7 +1,7 @@
 {
   "name": "@aevo/api", "version": "0.0.1", "private": true, "type": "module",
   "exports": { ".": "./src/app.ts" },
-  "scripts": { "dev": "bun --watch src/index.ts", "start": "bun src/index.ts", "typecheck": "tsc --noEmit", "test": "bun test", "build": "bun build src/index.ts --target bun --outdir dist" },
+  "scripts": { "dev": "bun --env-file=../../.env --env-file=.env --watch src/index.ts", "start": "bun --env-file=../../.env --env-file=.env src/index.ts", "typecheck": "tsc --noEmit", "test": "bun test", "build": "bun build src/index.ts --target bun --outdir dist" },
   "dependencies": {
     "@aevo/auth": "workspace:*", "@aevo/config": "workspace:*", "@aevo/contracts": "workspace:*",
     "@aevo/db": "workspace:*", "elysia": "^1.4.15"
