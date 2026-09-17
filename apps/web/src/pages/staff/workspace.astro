@@ -1,73 +1,193 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
 ---
-<BaseLayout title="Workspace">
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand brand-link" href="/staff"><span class="brand-mark">A</span> Aevo Staff</a>
-      <div class="header-actions"><span class="status">Online</span><button id="logout" class="button secondary" type="button">ออกจากระบบ</button></div>
-    </header>
-    <main class="page">
-      <a class="back" href="/staff">← เปลี่ยนสาขา</a>
-      <p class="eyebrow">Workspace foundation</p>
-      <h1 id="welcome">กำลังโหลดข้อมูล…</h1>
-      <p class="lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
-      <p class="error" id="error" role="alert" hidden></p>
-      <section class="workspace-grid" aria-label="Workspaces">
-        <a class="card workspace-card workspace-link" id="catalog-link" href="#"><span class="workspace-icon">▤</span><h2>Catalog</h2><p>จัดการสินค้า หมวดหมู่ และ Sold out</p><span class="coming-soon ready">Phase 1</span></a>
-        <article class="card workspace-card"><span class="workspace-icon">▦</span><h2>POS</h2><p>รับออเดอร์และรับชำระเงิน</p><span class="coming-soon">Phase 3</span></article>
-        <a class="card workspace-card workspace-link" id="orders-link" href="#"><span class="workspace-icon">◫</span><h2>Orders</h2><p>ดูรายการและสถานะออเดอร์</p><span class="coming-soon ready">Phase 2</span></a>
-        <article class="card workspace-card"><span class="workspace-icon">✦</span><h2>Preparation</h2><p>จัดการงานเตรียมสินค้า</p><span class="coming-soon">กำลังพัฒนา</span></article>
-        <article class="card workspace-card"><span class="workspace-icon">⌁</span><h2>Queue</h2><p>คิวรับสินค้าและจอแสดงผล</p><span class="coming-soon">กำลังพัฒนา</span></article>
-      </section>
-    </main>
+
+<StaffShell title="ภาพรวมการทำงาน" active="workspace">
+  <div class="staff-page workspace-page">
+    <div class="workspace-header">
+      <div>
+        <p class="staff-eyebrow">Workspace · Daily operations</p>
+        <h1 class="staff-page-title" id="welcome">กำลังโหลดข้อมูล…</h1>
+        <p class="staff-page-lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
+      </div>
+      <div class="workspace-header-actions">
+        <a class="button secondary" id="catalog-link" href="#"><StaffIcon name="catalog" size={17} />จัดการสินค้า</a>
+        <a class="button" id="pos-link" href="#"><StaffIcon name="pos" size={17} />เปิด POS</a>
+      </div>
+    </div>
+
+    <p class="error" id="error" role="alert" hidden></p>
+    <div class="workspace-loading" id="loading" aria-live="polite"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
+
+    <section class="workspace-section" aria-labelledby="daily-heading">
+      <div class="workspace-section-heading"><div><span class="staff-eyebrow">Today</span><h2 id="daily-heading">การทำงานวันนี้</h2></div><span class="workspace-section-note">เลือกงานที่ต้องทำต่อได้ทันที</span></div>
+      <div class="workspace-grid workspace-grid-daily">
+        <a class="workspace-card workspace-card-pos surface" id="pos-card" href="#">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-brand"><StaffIcon name="pos" size={21} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div>
+          <div class="workspace-card-copy"><span class="workspace-card-kicker">ขายหน้าร้าน · POS</span><h3>รับออเดอร์ได้เร็วขึ้น</h3><p>เลือกสินค้า รับเงินสด และพักออเดอร์จากหน้าจอเดียว</p></div>
+          <div class="workspace-card-foot"><strong>เปิดหน้าขาย</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
+        </a>
+        <a class="workspace-card surface" id="orders-link" href="#">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-soft"><StaffIcon name="orders" size={19} /></span><span class="workspace-status status-live"><i></i>ติดตามได้</span></div>
+          <div class="workspace-card-copy"><span class="workspace-card-kicker">Orders</span><h3>ดูออเดอร์ล่าสุด</h3><p>ตรวจสถานะและยอดรวมของออเดอร์ในสาขา</p></div>
+          <div class="workspace-card-foot"><strong id="order-stat">กำลังโหลด…</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
+        </a>
+        <article class="workspace-card surface workspace-card-disabled">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="prep" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div>
+          <div class="workspace-card-copy"><span class="workspace-card-kicker">Preparation</span><h3>งานเตรียมสินค้า</h3><p>รวมงานจากทุกช่องทางไว้ให้ทีมเตรียมสินค้า</p></div>
+          <div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div>
+        </article>
+        <article class="workspace-card surface workspace-card-disabled">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="queue" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div>
+          <div class="workspace-card-copy"><span class="workspace-card-kicker">Queue</span><h3>คิวรับสินค้า</h3><p>จัดการคิวและแสดงสถานะให้ลูกค้าเห็นชัดเจน</p></div>
+          <div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="workspace-section workspace-setup-section" aria-labelledby="setup-heading">
+      <div class="workspace-section-heading"><div><span class="staff-eyebrow">Store setup</span><h2 id="setup-heading">ตั้งค่าร้าน</h2></div><span class="workspace-section-note">จัดการข้อมูลที่หน้าขายใช้ร่วมกัน</span></div>
+      <div class="workspace-grid workspace-grid-setup">
+        <a class="workspace-card workspace-card-catalog surface" id="catalog-card" href="#">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-brand"><StaffIcon name="catalog" size={21} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div>
+          <div class="workspace-card-copy"><span class="workspace-card-kicker">Catalog</span><h3>จัดการสินค้าและเมนู</h3><p>ค้นหา แก้ไขราคา ตั้งหมวดหมู่ และเปิด/ปิดการขาย</p></div>
+          <div class="workspace-card-foot"><strong id="product-stat">กำลังโหลด…</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
+        </a>
+        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="layers" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Menus</span><h3>โครงสร้างเมนู</h3><p>จัดลำดับเมนูและกำหนดช่องทางการขาย</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
+        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="sliders" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Modifiers</span><h3>ตัวเลือกสินค้า</h3><p>กำหนดขนาด รสชาติ และตัวเลือกเพิ่มเติม</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
+        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="settings" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Settings</span><h3>ตั้งค่าสาขา</h3><p>จัดการข้อมูลสาขา สมาชิก และการเชื่อมต่อ</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
+      </div>
+    </section>
   </div>
+
   <script>
     import { api, ApiError } from "../../lib/api";
-    import type { SessionPrincipal, StoreSummary } from "@aevo/contracts";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { CatalogSnapshot, OrderListItem, StoreSummary } from "@aevo/contracts";
 
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
-    const params = new URLSearchParams(window.location.search);
-    const selectedStoreId = params.get("store") || sessionStorage.getItem("aevo.selectedStoreId");
+    const loading = document.querySelector<HTMLElement>("#loading")!;
+    const requestedStoreId = getSelectedStoreId();
+    let selectedStoreId = "";
+    let stores: StoreSummary[] = [];
 
-    try {
-      const [{ user }, { stores }] = await Promise.all([
-        api<{ user: SessionPrincipal }>("/api/auth/me"),
-        api<{ stores: StoreSummary[] }>("/api/stores")
-      ]);
-      const store = stores.find((item) => item.id === selectedStoreId);
-      if (!store) {
-        window.location.assign("/staff");
-      } else {
-        sessionStorage.setItem("aevo.selectedStoreId", store.id);
-        document.querySelector<HTMLAnchorElement>("#catalog-link")!.href = `/staff/catalog?store=${encodeURIComponent(store.id)}`;
-        document.querySelector<HTMLAnchorElement>("#orders-link")!.href = `/staff/orders?store=${encodeURIComponent(store.id)}`;
-        document.querySelector("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
-        document.querySelector("#store-summary")!.textContent = `${store.name} · ${store.code} · ${store.timezone}`;
-      }
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-      else { error.textContent = cause instanceof Error ? cause.message : "โหลด workspace ไม่สำเร็จ"; error.hidden = false; }
+    const links = {
+      pos: document.querySelectorAll<HTMLAnchorElement>("#pos-link, #pos-card"),
+      catalog: document.querySelectorAll<HTMLAnchorElement>("#catalog-link, #catalog-card"),
+      orders: document.querySelectorAll<HTMLAnchorElement>("#orders-link")
+    };
+
+    function updateLinks(): void {
+      for (const link of links.pos) link.href = storeUrl("/staff/pos", selectedStoreId);
+      for (const link of links.catalog) link.href = storeUrl("/staff/catalog", selectedStoreId, { tab: "products" });
+      for (const link of links.orders) link.href = storeUrl("/staff/orders", selectedStoreId);
     }
 
-    document.querySelector("#logout")!.addEventListener("click", async () => {
-      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-      sessionStorage.removeItem("aevo.selectedStoreId");
-      window.location.assign("/login");
-    });
+    async function loadStoreData(store: StoreSummary): Promise<void> {
+      error.hidden = true;
+      loading.hidden = false;
+      updateLinks();
+      const [catalogResult, ordersResult] = await Promise.allSettled([
+        api<CatalogSnapshot>(`/api/catalog?storeId=${encodeURIComponent(store.id)}`),
+        api<{ orders: OrderListItem[] }>(`/api/orders?storeId=${encodeURIComponent(store.id)}&limit=100`)
+      ]);
+      const catalog = catalogResult.status === "fulfilled" ? catalogResult.value : null;
+      const orders = ordersResult.status === "fulfilled" ? ordersResult.value.orders : [];
+      const activeProducts = catalog?.products.filter((product) => product.status === "ACTIVE").length;
+      document.querySelector<HTMLElement>("#product-stat")!.textContent = activeProducts === undefined ? "ดูรายการสินค้า →" : `${activeProducts} สินค้าที่เปิดใช้งาน`;
+      const inProgress = orders.filter((order) => !["COMPLETED", "CANCELLED", "REFUNDED", "PICKED_UP"].includes(order.status)).length;
+      document.querySelector<HTMLElement>("#order-stat")!.textContent = ordersResult.status === "fulfilled" ? `${inProgress} ออเดอร์ที่กำลังดำเนินการ` : "ดูออเดอร์ล่าสุด →";
+      loading.hidden = true;
+      if (catalogResult.status === "rejected" && ordersResult.status === "rejected") {
+        error.textContent = friendlyErrorMessage(catalogResult.reason, "โหลดข้อมูลสาขาไม่สำเร็จ กรุณาลองใหม่");
+        error.hidden = false;
+      }
+    }
+
+    async function initialise(): Promise<void> {
+      const { user, stores: authorizedStores } = await loadStaffContext();
+      stores = authorizedStores;
+      const store = findSelectedStore(stores, requestedStoreId);
+      if (!store) {
+        window.location.assign("/staff");
+        return;
+      }
+      selectedStoreId = store.id;
+      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
+      document.querySelector<HTMLElement>("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
+      document.querySelector<HTMLElement>("#store-summary")!.textContent = `${store.name} · ${store.code} · ${store.timezone}`;
+      initStaffShell({
+        user,
+        stores,
+        selectedStoreId,
+        onStoreChange: async (nextStoreId) => {
+          selectedStoreId = nextStoreId;
+          const nextStore = stores.find((item) => item.id === nextStoreId);
+          if (!nextStore) return;
+          history.replaceState(null, "", storeUrl("/staff/workspace", nextStoreId));
+          document.querySelector<HTMLElement>("#store-summary")!.textContent = `${nextStore.name} · ${nextStore.code} · ${nextStore.timezone}`;
+          await loadStoreData(nextStore);
+        }
+      });
+      await loadStoreData(store);
+    }
+
+    try {
+      await initialise();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
+      else {
+        loading.hidden = true;
+        error.textContent = friendlyErrorMessage(cause, "โหลด workspace ไม่สำเร็จ กรุณาลองใหม่");
+        error.hidden = false;
+      }
+    }
   </script>
-  <style>
-    .brand-link { text-decoration: none; }
-    .header-actions { display: flex; align-items: center; gap: 16px; }
-    .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
-    .workspace-grid { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .workspace-card { min-height: 210px; padding: 24px; display: flex; flex-direction: column; align-items: flex-start; }
-    .workspace-link { color: inherit; text-decoration: none; }
-    .workspace-card h2 { margin: 14px 0 4px; }
-    .workspace-card p { margin: 0 0 20px; color: var(--muted); line-height: 1.5; }
-    .workspace-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: white; background: var(--brand); font-size: 1.35rem; }
-    .coming-soon { margin-top: auto; padding: 5px 9px; border-radius: 999px; color: var(--brand); background: #e7f2ed; font-size: .76rem; font-weight: 800; }
-    .coming-soon.ready { color: #8a5e00; background: #fff4cf; }
-    @media (max-width: 520px) { .status { display: none; } }
+
+  <style is:global>
+    .workspace-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+    .workspace-header-actions { display: flex; align-items: center; gap: 9px; }
+    .workspace-header-actions .button { white-space: nowrap; }
+    .workspace-loading { display: flex; gap: 8px; margin: 24px 0 0; }
+    .workspace-loading .skeleton { width: 90px; height: 8px; }
+    .workspace-section { margin-top: 38px; }
+    .workspace-setup-section { margin-top: 48px; }
+    .workspace-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+    .workspace-section-heading .staff-eyebrow { margin-bottom: 5px; }
+    .workspace-section-heading h2 { margin: 0; font-size: 1.18rem; letter-spacing: -.025em; }
+    .workspace-section-note { color: var(--muted); font-size: .74rem; }
+    .workspace-grid { display: grid; gap: 14px; }
+    .workspace-grid-daily { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .workspace-grid-setup { grid-template-columns: 1.35fr repeat(3, 1fr); }
+    .workspace-card { display: flex; min-height: 220px; flex-direction: column; padding: 18px; color: var(--ink); text-decoration: none; transition: border-color var(--duration-fast), box-shadow var(--duration-fast), transform var(--duration-fast); }
+    a.workspace-card:hover { border-color: #b8d8c4; box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .workspace-card-pos { grid-column: span 2; color: white; border-color: var(--brand); background: var(--brand); box-shadow: 0 12px 28px rgba(23, 99, 72, .16); }
+    a.workspace-card-pos:hover { border-color: var(--brand-dark); background: var(--brand-dark); }
+    .workspace-card-catalog { min-height: 205px; }
+    .workspace-card-disabled { background: var(--surface-soft); }
+    .workspace-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .workspace-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; }
+    .workspace-icon-brand { color: white; background: rgba(255,255,255,.15); }
+    .workspace-icon-soft { color: var(--brand); background: var(--brand-soft); }
+    .workspace-icon-muted { color: var(--muted); background: var(--surface-quiet); }
+    .workspace-status { display: inline-flex; align-items: center; gap: 6px; font-size: .67rem; font-weight: 780; white-space: nowrap; }
+    .workspace-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status-ready, .status-live { color: var(--success); }
+    .workspace-card-pos .status-ready { color: #d7f3e1; }
+    .status-soon { color: var(--warning); }
+    .workspace-card-copy { margin-top: 22px; }
+    .workspace-card-kicker { color: var(--muted); font-size: .68rem; font-weight: 820; letter-spacing: .07em; text-transform: uppercase; }
+    .workspace-card-pos .workspace-card-kicker, .workspace-card-pos .workspace-card-copy p { color: rgba(255,255,255,.72); }
+    .workspace-card h3 { margin: 5px 0 5px; font-size: 1.1rem; letter-spacing: -.025em; }
+    .workspace-card-pos h3 { font-size: 1.35rem; }
+    .workspace-card-copy p { max-width: 250px; margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+    .workspace-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 18px; color: var(--brand); font-size: .75rem; font-weight: 780; }
+    .workspace-card-pos .workspace-card-foot { color: white; }
+    .workspace-card-disabled .workspace-card-foot { color: var(--muted); }
+    .workspace-arrow { font-size: 1.1rem; font-weight: 500; }
+    @media (max-width: 1120px) { .workspace-grid-setup { grid-template-columns: repeat(2, minmax(0, 1fr)); } .workspace-card-catalog { grid-column: span 2; } }
+    @media (max-width: 820px) { .workspace-grid-daily { grid-template-columns: repeat(2, minmax(0, 1fr)); } .workspace-card-pos { grid-column: span 2; } }
+    @media (max-width: 620px) { .workspace-header { display: block; } .workspace-header-actions { margin-top: 18px; } .workspace-header-actions .button { flex: 1; } .workspace-section-heading { align-items: flex-start; flex-direction: column; gap: 5px; } .workspace-grid-daily, .workspace-grid-setup { grid-template-columns: 1fr; } .workspace-card-pos, .workspace-card-catalog { grid-column: auto; } .workspace-card { min-height: 190px; } }
   </style>
-</BaseLayout>
+</StaffShell>

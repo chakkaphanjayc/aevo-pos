@@ -1,63 +1,127 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
 ---
-<BaseLayout title="Staff">
-  <div class="shell">
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">A</span> Aevo Staff</div>
-      <div class="header-actions"><span class="status">Online</span><button id="logout" class="button secondary">ออกจากระบบ</button></div>
-    </header>
-    <main class="page">
-      <p class="eyebrow">Workspace</p>
-      <h1 id="welcome">กำลังโหลดข้อมูล…</h1>
-      <p class="lede">เลือกสาขาที่คุณได้รับอนุญาต ระบบจะใช้บริบทนี้กับทุกคำขอและตรวจซ้ำที่ server</p>
-      <p class="error" id="error" role="alert" hidden></p>
-      <section class="store-grid" id="stores" aria-live="polite"></section>
-    </main>
+
+<StaffShell title="เลือกสาขา" active="workspace">
+  <div class="staff-page store-selection-page">
+    <div class="store-selection-intro">
+      <div>
+        <p class="staff-eyebrow">Aevo Staff · Store access</p>
+        <h1 class="staff-page-title" id="welcome">กำลังโหลดข้อมูล…</h1>
+        <p class="staff-page-lede">เลือกสาขาที่คุณได้รับอนุญาตเพื่อเริ่มงาน ระบบจะใช้บริบทนี้กับทุกคำขอและตรวจสิทธิ์ซ้ำที่เซิร์ฟเวอร์</p>
+      </div>
+      <div class="store-selection-note">
+        <span class="store-selection-note-icon">✓</span>
+        <span><strong>ข้อมูลแยกตามสาขา</strong><small>สลับสาขาได้ตลอดจากแถบด้านบน</small></span>
+      </div>
+    </div>
+
+    <div class="store-section-heading">
+      <div><span class="staff-eyebrow">Your stores</span><h2>สาขาที่เข้าถึงได้</h2></div>
+      <span class="store-count" id="store-count">— สาขา</span>
+    </div>
+    <p class="error" id="error" role="alert" hidden></p>
+    <div class="store-grid" id="stores" aria-live="polite">
+      <article class="store-card surface store-card-loading" aria-hidden="true"><span class="skeleton store-card-mark"></span><span class="skeleton store-card-line"></span><span class="skeleton store-card-line short"></span></article>
+      <article class="store-card surface store-card-loading" aria-hidden="true"><span class="skeleton store-card-mark"></span><span class="skeleton store-card-line"></span><span class="skeleton store-card-line short"></span></article>
+    </div>
+    <button class="button secondary retry-button" id="retry" type="button" hidden>ลองโหลดอีกครั้ง</button>
   </div>
-  <template id="store-card">
-    <article class="card store-card">
-      <div><p class="store-code"></p><h2></h2><p class="muted timezone"></p></div>
-      <button class="button store-select" type="button">เข้าสู่ workspace</button>
-    </article>
-  </template>
+
   <script>
-    import { api, ApiError } from "../../lib/api";
-    import type { SessionPrincipal, StoreSummary } from "@aevo/contracts";
+    import { ApiError } from "../../lib/api";
+    import { friendlyErrorMessage, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+
+    const list = document.querySelector<HTMLElement>("#stores")!;
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
-    try {
-      const [{ user }, { stores }] = await Promise.all([
-        api<{ user: SessionPrincipal }>("/api/auth/me"), api<{ stores: StoreSummary[] }>("/api/stores")
-      ]);
-      document.querySelector("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
-      const list = document.querySelector<HTMLElement>("#stores")!;
-      const template = document.querySelector<HTMLTemplateElement>("#store-card")!;
-      for (const store of stores) {
-        const node = template.content.cloneNode(true) as DocumentFragment;
-        node.querySelector("h2")!.textContent = store.name;
-        node.querySelector(".store-code")!.textContent = store.code;
-        node.querySelector(".timezone")!.textContent = store.timezone;
-        node.querySelector<HTMLButtonElement>(".store-select")!.addEventListener("click", () => {
-          sessionStorage.setItem("aevo.selectedStoreId", store.id);
-          window.location.assign(`/staff/workspace?store=${encodeURIComponent(store.id)}`);
-        });
-        list.append(node);
+    const retry = document.querySelector<HTMLButtonElement>("#retry")!;
+    const count = document.querySelector<HTMLElement>("#store-count")!;
+    let shellReady = false;
+
+    async function load(): Promise<void> {
+      error.hidden = true;
+      retry.hidden = true;
+      list.innerHTML = `
+        <article class="store-card surface store-card-loading" aria-hidden="true"><span class="skeleton store-card-mark"></span><span class="skeleton store-card-line"></span><span class="skeleton store-card-line short"></span></article>
+        <article class="store-card surface store-card-loading" aria-hidden="true"><span class="skeleton store-card-mark"></span><span class="skeleton store-card-line"></span><span class="skeleton store-card-line short"></span></article>
+      `;
+      try {
+        const { user, stores } = await loadStaffContext();
+        if (!shellReady) {
+          initStaffShell({ user, stores, redirectOnStoreChange: true });
+          shellReady = true;
+        }
+        document.querySelector<HTMLElement>("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
+        count.textContent = `${stores.length} สาขา`;
+        list.replaceChildren();
+        if (!stores.length) {
+          list.innerHTML = `<div class="empty-state store-empty"><span class="store-empty-icon">—</span><strong>ยังไม่มีสาขาที่เข้าถึงได้</strong><p>ติดต่อผู้ดูแลองค์กรเพื่อเพิ่มสิทธิ์เข้าสาขา</p></div>`;
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        for (const store of stores) {
+          const card = document.createElement("article");
+          card.className = "store-card surface";
+          card.innerHTML = `
+            <div class="store-card-top"><span class="store-card-mark" aria-hidden="true">${store.name.slice(0, 1).toUpperCase()}</span><span class="store-card-status"><i></i>เข้าถึงได้</span></div>
+            <div class="store-card-copy"><span class="store-card-code"></span><h3></h3><p></p></div>
+            <button class="button store-card-action" type="button">เข้าสู่ workspace <span aria-hidden="true">→</span></button>
+          `;
+          card.querySelector<HTMLElement>(".store-card-code")!.textContent = store.code;
+          card.querySelector<HTMLHeadingElement>("h3")!.textContent = store.name;
+          card.querySelector<HTMLParagraphElement>("p")!.textContent = `เขตเวลา ${store.timezone}`;
+          card.querySelector<HTMLButtonElement>("button")!.addEventListener("click", () => {
+            sessionStorage.setItem("aevo.selectedStoreId", store.id);
+            window.location.assign(storeUrl("/staff/workspace", store.id));
+          });
+          fragment.append(card);
+        }
+        list.append(fragment);
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") {
+          window.location.assign("/login");
+          return;
+        }
+        list.replaceChildren();
+        error.textContent = friendlyErrorMessage(cause, "โหลดสาขาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        error.hidden = false;
+        retry.hidden = false;
       }
-      if (!stores.length) list.textContent = "ยังไม่มีสาขาที่บัญชีนี้เข้าถึงได้";
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-      else { error.textContent = cause instanceof Error ? cause.message : "โหลดข้อมูลไม่สำเร็จ"; error.hidden = false; }
     }
-    document.querySelector("#logout")!.addEventListener("click", async () => {
-      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined); window.location.assign("/login");
-    });
+
+    retry.addEventListener("click", () => void load());
+    void load();
   </script>
-  <style>
-    .header-actions { display: flex; align-items: center; gap: 16px; }
-    .store-grid { margin-top: 28px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-    .store-card { min-height: 190px; padding: 22px; display: flex; flex-direction: column; justify-content: space-between; }
-    .store-card h2 { margin: 4px 0; }
-    .store-code { margin: 0; font-size: .76rem; font-weight: 800; color: var(--brand); letter-spacing: .12em; }
-    @media (max-width: 520px) { .status { display: none; } }
+
+  <style is:global>
+    .store-selection-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; }
+    .store-selection-note { display: flex; align-items: flex-start; gap: 10px; min-width: 230px; padding: 13px 15px; border: 1px solid #cfe5d7; border-radius: var(--radius-md); color: var(--brand); background: var(--brand-quiet); }
+    .store-selection-note-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: white; background: var(--brand); font-size: .75rem; font-weight: 850; }
+    .store-selection-note span:last-child { display: grid; gap: 2px; }
+    .store-selection-note strong { font-size: .76rem; }
+    .store-selection-note small { color: var(--muted); font-size: .7rem; line-height: 1.35; }
+    .store-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-top: 44px; }
+    .store-section-heading h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.025em; }
+    .store-count { color: var(--muted); font-size: .78rem; font-weight: 700; }
+    .store-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 14px; margin-top: 15px; }
+    .store-card { display: flex; flex-direction: column; min-height: 205px; padding: 18px; }
+    .store-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .store-card-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; color: var(--brand); background: var(--brand-soft); font-size: 1rem; font-weight: 850; }
+    .store-card-status { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-size: .7rem; font-weight: 760; }
+    .store-card-status i { width: 6px; height: 6px; border-radius: 50%; background: #2ca56b; }
+    .store-card-copy { margin-top: 19px; }
+    .store-card-code { color: var(--brand); font-size: .69rem; font-weight: 820; letter-spacing: .1em; }
+    .store-card h3 { margin: 4px 0 2px; font-size: 1.05rem; letter-spacing: -.02em; }
+    .store-card p { margin: 0; color: var(--muted); font-size: .78rem; }
+    .store-card-action { width: 100%; justify-content: space-between; margin-top: auto; }
+    .store-card-action span { font-size: 1.1rem; line-height: 1; }
+    .store-card-loading { gap: 12px; justify-content: flex-start; }
+    .store-card-loading .store-card-mark { width: 40px; height: 40px; }
+    .store-card-line { width: 68%; height: 14px; }
+    .store-card-line.short { width: 38%; height: 11px; }
+    .store-empty { grid-column: 1 / -1; min-height: 190px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); }
+    .store-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: var(--muted); background: var(--surface-quiet); }
+    .retry-button { margin-top: 16px; }
+    @media (max-width: 700px) { .store-selection-intro { display: block; } .store-selection-note { margin-top: 20px; } .store-section-heading { margin-top: 32px; } }
   </style>
-</BaseLayout>
+</StaffShell>

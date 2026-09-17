@@ -1,0 +1,152 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import StaffIcon from "./StaffIcon.astro";
+
+type StaffSection = "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "settings";
+
+interface Props {
+  title: string;
+  active: StaffSection;
+  fullHeight?: boolean;
+}
+
+const { title, active, fullHeight = false } = Astro.props;
+
+const navItems = [
+  { key: "workspace", label: "ภาพรวม", helper: "Workspace", icon: "dashboard", href: "/staff/workspace", ready: true },
+  { key: "catalog", label: "สินค้า", helper: "Catalog", icon: "catalog", href: "/staff/catalog", ready: true },
+  { key: "pos", label: "ขายหน้าร้าน", helper: "POS", icon: "pos", href: "/staff/pos", ready: true },
+  { key: "orders", label: "ออเดอร์", helper: "Orders", icon: "orders", href: "/staff/orders", ready: true },
+  { key: "queue", label: "คิวรับสินค้า", helper: "Queue", icon: "queue", href: "/staff/queue", ready: false },
+  { key: "prep", label: "เตรียมสินค้า", helper: "Preparation", icon: "prep", href: "/staff/preparation", ready: false },
+  { key: "settings", label: "ตั้งค่า", helper: "Settings", icon: "settings", href: "/staff/settings", ready: false }
+] as const;
+
+const primaryMobileItems = navItems.slice(0, 4);
+---
+
+<BaseLayout title={title}>
+  <div class:list={["staff-app", { "staff-app-full": fullHeight }]} data-staff-shell>
+    <header class="staff-topbar">
+      <button class="staff-menu-toggle" id="staff-menu-toggle" type="button" aria-label="เปิดเมนู" aria-expanded="false" aria-controls="staff-mobile-drawer">
+        <StaffIcon name="menu" size={20} />
+      </button>
+
+      <a class="staff-brand" href="/staff" aria-label="Aevo Staff กลับหน้าเลือกสาขา">
+        <span class="staff-logo-mark" aria-hidden="true"><span>A</span></span>
+        <span class="staff-brand-copy"><strong>Aevo</strong><span>Staff</span></span>
+      </a>
+
+      <div class="staff-store-context">
+        <div class="staff-store-copy">
+          <span class="staff-context-label">สาขาที่ใช้งาน</span>
+          <span class="staff-store-name" id="store-name" data-staff-store-name>เลือกสาขา</span>
+          <span class="staff-store-code" data-staff-store-code>—</span>
+        </div>
+        <label class="staff-store-select">
+          <span class="sr-only">เลือกสาขา</span>
+          <select id="staff-store-select" aria-label="เลือกสาขา">
+            <option value="">กำลังโหลด…</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="staff-topbar-actions">
+        <slot name="top-actions" />
+        <span class="status staff-connection-status" id="connection-status" data-staff-connection>กำลังตรวจสอบ</span>
+        <div class="staff-user" title="ผู้ใช้งานปัจจุบัน">
+          <span class="staff-user-avatar" aria-hidden="true"><StaffIcon name="user" size={16} /></span>
+          <span class="staff-user-copy"><strong data-staff-user-name>กำลังโหลด…</strong><span data-staff-user-role>Staff</span></span>
+        </div>
+        <button class="staff-logout" id="logout" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ">
+          <StaffIcon name="logout" size={18} /><span>ออกจากระบบ</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="staff-layout">
+      <aside class="staff-sidebar" aria-label="เมนู Staff">
+        <div class="staff-sidebar-section-label">เมนูหลัก</div>
+        <nav class="staff-nav">
+          {navItems.map((item) => (
+            item.ready ? (
+              <a
+                class:list={["staff-nav-link", { "is-active": item.key === active }]}
+                href={item.href}
+                data-staff-store-link={item.key === "workspace" || item.key === "catalog" || item.key === "pos" || item.key === "orders" ? "true" : undefined}
+                data-staff-nav-link
+              >
+                <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+                <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+              </a>
+            ) : (
+              <span class="staff-nav-link is-disabled" aria-disabled="true" title="ฟีเจอร์นี้กำลังพัฒนา">
+                <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+                <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+                <span class="staff-nav-status">เร็ว ๆ นี้</span>
+              </span>
+            )
+          ))}
+        </nav>
+        <div class="staff-sidebar-footer">
+          <div class="staff-tenant-context">
+            <span class="staff-context-label">องค์กร</span>
+            <strong data-staff-tenant>ตรวจสอบสิทธิ์แล้ว</strong>
+          </div>
+          <a class="staff-change-store" href="/staff"><StaffIcon name="store" size={16} />เปลี่ยนสาขา</a>
+        </div>
+      </aside>
+
+      <main class:list={["staff-main", { "staff-main-full": fullHeight }]}>
+        <slot />
+      </main>
+    </div>
+
+    <div class="staff-scrim" id="staff-scrim" hidden></div>
+    <aside class="staff-mobile-drawer" id="staff-mobile-drawer" aria-label="เมนู Staff" aria-hidden="true">
+      <div class="staff-mobile-drawer-header">
+        <span class="staff-context-label">เมนูการทำงาน</span>
+        <button class="staff-icon-button" id="staff-mobile-close" type="button" aria-label="ปิดเมนู"><StaffIcon name="close" size={18} /></button>
+      </div>
+      <nav class="staff-mobile-drawer-nav">
+        {navItems.map((item) => (
+          item.ready ? (
+            <a
+              class:list={["staff-nav-link", { "is-active": item.key === active }]}
+              href={item.href}
+              data-staff-store-link="true"
+              data-staff-nav-link
+            >
+              <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+              <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+            </a>
+          ) : (
+            <span class="staff-nav-link is-disabled" aria-disabled="true">
+              <span class="staff-nav-icon"><StaffIcon name={item.icon} size={18} /></span>
+              <span class="staff-nav-copy"><strong>{item.label}</strong><small>{item.helper}</small></span>
+              <span class="staff-nav-status">กำลังพัฒนา</span>
+            </span>
+          )
+        ))}
+      </nav>
+    </aside>
+
+    <nav class="staff-bottom-nav" aria-label="ทางลัด Staff">
+      {primaryMobileItems.map((item) => (
+        <a
+          class:list={["staff-bottom-nav-link", { "is-active": item.key === active }]}
+          href={item.href}
+          data-staff-store-link="true"
+          data-staff-nav-link
+        >
+          <StaffIcon name={item.icon} size={18} />
+          <span>{item.label}</span>
+        </a>
+      ))}
+      <button class="staff-bottom-nav-link" id="staff-bottom-more" type="button" aria-label="เมนูเพิ่มเติม">
+        <StaffIcon name="menu" size={18} />
+        <span>เพิ่มเติม</span>
+      </button>
+    </nav>
+  </div>
+</BaseLayout>

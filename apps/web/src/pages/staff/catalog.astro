@@ -1,357 +1,734 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
 ---
-<BaseLayout title="Catalog">
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand brand-link" href="/staff"><span class="brand-mark">A</span> Aevo Staff</a>
-      <div class="header-actions"><span class="status">Online</span><button id="logout" class="button secondary" type="button">ออกจากระบบ</button></div>
-    </header>
-    <main class="page">
-      <div class="page-heading">
-        <div>
-          <a class="back" href="/staff">← กลับไปเลือกสาขา</a>
-          <p class="eyebrow">Catalog · Phase 1</p>
-          <h1>จัดการสินค้าและหมวดหมู่</h1>
-          <p class="lede">ตั้งค่าเมนูพื้นฐานสำหรับ POS, QR และ Kiosk โดยข้อมูลทั้งหมดแยกตามองค์กรและสาขา</p>
-        </div>
-        <label class="store-picker">สาขา<select id="store" aria-label="เลือกสาขา"></select></label>
+
+<StaffShell title="สินค้าและเมนู" active="catalog">
+  <div class="staff-page catalog-page" id="catalog-page">
+    <div class="staff-page-header catalog-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Catalog · Store setup</p>
+        <h1 class="staff-page-title" id="catalog-page-title">สินค้า</h1>
+        <p class="staff-page-lede" id="store-summary">กำลังโหลดเมนูของสาขา…</p>
       </div>
-      <p class="error" id="error" role="alert" hidden></p>
-      <p class="success" id="success" role="status" hidden></p>
+      <div class="catalog-header-actions">
+        <button class="button secondary" id="refresh" type="button" aria-label="รีเฟรชข้อมูล"><StaffIcon name="refresh" size={16} /><span>รีเฟรช</span></button>
+        <button class="button" id="primary-add" type="button"><StaffIcon name="plus" size={17} /><span>เพิ่มสินค้า</span></button>
+      </div>
+    </div>
 
-      <section class="catalog-layout">
-        <section class="card panel">
-          <div class="panel-heading"><div><p class="eyebrow">Categories</p><h2>หมวดหมู่</h2></div><span class="count" id="category-count">0</span></div>
-          <form id="category-form" class="form-stack">
-            <label>ชื่อหมวดหมู่<input id="category-name" name="name" required maxlength="160" placeholder="เช่น กาแฟ" /></label>
-            <label>รหัส (ถ้ามี)<input id="category-code" name="code" maxlength="32" placeholder="COFFEE" /></label>
-            <button class="button" type="submit">เพิ่มหมวดหมู่</button>
-          </form>
-          <div class="category-list" id="categories" aria-live="polite"></div>
-        </section>
+    <p class="error" id="error" role="alert" hidden></p>
+    <p class="success" id="success" role="status" aria-live="polite" hidden></p>
 
-        <section class="card panel">
-          <div class="panel-heading"><div><p class="eyebrow">Products</p><h2>สินค้า</h2></div><span class="count" id="product-count">0</span></div>
-          <form id="product-form" class="form-stack product-form">
-            <div class="form-row">
-              <label>SKU<input id="product-sku" name="sku" required maxlength="64" placeholder="LATTE" /></label>
-              <label>ชื่อสินค้า<input id="product-name" name="name" required maxlength="160" placeholder="Latte" /></label>
-            </div>
-            <div class="form-row">
-              <label>หมวดหมู่<select id="product-category" name="categoryId"><option value="">ไม่ระบุ</option></select></label>
-              <label>ราคา (บาท)<input id="product-price" name="price" required inputmode="decimal" min="0" step="0.01" type="number" placeholder="65" /></label>
-            </div>
-            <label>รายละเอียด<textarea id="product-description" name="description" maxlength="2000" rows="2" placeholder="รายละเอียดสินค้า (ถ้ามี)"></textarea></label>
-            <button class="button" type="submit">เพิ่มสินค้า</button>
-          </form>
-          <div class="product-list" id="products" aria-live="polite"></div>
-        </section>
-      </section>
+    <nav class="catalog-tabs" id="catalog-tabs" role="tablist" aria-label="ส่วนของ Catalog">
+      <button class="catalog-tab is-active" data-tab="products" type="button" role="tab" aria-selected="true"><StaffIcon name="catalog" size={17} /><span>สินค้า</span><b id="tab-products-count">—</b></button>
+      <button class="catalog-tab" data-tab="categories" type="button" role="tab" aria-selected="false"><StaffIcon name="tag" size={17} /><span>หมวดหมู่</span><b id="tab-categories-count">—</b></button>
+      <button class="catalog-tab" data-tab="menus" type="button" role="tab" aria-selected="false"><StaffIcon name="layers" size={17} /><span>เมนู</span><b id="tab-menus-count">—</b></button>
+      <button class="catalog-tab" data-tab="modifiers" type="button" role="tab" aria-selected="false"><StaffIcon name="sliders" size={17} /><span>กลุ่มตัวเลือก</span><b id="tab-modifiers-count">—</b></button>
+      <button class="catalog-tab" data-tab="availability" type="button" role="tab" aria-selected="false"><StaffIcon name="check" size={17} /><span>การขาย</span></button>
+    </nav>
 
-      <section class="card panel configuration-panel">
-        <div class="panel-heading"><div><p class="eyebrow">Menus & modifiers</p><h2>เมนูและตัวเลือกสินค้า</h2></div><span class="count" id="menu-count">0</span></div>
-        <div class="configuration-grid">
-          <div>
-            <form id="menu-form" class="form-stack">
-              <label>ชื่อเมนู<input id="menu-name" required maxlength="160" placeholder="เมนูหน้าร้าน" /></label>
-              <div class="form-row">
-                <label>รหัส (ถ้ามี)<input id="menu-code" maxlength="32" placeholder="POS_MAIN" /></label>
-                <label>ช่องทาง<select id="menu-channel"><option value="POS">POS</option><option value="QR">QR</option><option value="KIOSK">Kiosk</option><option value="PICKUP">Pickup</option></select></label>
-              </div>
-              <button class="button" type="submit">เพิ่มเมนู</button>
-            </form>
-            <div class="compact-list" id="menus" aria-live="polite"></div>
-          </div>
-          <div>
-            <form id="modifier-form" class="form-stack">
-              <label>กลุ่มตัวเลือก<input id="modifier-name" required maxlength="160" placeholder="ประเภทนม" /></label>
-              <div class="form-row">
-                <label>รูปแบบ<select id="modifier-type"><option value="SINGLE">เลือก 1 รายการ</option><option value="MULTIPLE">เลือกได้หลายรายการ</option></select></label>
-                <label class="checkbox-label"><input id="modifier-required" type="checkbox" /> บังคับเลือก</label>
-              </div>
-              <label>ตัวเลือก (หนึ่งรายการต่อบรรทัด)<textarea id="modifier-items" rows="3" placeholder="นมปกติ|0\nนมโอ๊ต|20"></textarea></label>
-              <button class="button" type="submit">เพิ่มกลุ่มตัวเลือก</button>
-            </form>
-            <div class="compact-list" id="modifier-groups" aria-live="polite"></div>
-          </div>
-        </div>
-      </section>
-    </main>
+    <section class="catalog-panel" id="products-panel" data-tab-panel="products" role="tabpanel">
+      <div class="catalog-panel-heading"><div><span class="staff-eyebrow">Product list</span><h2>สินค้าในร้าน</h2></div><span class="catalog-result-count" id="product-result-count">กำลังโหลด…</span></div>
+      <div class="catalog-toolbar">
+        <label class="catalog-search"><StaffIcon name="search" size={17} /><span class="sr-only">ค้นหาสินค้า</span><input id="product-search" type="search" placeholder="ค้นหาชื่อสินค้า หรือ SKU…" autocomplete="off" /></label>
+        <label class="catalog-filter"><span class="sr-only">หมวดหมู่</span><select id="category-filter" aria-label="กรองหมวดหมู่"><option value="">ทุกหมวดหมู่</option></select></label>
+        <label class="catalog-filter"><span class="sr-only">สถานะสินค้า</span><select id="status-filter" aria-label="กรองสถานะ"><option value="ACTIVE">เปิดใช้งาน</option><option value="ALL">ทุกสถานะ</option><option value="ARCHIVED">เก็บถาวร</option></select></label>
+        <label class="catalog-filter"><span class="sr-only">การขาย</span><select id="availability-filter" aria-label="กรองการขาย"><option value="ALL">ทุกการขาย</option><option value="AVAILABLE">เปิดขาย</option><option value="SOLD_OUT">Sold out</option><option value="HIDDEN">ปิดการขาย</option></select></label>
+        <label class="catalog-filter catalog-channel-filter"><span class="sr-only">ช่องทาง</span><select id="channel-filter" aria-label="กรองช่องทาง"><option value="POS">POS</option><option value="QR">QR</option><option value="KIOSK">Kiosk</option><option value="PICKUP">Pickup</option></select></label>
+        <label class="catalog-filter catalog-sort"><span class="sr-only">เรียงตาม</span><select id="sort-filter" aria-label="เรียงตาม"><option value="name">ชื่อสินค้า</option><option value="price-low">ราคาต่ำไปสูง</option><option value="price-high">ราคาสูงไปต่ำ</option><option value="sku">SKU</option></select></label>
+        <div class="catalog-view-toggle" role="group" aria-label="รูปแบบการแสดงผล"><button class="view-button is-active" id="table-view" type="button" aria-label="มุมมองตาราง" aria-pressed="true"><StaffIcon name="list" size={17} /></button><button class="view-button" id="grid-view" type="button" aria-label="มุมมองกริด" aria-pressed="false"><StaffIcon name="grid" size={17} /></button></div>
+      </div>
+      <div class="catalog-list" id="product-list" aria-live="polite"><div class="catalog-skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><div class="catalog-skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></div>
+    </section>
+
+    <section class="catalog-panel" id="categories-panel" data-tab-panel="categories" role="tabpanel" hidden>
+      <div class="catalog-panel-heading"><div><span class="staff-eyebrow">Product taxonomy</span><h2>หมวดหมู่</h2><p>จัดกลุ่มสินค้าให้ทีมหน้าร้านค้นหาได้เร็วขึ้น</p></div><button class="button" id="add-category" type="button"><StaffIcon name="plus" size={17} />เพิ่มหมวดหมู่</button></div>
+      <div class="category-summary-strip"><span><strong id="category-active-count">—</strong> หมวดหมู่ที่ใช้งาน</span><span>จำนวนสินค้าคำนวณจาก Catalog ปัจจุบัน</span></div>
+      <div class="category-list" id="category-list" aria-live="polite"></div>
+    </section>
+
+    <section class="catalog-panel" id="menus-panel" data-tab-panel="menus" role="tabpanel" hidden>
+      <div class="catalog-panel-heading"><div><span class="staff-eyebrow">Channel menus</span><h2>เมนูของสาขา</h2><p>แยกเมนูตามช่องทาง และเลือกสินค้าที่ต้องการให้แสดง</p></div><button class="button" id="add-menu" type="button"><StaffIcon name="plus" size={17} />เพิ่มเมนู</button></div>
+      <div class="menu-list" id="menu-list" aria-live="polite"></div>
+    </section>
+
+    <section class="catalog-panel" id="modifiers-panel" data-tab-panel="modifiers" role="tabpanel" hidden>
+      <div class="catalog-panel-heading"><div><span class="staff-eyebrow">Product options</span><h2>กลุ่มตัวเลือก</h2><p>เช่น ขนาด อุณหภูมิ นม หรือท็อปปิ้ง</p></div><button class="button" id="add-modifier" type="button"><StaffIcon name="plus" size={17} />เพิ่มกลุ่มตัวเลือก</button></div>
+      <div class="modifier-list" id="modifier-list" aria-live="polite"></div>
+    </section>
+
+    <section class="catalog-panel" id="availability-panel" data-tab-panel="availability" role="tabpanel" hidden>
+      <div class="catalog-panel-heading"><div><span class="staff-eyebrow">Channel availability</span><h2>การขายแยกตามช่องทาง</h2><p>กดสถานะเพื่อเปิด/ปิดการขายของสินค้าในแต่ละช่องทาง</p></div><span class="catalog-result-count">แตะสถานะเพื่อเปลี่ยน</span></div>
+      <div class="availability-table-wrap" id="availability-list" aria-live="polite"></div>
+    </section>
   </div>
+
+  <dialog class="catalog-drawer" id="product-drawer" aria-labelledby="product-drawer-title">
+    <div class="catalog-drawer-card">
+      <div class="catalog-drawer-heading"><div><span class="staff-eyebrow" id="product-drawer-eyebrow">New product</span><h2 id="product-drawer-title">เพิ่มสินค้า</h2></div><button class="staff-icon-button" data-close-dialog="product-drawer" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div>
+      <form class="catalog-drawer-form" id="product-form">
+        <div class="drawer-form-section"><div class="drawer-section-heading"><strong>ข้อมูลพื้นฐาน</strong><span>ข้อมูลที่ทีมหน้าร้านเห็น</span></div>
+          <label>ชื่อสินค้า <span class="required-mark">*</span><input id="product-name" required maxlength="160" placeholder="เช่น ลาเต้เย็น" /></label>
+          <div class="drawer-form-row"><label>SKU <span class="required-mark">*</span><input id="product-sku" required maxlength="64" placeholder="LATTE-ICED" /></label><label>หมวดหมู่<select id="product-category"><option value="">ไม่ระบุหมวดหมู่</option></select></label></div>
+          <label>รายละเอียด<textarea id="product-description" maxlength="2000" rows="3" placeholder="รายละเอียดสั้น ๆ สำหรับทีมหน้าร้าน"></textarea></label>
+        </div>
+        <div class="drawer-form-section"><div class="drawer-section-heading"><strong>ราคา</strong><span>เก็บเป็นสตางค์ในระบบ</span></div><label>ราคาขาย <span class="required-mark">*</span><div class="money-input"><input id="product-price" required inputmode="decimal" min="0" step="0.01" type="number" placeholder="65.00" /><span>บาท</span></div></label></div>
+        <div class="drawer-form-section"><div class="drawer-section-heading"><strong>Variants</strong><span id="variant-helper">เพิ่มขนาดหรือราคาที่แตกต่างกัน</span></div><div class="variant-list" id="variant-list"></div><button class="drawer-add-line" id="add-variant" type="button"><StaffIcon name="plus" size={15} />เพิ่ม variant</button><p class="drawer-note" id="variant-note" hidden></p></div>
+        <div class="drawer-form-section"><div class="drawer-section-heading"><strong>ช่องทางการขาย</strong><span>เริ่มต้นเปิด POS, QR, Kiosk และ Pickup</span></div><div class="channel-checks" id="channel-checks"></div></div>
+        <div class="drawer-form-section"><div class="drawer-section-heading"><strong>กลุ่มตัวเลือก</strong><span>แสดงบน POS เมื่อเลือกสินค้า</span></div><div class="modifier-checks" id="product-modifier-checks"></div></div>
+        <p class="drawer-error" id="product-form-error" role="alert" hidden></p>
+        <div class="catalog-drawer-footer"><button class="button secondary" data-close-dialog="product-drawer" type="button">ยกเลิก</button><button class="button" id="product-submit" type="submit">บันทึกสินค้า</button></div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="catalog-modal" id="category-dialog" aria-labelledby="category-dialog-title"><div class="catalog-modal-card"><div class="catalog-drawer-heading"><div><span class="staff-eyebrow">Product taxonomy</span><h2 id="category-dialog-title">เพิ่มหมวดหมู่</h2></div><button class="staff-icon-button" data-close-dialog="category-dialog" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div><form class="catalog-modal-form" id="category-form"><label>ชื่อหมวดหมู่ <span class="required-mark">*</span><input id="category-name" required maxlength="160" placeholder="เช่น กาแฟ" /></label><label>รหัสหมวดหมู่<input id="category-code" maxlength="32" placeholder="COFFEE" /></label><label>หมวดหมู่หลัก<select id="category-parent"><option value="">ไม่มีหมวดหมู่หลัก</option></select></label><p class="drawer-error" id="category-form-error" role="alert" hidden></p><div class="catalog-drawer-footer"><button class="button secondary" data-close-dialog="category-dialog" type="button">ยกเลิก</button><button class="button" type="submit">เพิ่มหมวดหมู่</button></div></form></div></dialog>
+
+  <dialog class="catalog-modal" id="menu-dialog" aria-labelledby="menu-dialog-title"><div class="catalog-modal-card"><div class="catalog-drawer-heading"><div><span class="staff-eyebrow">Channel menu</span><h2 id="menu-dialog-title">เพิ่มเมนู</h2></div><button class="staff-icon-button" data-close-dialog="menu-dialog" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div><form class="catalog-modal-form" id="menu-form"><label>ชื่อเมนู <span class="required-mark">*</span><input id="menu-name" required maxlength="160" placeholder="เมนูหน้าร้าน" /></label><div class="drawer-form-row"><label>รหัสเมนู<input id="menu-code" maxlength="32" placeholder="POS-MAIN" /></label><label>ช่องทาง<select id="menu-channel"><option value="POS">POS</option><option value="QR">QR</option><option value="KIOSK">Kiosk</option><option value="PICKUP">Pickup</option></select></label></div><p class="drawer-error" id="menu-form-error" role="alert" hidden></p><div class="catalog-drawer-footer"><button class="button secondary" data-close-dialog="menu-dialog" type="button">ยกเลิก</button><button class="button" type="submit">เพิ่มเมนู</button></div></form></div></dialog>
+
+  <dialog class="catalog-modal" id="modifier-dialog" aria-labelledby="modifier-dialog-title"><div class="catalog-modal-card"><div class="catalog-drawer-heading"><div><span class="staff-eyebrow">Product options</span><h2 id="modifier-dialog-title">เพิ่มกลุ่มตัวเลือก</h2></div><button class="staff-icon-button" data-close-dialog="modifier-dialog" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div><form class="catalog-modal-form" id="modifier-form"><label>ชื่อกลุ่มตัวเลือก <span class="required-mark">*</span><input id="modifier-name" required maxlength="160" placeholder="เช่น ประเภทนม" /></label><div class="drawer-form-row"><label>รูปแบบ<select id="modifier-type"><option value="SINGLE">เลือกได้ 1 รายการ</option><option value="MULTIPLE">เลือกได้หลายรายการ</option></select></label><label class="checkbox-field"><input id="modifier-required" type="checkbox" /> จำเป็นต้องเลือก</label></div><label>รายการตัวเลือก <span class="field-hint">หนึ่งรายการต่อบรรทัด · ชื่อ|ราคาเพิ่ม</span><textarea id="modifier-items" rows="5" placeholder="นมปกติ|0&#10;นมโอ๊ต|20&#10;นมอัลมอนด์|25"></textarea></label><p class="drawer-error" id="modifier-form-error" role="alert" hidden></p><div class="catalog-drawer-footer"><button class="button secondary" data-close-dialog="modifier-dialog" type="button">ยกเลิก</button><button class="button" type="submit">เพิ่มกลุ่มตัวเลือก</button></div></form></div></dialog>
+
+  <dialog class="catalog-modal" id="menu-item-dialog" aria-labelledby="menu-item-dialog-title"><div class="catalog-modal-card"><div class="catalog-drawer-heading"><div><span class="staff-eyebrow">Menu item</span><h2 id="menu-item-dialog-title">เพิ่มสินค้าในเมนู</h2></div><button class="staff-icon-button" data-close-dialog="menu-item-dialog" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div><form class="catalog-modal-form" id="menu-item-form"><p class="menu-item-context" id="menu-item-context"></p><label>สินค้า <span class="required-mark">*</span><select id="menu-item-product" required></select></label><label>Variant<select id="menu-item-variant"><option value="">ใช้ราคาหลัก</option></select></label><label>ราคาเฉพาะเมนู <span class="field-hint">เว้นว่างเพื่อใช้ราคาสินค้า</span><div class="money-input"><input id="menu-item-price" inputmode="decimal" min="0" step="0.01" type="number" placeholder="ไม่ระบุ" /><span>บาท</span></div></label><p class="drawer-error" id="menu-item-form-error" role="alert" hidden></p><div class="catalog-drawer-footer"><button class="button secondary" data-close-dialog="menu-item-dialog" type="button">ยกเลิก</button><button class="button" type="submit">เพิ่มในเมนู</button></div></form></div></dialog>
+
   <script>
     import { api, ApiError } from "../../lib/api";
-    import type { CategorySummary, MenuSummary, ModifierGroupSummary, ProductSummary, SessionPrincipal, StoreSummary } from "@aevo/contracts";
+    import { cacheCatalog, getCachedCatalog } from "../../lib/idb-cache";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { CatalogChannel, CatalogSnapshot, CategorySummary, MenuSummary, ProductAvailabilitySummary, ProductSummary, StoreSummary } from "@aevo/contracts";
 
+    type CatalogTab = "products" | "categories" | "menus" | "modifiers" | "availability";
+    type ViewMode = "table" | "grid";
+    const channelOptions = ["POS", "QR", "KIOSK", "PICKUP"] as const;
+    type StoreChannel = (typeof channelOptions)[number];
+    const tabTitles: Record<CatalogTab, string> = { products: "สินค้า", categories: "หมวดหมู่", menus: "เมนู", modifiers: "กลุ่มตัวเลือก", availability: "การขาย" };
+
+    const page = document.querySelector<HTMLElement>("#catalog-page")!;
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
     const success = document.querySelector<HTMLParagraphElement>("#success")!;
-    const storeSelect = document.querySelector<HTMLSelectElement>("#store")!;
+    const refresh = document.querySelector<HTMLButtonElement>("#refresh")!;
+    const primaryAdd = document.querySelector<HTMLButtonElement>("#primary-add")!;
+    const productList = document.querySelector<HTMLElement>("#product-list")!;
+    const productSearch = document.querySelector<HTMLInputElement>("#product-search")!;
+    const categoryFilter = document.querySelector<HTMLSelectElement>("#category-filter")!;
+    const statusFilter = document.querySelector<HTMLSelectElement>("#status-filter")!;
+    const availabilityFilter = document.querySelector<HTMLSelectElement>("#availability-filter")!;
+    const channelFilter = document.querySelector<HTMLSelectElement>("#channel-filter")!;
+    const sortFilter = document.querySelector<HTMLSelectElement>("#sort-filter")!;
+    const tableView = document.querySelector<HTMLButtonElement>("#table-view")!;
+    const gridView = document.querySelector<HTMLButtonElement>("#grid-view")!;
+    const productDrawer = document.querySelector<HTMLDialogElement>("#product-drawer")!;
+    const productForm = document.querySelector<HTMLFormElement>("#product-form")!;
+    const requestedStoreId = getSelectedStoreId();
+    let selectedStoreId = "";
     let stores: StoreSummary[] = [];
-    let categories: CategorySummary[] = [];
-    let products: ProductSummary[] = [];
-    let menus: MenuSummary[] = [];
-    let modifierGroups: ModifierGroupSummary[] = [];
-    let selectedStoreId = new URLSearchParams(window.location.search).get("store") || sessionStorage.getItem("aevo.selectedStoreId") || "";
+    let catalog: CatalogSnapshot | null = null;
+    let currentTab: CatalogTab = getTabFromUrl();
+    let viewMode: ViewMode = localStorage.getItem("aevo.catalog.view") === "grid" ? "grid" : "table";
+    let productEditId: string | null = null;
+    let highlightProductId = "";
+    let loading = true;
+    let catalogLoadVersion = 0;
 
-    function showError(cause: unknown) {
-      error.textContent = cause instanceof Error ? cause.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
+    function getTabFromUrl(): CatalogTab {
+      const value = new URLSearchParams(window.location.search).get("tab");
+      return value === "categories" || value === "menus" || value === "modifiers" || value === "availability" ? value : "products";
+    }
+
+    function money(minor: number, currency = "THB"): string {
+      return new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
+    }
+
+    function escapeHtml(value: string): string {
+      const element = document.createElement("span");
+      element.textContent = value;
+      return element.innerHTML;
+    }
+
+    function showError(cause: unknown, fallback = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"): void {
+      error.textContent = friendlyErrorMessage(cause, fallback);
       error.hidden = false;
       success.hidden = true;
     }
 
-    function showSuccess(message: string) {
+    function showSuccess(message: string): void {
       success.textContent = message;
       success.hidden = false;
       error.hidden = true;
-      window.setTimeout(() => { success.hidden = true; }, 2600);
+      window.setTimeout(() => { success.hidden = true; }, 2800);
     }
 
-    function money(minor: number, currency: string) {
-      return new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
-    }
-
-    function renderCategories() {
-      document.querySelector("#category-count")!.textContent = String(categories.length);
-      const list = document.querySelector<HTMLElement>("#categories")!;
-      list.replaceChildren();
-      if (!categories.length) {
-        list.innerHTML = '<p class="empty">ยังไม่มีหมวดหมู่ เริ่มจากสร้างหมวดแรก</p>';
+    function setLoading(next: boolean): void {
+      loading = next;
+      refresh.disabled = next;
+      page.classList.toggle("is-loading", next);
+      if (next) {
+        productList.innerHTML = '<div class="catalog-skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><div class="catalog-skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><div class="catalog-skeleton-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>';
       }
-      for (const category of categories) {
-        const item = document.createElement("div");
-        item.className = "category-item";
-        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status">เปิดใช้งาน</span>`;
-        item.querySelector("strong")!.textContent = category.name;
-        item.querySelector("small")!.textContent = `${category.code} · ${category.slug}`;
-        list.append(item);
-      }
-      const categorySelect = document.querySelector<HTMLSelectElement>("#product-category")!;
-      const current = categorySelect.value;
-      categorySelect.replaceChildren(new Option("ไม่ระบุ", ""));
-      for (const category of categories) categorySelect.add(new Option(category.name, category.id));
-      categorySelect.value = current;
     }
 
-    function renderProducts() {
-      document.querySelector("#product-count")!.textContent = String(products.length);
-      const list = document.querySelector<HTMLElement>("#products")!;
-      list.replaceChildren();
-      if (!products.length) list.innerHTML = '<p class="empty">ยังไม่มีสินค้าในองค์กรนี้</p>';
-      for (const product of products) {
-        const category = categories.find((item) => item.id === product.categoryId);
-        const posAvailability = product.availability.find((item) => item.channel === "POS");
-        const soldOut = posAvailability?.soldOut ?? false;
-        const item = document.createElement("article");
-        item.className = `product-item${product.status === "ARCHIVED" ? " archived" : ""}`;
-        item.innerHTML = `
-          <div class="product-copy"><div class="product-title"><strong></strong><span class="sku"></span></div>
-          <p class="product-meta"></p><p class="product-description"></p></div>
-          <div class="product-actions"><strong class="price"></strong><button class="sold-out button secondary" type="button"></button></div>`;
-        item.querySelector("strong")!.textContent = product.name;
-        item.querySelector(".sku")!.textContent = product.sku;
-        item.querySelector(".product-meta")!.textContent = `${category?.name ?? "ไม่ระบุหมวดหมู่"} · ${product.variants.length} variant`;
-        item.querySelector(".product-description")!.textContent = product.description || "ไม่มีรายละเอียด";
-        item.querySelector(".price")!.textContent = money(product.basePriceMinor, product.currency);
-        const soldOutButton = item.querySelector<HTMLButtonElement>(".sold-out")!;
-        soldOutButton.textContent = soldOut ? "ยกเลิก Sold out" : "ตั้ง Sold out";
-        soldOutButton.addEventListener("click", async () => {
-          soldOutButton.disabled = true;
-          try {
-            await api(`/api/catalog/products/${product.id}/availability`, {
-              method: "PATCH", body: JSON.stringify({ storeId: selectedStoreId, channel: "POS", soldOut: !soldOut })
-            });
-            await loadCatalog();
-            showSuccess(soldOut ? "เปิดขายสินค้าแล้ว" : "ตั้งสินค้าเป็น Sold out แล้ว");
-          } catch (cause) { showError(cause); soldOutButton.disabled = false; }
+    function getCategory(categoryId?: string): CategorySummary | undefined {
+      return catalog?.categories.find((category) => category.id === categoryId);
+    }
+
+    function getAvailability(product: ProductSummary, channel: string): ProductAvailabilitySummary {
+      return product.availability.find((entry) => entry.channel === channel) ?? { channel: channel as CatalogChannel, isAvailable: true, soldOut: false };
+    }
+
+    function productAvailabilityLabel(product: ProductSummary, channel: string): { label: string; state: string } {
+      const availability = getAvailability(product, channel);
+      if (!availability.isAvailable) return { label: "ปิดขาย", state: "hidden" };
+      if (availability.soldOut) return { label: "Sold out", state: "sold-out" };
+      return { label: "เปิดขาย", state: "available" };
+    }
+
+    function renderFilterOptions(): void {
+      if (!catalog) return;
+      const selectedCategory = categoryFilter.value;
+      categoryFilter.replaceChildren(new Option("ทุกหมวดหมู่", ""));
+      for (const category of catalog.categories.filter((item) => item.status === "ACTIVE")) categoryFilter.add(new Option(category.name, category.id));
+      categoryFilter.value = selectedCategory;
+      const productCategory = document.querySelector<HTMLSelectElement>("#product-category")!;
+      const currentProductCategory = productCategory.value;
+      productCategory.replaceChildren(new Option("ไม่ระบุหมวดหมู่", ""));
+      for (const category of catalog.categories.filter((item) => item.status === "ACTIVE")) productCategory.add(new Option(category.name, category.id));
+      productCategory.value = currentProductCategory;
+      const parent = document.querySelector<HTMLSelectElement>("#category-parent")!;
+      const currentParent = parent.value;
+      parent.replaceChildren(new Option("ไม่มีหมวดหมู่หลัก", ""));
+      for (const category of catalog.categories.filter((item) => item.status === "ACTIVE")) parent.add(new Option(category.name, category.id));
+      parent.value = currentParent;
+    }
+
+    function filteredProducts(): ProductSummary[] {
+      if (!catalog) return [];
+      const needle = productSearch.value.trim().toLowerCase();
+      const products = catalog.products.filter((product) => {
+        const statusMatch = statusFilter.value === "ALL" || product.status === statusFilter.value;
+        const categoryMatch = !categoryFilter.value || product.categoryId === categoryFilter.value;
+        const availability = getAvailability(product, channelFilter.value);
+        const availabilityMatch = availabilityFilter.value === "ALL" || (availabilityFilter.value === "AVAILABLE" && availability.isAvailable && !availability.soldOut) || (availabilityFilter.value === "SOLD_OUT" && availability.soldOut) || (availabilityFilter.value === "HIDDEN" && !availability.isAvailable);
+        const searchMatch = !needle || `${product.name} ${product.sku} ${getCategory(product.categoryId)?.name ?? ""}`.toLowerCase().includes(needle);
+        return statusMatch && categoryMatch && availabilityMatch && searchMatch;
+      });
+      return products.sort((a, b) => {
+        if (sortFilter.value === "price-low") return a.basePriceMinor - b.basePriceMinor;
+        if (sortFilter.value === "price-high") return b.basePriceMinor - a.basePriceMinor;
+        if (sortFilter.value === "sku") return a.sku.localeCompare(b.sku);
+        return a.name.localeCompare(b.name, "th");
+      });
+    }
+
+    function productMarkup(product: ProductSummary, mode: ViewMode): string {
+      const category = getCategory(product.categoryId)?.name ?? "ไม่ระบุหมวดหมู่";
+      const availability = productAvailabilityLabel(product, channelFilter.value);
+      const posAvailability = getAvailability(product, "POS");
+      const variantLabel = product.variants.length > 1 ? `${product.variants.length} variants` : product.variants[0]?.name === "Standard" ? "Standard" : `${product.variants.length} variant`;
+      const archived = product.status === "ARCHIVED";
+      const actionLabel = !posAvailability.isAvailable ? "เปิดขาย" : posAvailability.soldOut ? "ยกเลิก Sold out" : "ตั้ง Sold out";
+      const status = archived ? "เก็บถาวร" : "เปิดใช้งาน";
+      const html = `
+        <div class="product-leading"><span class="product-thumb" aria-hidden="true">${escapeHtml(product.name.slice(0, 1))}</span><span class="product-main-copy"><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.sku)}</small></span></div>
+        <span class="product-category-cell">${escapeHtml(category)}</span>
+        <span class="product-price-cell">${money(product.basePriceMinor, product.currency)}</span>
+        <span class="product-variant-cell">${escapeHtml(variantLabel)}</span>
+        <span class="availability-badge" data-state="${availability.state}">${availability.label}</span>
+        <span class="product-status-text" data-status="${product.status}">${status}</span>
+        <span class="product-actions"><button class="product-action-link" data-product-action="edit" data-product-id="${product.id}" type="button">แก้ไข</button><button class="product-action-link quiet" data-product-action="toggle" data-product-id="${product.id}" type="button">${actionLabel}</button><button class="product-action-link danger" data-product-action="archive" data-product-id="${product.id}" type="button">${archived ? "เปิดใช้งาน" : "เก็บถาวร"}</button></span>
+      `;
+      if (mode === "grid") {
+        return `<article class="product-card surface${highlightProductId === product.id ? " is-highlighted" : ""}${archived ? " is-archived" : ""}" data-product-card="${product.id}"><div class="product-card-top"><span class="product-thumb product-thumb-large" aria-hidden="true">${escapeHtml(product.name.slice(0, 1))}</span><span class="availability-badge" data-state="${availability.state}">${availability.label}</span></div><div class="product-card-copy"><span class="product-card-category">${escapeHtml(category)}</span><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.sku)} · ${escapeHtml(variantLabel)}</p></div><div class="product-card-bottom"><strong>${money(product.basePriceMinor, product.currency)}</strong><span class="product-status-text" data-status="${product.status}">${status}</span></div><div class="product-card-actions"><button class="button small secondary" data-product-action="edit" data-product-id="${product.id}" type="button">แก้ไข</button><button class="button small quiet" data-product-action="toggle" data-product-id="${product.id}" type="button">${actionLabel}</button><button class="icon-action danger" data-product-action="archive" data-product-id="${product.id}" type="button" aria-label="${archived ? "เปิดใช้งาน" : "เก็บถาวร"}"><span aria-hidden="true">▣</span></button></div></article>`;
+      }
+      return `<div class="product-row${highlightProductId === product.id ? " is-highlighted" : ""}${archived ? " is-archived" : ""}" data-product-card="${product.id}">${html}</div>`;
+    }
+
+    function renderProducts(): void {
+      const products = filteredProducts();
+      document.querySelector<HTMLElement>("#tab-products-count")!.textContent = catalog ? String(catalog.products.length) : "—";
+      document.querySelector<HTMLElement>("#product-result-count")!.textContent = catalog ? `${products.length} จาก ${catalog.products.length} สินค้า` : "กำลังโหลด…";
+      if (loading) return;
+      if (!catalog || !products.length) {
+        productList.className = "catalog-list";
+        productList.innerHTML = `<div class="empty-state product-empty"><span class="product-empty-icon">▤</span><strong>${catalog?.products.length ? "ไม่พบสินค้าที่ตรงกับตัวกรอง" : "ยังไม่มีสินค้า"}</strong><p>${catalog?.products.length ? "ลองเปลี่ยนคำค้นหา หมวดหมู่ หรือสถานะการขาย" : "เพิ่มสินค้าแรกเพื่อเริ่มใช้งาน POS และเมนูของร้าน"}</p><button class="button" data-empty-add="true" type="button">+ เพิ่มสินค้า</button></div>`;
+        productList.querySelector<HTMLButtonElement>("[data-empty-add]")?.addEventListener("click", () => openProductDrawer());
+        return;
+      }
+      productList.className = `catalog-list ${viewMode === "grid" ? "is-grid" : "is-table"}`;
+      if (viewMode === "table") {
+        productList.innerHTML = `<div class="product-table-head"><span>สินค้า</span><span>หมวดหมู่</span><span>ราคา</span><span>Variants</span><span>การขาย</span><span>สถานะ</span><span></span></div>${products.map((product) => productMarkup(product, "table")).join("")}`;
+      } else {
+        productList.innerHTML = products.map((product) => productMarkup(product, "grid")).join("");
+      }
+      if (highlightProductId) {
+        window.setTimeout(() => { document.querySelector<HTMLElement>(`[data-product-card="${CSS.escape(highlightProductId)}"]`)?.classList.remove("is-highlighted"); highlightProductId = ""; }, 1800);
+      }
+      bindProductActions();
+    }
+
+    function bindProductActions(): void {
+      productList.querySelectorAll<HTMLButtonElement>("[data-product-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const product = catalog?.products.find((item) => item.id === button.dataset.productId);
+          if (!product) return;
+          if (button.dataset.productAction === "edit") openProductDrawer(product);
+          if (button.dataset.productAction === "toggle") void togglePosAvailability(product);
+          if (button.dataset.productAction === "archive") void toggleProductArchive(product);
         });
-        list.append(item);
-      }
+      });
     }
 
-    function renderConfigurations() {
-      document.querySelector("#menu-count")!.textContent = String(menus.length);
-      const menuList = document.querySelector<HTMLElement>("#menus")!;
-      menuList.replaceChildren();
-      if (!menus.length) menuList.innerHTML = '<p class="empty">ยังไม่มีเมนู</p>';
-      for (const menu of menus) {
-        const item = document.createElement("div");
-        item.className = "compact-item";
-        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status">เปิดใช้งาน</span>`;
-        item.querySelector("strong")!.textContent = menu.name;
-        item.querySelector("small")!.textContent = `${menu.code} · ${menu.channel}`;
-        menuList.append(item);
-      }
-      const modifierList = document.querySelector<HTMLElement>("#modifier-groups")!;
-      modifierList.replaceChildren();
-      if (!modifierGroups.length) modifierList.innerHTML = '<p class="empty">ยังไม่มีกลุ่มตัวเลือก</p>';
-      for (const group of modifierGroups) {
-        const item = document.createElement("div");
-        item.className = "compact-item";
-        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status"></span>`;
-        item.querySelector("strong")!.textContent = group.name;
-        item.querySelector("small")!.textContent = group.modifiers.map((modifier) => modifier.name).join(" · ") || "ยังไม่มีตัวเลือก";
-        item.querySelector(".category-status")!.textContent = group.required ? "บังคับเลือก" : "เลือกได้";
-        modifierList.append(item);
-      }
-    }
-
-    async function loadCatalog() {
-      const snapshot = await api<{ categories: CategorySummary[]; products: ProductSummary[]; menus: MenuSummary[]; modifierGroups: ModifierGroupSummary[] }>(`/api/catalog?storeId=${encodeURIComponent(selectedStoreId)}`);
-      categories = snapshot.categories;
-      products = snapshot.products;
-      menus = snapshot.menus;
-      modifierGroups = snapshot.modifierGroups;
-      renderCategories();
-      renderProducts();
-      renderConfigurations();
-    }
-
-    async function initialise() {
-      const [{ user }, storesResult] = await Promise.all([
-        api<{ user: SessionPrincipal }>("/api/auth/me"),
-        api<{ stores: StoreSummary[] }>("/api/stores")
-      ]);
-      stores = storesResult.stores;
-      if (!selectedStoreId || !stores.some((store) => store.id === selectedStoreId)) selectedStoreId = stores[0]?.id || "";
-      if (!selectedStoreId) throw new Error("บัญชีนี้ยังไม่มีสาขาที่เข้าถึงได้");
-      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
-      document.querySelector("#welcome");
-      storeSelect.replaceChildren(...stores.map((store) => new Option(`${store.name} · ${store.code}`, store.id)));
-      storeSelect.value = selectedStoreId;
-      await loadCatalog();
-      document.title = `Catalog · ${user.displayName || user.email}`;
-    }
-
-    storeSelect.addEventListener("change", async () => {
-      selectedStoreId = storeSelect.value;
-      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
-      history.replaceState(null, "", `/staff/catalog?store=${encodeURIComponent(selectedStoreId)}`);
-      try { await loadCatalog(); } catch (cause) { showError(cause); }
-    });
-
-    document.querySelector<HTMLFormElement>("#category-form")!.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const name = document.querySelector<HTMLInputElement>("#category-name")!.value.trim();
-      const code = document.querySelector<HTMLInputElement>("#category-code")!.value.trim();
+    async function togglePosAvailability(product: ProductSummary): Promise<void> {
+      const current = getAvailability(product, "POS");
+      const body = !current.isAvailable ? { isAvailable: true, soldOut: false } : { soldOut: !current.soldOut };
       try {
-        await api("/api/catalog/categories", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, ...(code ? { code } : {}) }) });
-        (event.currentTarget as HTMLFormElement).reset();
+        await api(`/api/catalog/products/${product.id}/availability`, { method: "PATCH", body: JSON.stringify({ storeId: selectedStoreId, channel: "POS", ...body }) });
         await loadCatalog();
-        showSuccess("เพิ่มหมวดหมู่แล้ว");
-      } catch (cause) { showError(cause); }
-    });
+        showSuccess(body.soldOut ? "ตั้งสินค้าเป็น Sold out แล้ว" : "เปิดขายสินค้าแล้ว");
+      } catch (cause) { showError(cause, "อัปเดตสถานะการขายไม่สำเร็จ"); }
+    }
 
-    document.querySelector<HTMLFormElement>("#product-form")!.addEventListener("submit", async (event) => {
+    async function toggleProductArchive(product: ProductSummary): Promise<void> {
+      const nextStatus = product.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED";
+      if (nextStatus === "ARCHIVED" && !window.confirm(`เก็บสินค้า “${product.name}” ไว้ในรายการเก็บถาวรหรือไม่`)) return;
+      try {
+        await api(`/api/catalog/products/${product.id}?storeId=${encodeURIComponent(selectedStoreId)}`, { method: "PATCH", body: JSON.stringify({ status: nextStatus }) });
+        await loadCatalog();
+        showSuccess(nextStatus === "ARCHIVED" ? "เก็บสินค้าแล้ว" : "เปิดใช้งานสินค้าแล้ว");
+      } catch (cause) { showError(cause, "อัปเดตสถานะสินค้าไม่สำเร็จ"); }
+    }
+
+    function renderCategories(): void {
+      if (!catalog) return;
+      const counts = new Map<string, number>();
+      for (const product of catalog.products) if (product.categoryId) counts.set(product.categoryId, (counts.get(product.categoryId) ?? 0) + 1);
+      document.querySelector<HTMLElement>("#tab-categories-count")!.textContent = String(catalog.categories.length);
+      document.querySelector<HTMLElement>("#category-active-count")!.textContent = String(catalog.categories.filter((item) => item.status === "ACTIVE").length);
+      const list = document.querySelector<HTMLElement>("#category-list")!;
+      if (!catalog.categories.length) { list.innerHTML = '<div class="empty-state"><strong>ยังไม่มีหมวดหมู่</strong><p>เริ่มต้นด้วยการเพิ่มหมวดหมู่แรก แล้วใช้กรองสินค้าได้ทันที</p><button class="button" data-category-empty-add type="button">เพิ่มหมวดหมู่</button></div>'; list.querySelector("button")?.addEventListener("click", () => openDialog("category-dialog")); return; }
+      list.innerHTML = catalog.categories.map((category) => `<div class="category-row"><span class="category-row-icon">#</span><span class="category-row-main"><strong>${escapeHtml(category.name)}</strong><small>${escapeHtml(category.code)}${category.parentId ? " · มีหมวดหมู่หลัก" : ""}</small></span><span class="category-row-count"><strong>${counts.get(category.id) ?? 0}</strong><small>สินค้า</small></span><span class="category-row-status" data-status="${category.status}">${category.status === "ACTIVE" ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span></div>`).join("");
+    }
+
+    function renderMenus(): void {
+      if (!catalog) return;
+      document.querySelector<HTMLElement>("#tab-menus-count")!.textContent = String(catalog.menus.length);
+      const list = document.querySelector<HTMLElement>("#menu-list")!;
+      if (!catalog.menus.length) { list.innerHTML = '<div class="empty-state"><strong>ยังไม่มีเมนูของสาขา</strong><p>เพิ่มเมนูเพื่อจัดชุดสินค้าให้เหมาะกับ POS, QR หรือ Kiosk</p><button class="button" data-menu-empty-add type="button">เพิ่มเมนู</button></div>'; list.querySelector("button")?.addEventListener("click", () => openDialog("menu-dialog")); return; }
+      list.innerHTML = catalog.menus.map((menu) => `<article class="menu-row surface"><div class="menu-row-main"><span class="menu-row-icon">≡</span><span><strong>${escapeHtml(menu.name)}</strong><small>${escapeHtml(menu.code)} · ${escapeHtml(menu.channel)}</small></span></div><span class="menu-row-stat"><strong>${menu.items.length}</strong><small>รายการ</small></span><span class="category-row-status" data-status="${menu.status}">${menu.status === "ACTIVE" ? "เปิดใช้งาน" : "ปิดใช้งาน"}</span><button class="button small secondary" data-menu-action="add-item" data-menu-id="${menu.id}" type="button">เพิ่มสินค้า</button></article>`).join("");
+      list.querySelectorAll<HTMLButtonElement>("[data-menu-action='add-item']").forEach((button) => button.addEventListener("click", () => { const menu = catalog?.menus.find((item) => item.id === button.dataset.menuId); if (menu) openMenuItemDialog(menu); }));
+    }
+
+    function renderModifiers(): void {
+      if (!catalog) return;
+      document.querySelector<HTMLElement>("#tab-modifiers-count")!.textContent = String(catalog.modifierGroups.length);
+      const list = document.querySelector<HTMLElement>("#modifier-list")!;
+      if (!catalog.modifierGroups.length) { list.innerHTML = '<div class="empty-state"><strong>ยังไม่มีกลุ่มตัวเลือก</strong><p>เพิ่มขนาด อุณหภูมิ หรือตัวเลือกอื่นเพื่อใช้ใน POS</p><button class="button" data-modifier-empty-add type="button">เพิ่มกลุ่มตัวเลือก</button></div>'; list.querySelector("button")?.addEventListener("click", () => openDialog("modifier-dialog")); return; }
+      list.innerHTML = catalog.modifierGroups.map((group) => { const rule = group.selectionType === "SINGLE" ? "เลือกได้ 1 รายการ" : `เลือกได้หลายรายการ${group.maxSelections < 99 ? ` · สูงสุด ${group.maxSelections}` : ""}`; return `<article class="modifier-row surface"><div class="modifier-row-main"><span class="modifier-row-icon">◌</span><span><strong>${escapeHtml(group.name)}</strong><small>${escapeHtml(group.code)} · ${rule}</small></span></div><span class="menu-row-stat"><strong>${group.modifiers.length}</strong><small>ตัวเลือก</small></span><span class="modifier-required" data-required="${group.required}">${group.required ? "จำเป็นต้องเลือก" : "เลือกได้"}</span><div class="modifier-options-preview">${group.modifiers.slice(0, 4).map((modifier) => `<span>${escapeHtml(modifier.name)}${modifier.priceDeltaMinor ? ` +${money(modifier.priceDeltaMinor)}` : ""}</span>`).join("") || "ยังไม่มีตัวเลือก"}</div></article>`; }).join("");
+    }
+
+    function renderAvailability(): void {
+      if (!catalog) return;
+      const list = document.querySelector<HTMLElement>("#availability-list")!;
+      if (!catalog.products.length) { list.innerHTML = '<div class="empty-state"><strong>ยังไม่มีสินค้า</strong><p>เพิ่มสินค้าเพื่อจัดการการขายตามช่องทาง</p></div>'; return; }
+      list.innerHTML = `<div class="availability-table"><div class="availability-head"><span>สินค้า</span>${channelOptions.map((channel) => `<span>${channel}</span>`).join("")}</div>${catalog.products.map((product) => `<div class="availability-row"><span class="availability-product"><span class="product-thumb">${escapeHtml(product.name.slice(0, 1))}</span><span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.sku)}</small></span></span>${channelOptions.map((channel) => { const availability = getAvailability(product, channel); const state = !availability.isAvailable ? "hidden" : availability.soldOut ? "sold-out" : "available"; const label = !availability.isAvailable ? "ปิด" : availability.soldOut ? "หมด" : "เปิด"; return `<button class="availability-toggle" data-availability-product="${product.id}" data-availability-channel="${channel}" data-availability="${state}" type="button"><span>${label}</span><small>${availability.soldOut ? "Sold out" : availability.isAvailable ? "เปิดขาย" : "ปิดขาย"}</small></button>`; }).join("")}</div>`).join("")}</div>`;
+      list.querySelectorAll<HTMLButtonElement>("[data-availability-product]").forEach((button) => button.addEventListener("click", () => void toggleChannel(button.dataset.availabilityProduct!, button.dataset.availabilityChannel as StoreChannel)));
+    }
+
+    async function toggleChannel(productId: string, channel: StoreChannel): Promise<void> {
+      const product = catalog?.products.find((item) => item.id === productId);
+      if (!product) return;
+      const current = getAvailability(product, channel);
+      try {
+        await api(`/api/catalog/products/${productId}/availability`, { method: "PATCH", body: JSON.stringify({ storeId: selectedStoreId, channel, isAvailable: !current.isAvailable, soldOut: current.isAvailable ? current.soldOut : false }) });
+        await loadCatalog();
+        showSuccess(`อัปเดตการขายช่องทาง ${channel} แล้ว`);
+      } catch (cause) { showError(cause, "อัปเดตการขายไม่สำเร็จ"); }
+    }
+
+    function renderAll(): void {
+      renderFilterOptions();
+      renderProducts();
+      renderCategories();
+      renderMenus();
+      renderModifiers();
+      renderAvailability();
+    }
+
+    async function loadCatalog(): Promise<void> {
+      if (!selectedStoreId) return;
+      const loadVersion = ++catalogLoadVersion;
+      const previousCatalog = catalog;
+      const hadVisibleCatalog = catalog !== null;
+      setLoading(!hadVisibleCatalog);
+      let cachedShown = hadVisibleCatalog;
+      try {
+        if (!hadVisibleCatalog) {
+          const cached = await getCachedCatalog(selectedStoreId).catch(() => null);
+          if (loadVersion !== catalogLoadVersion) return;
+          if (cached) {
+            catalog = cached;
+            cachedShown = true;
+            setLoading(false);
+            error.hidden = true;
+            renderAll();
+          }
+        }
+
+        const freshCatalog = await api<CatalogSnapshot>(`/api/catalog?storeId=${encodeURIComponent(selectedStoreId)}`);
+        if (loadVersion !== catalogLoadVersion) return;
+        catalog = freshCatalog;
+        void cacheCatalog(selectedStoreId, freshCatalog).catch(() => undefined);
+        error.hidden = true;
+        renderAll();
+      } catch (cause) {
+        if (loadVersion !== catalogLoadVersion) return;
+        catalog = null;
+        if (cachedShown) {
+          catalog = previousCatalog ?? await getCachedCatalog(selectedStoreId).catch(() => null);
+          if (catalog) {
+            showError(cause, "อัปเดตข้อมูลไม่ได้ จึงแสดงข้อมูลล่าสุดที่บันทึกไว้");
+            renderAll();
+            return;
+          }
+        }
+        renderProducts();
+        showError(cause, "โหลด Catalog ไม่สำเร็จ กรุณาลองใหม่");
+        document.querySelectorAll<HTMLElement>("[data-tab-panel]").forEach((panel) => { if (panel.id !== "products-panel") panel.innerHTML = '<div class="empty-state"><strong>ยังโหลดข้อมูลไม่ได้</strong><p>ลองรีเฟรชอีกครั้งเมื่อการเชื่อมต่อพร้อม</p></div>'; });
+      } finally {
+        if (loadVersion === catalogLoadVersion) {
+          setLoading(false);
+          if (catalog) renderAll();
+          else renderProducts();
+        }
+      }
+    }
+
+    function setTab(tab: CatalogTab, replace = false): void {
+      currentTab = tab;
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      if (selectedStoreId) url.searchParams.set("store", selectedStoreId);
+      history[replace ? "replaceState" : "pushState"](null, "", `${url.pathname}${url.search}`);
+      document.querySelector<HTMLElement>("#catalog-page-title")!.textContent = tabTitles[tab];
+      document.querySelectorAll<HTMLButtonElement>(".catalog-tab").forEach((button) => { const active = button.dataset.tab === tab; button.classList.toggle("is-active", active); button.setAttribute("aria-selected", String(active)); });
+      document.querySelectorAll<HTMLElement>("[data-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== tab; });
+      const addLabels: Record<CatalogTab, string> = { products: "เพิ่มสินค้า", categories: "เพิ่มหมวดหมู่", menus: "เพิ่มเมนู", modifiers: "เพิ่มกลุ่มตัวเลือก", availability: "" };
+      primaryAdd.hidden = tab === "availability";
+      primaryAdd.querySelector("span:last-child")!.textContent = addLabels[tab];
+      const icon = tab === "products" ? "plus" : "plus";
+      primaryAdd.innerHTML = `<span class="staff-icon-fallback">+</span><span>${addLabels[tab]}</span>`;
+      primaryAdd.onclick = () => { if (tab === "products") openProductDrawer(); if (tab === "categories") openDialog("category-dialog"); if (tab === "menus") openDialog("menu-dialog"); if (tab === "modifiers") openDialog("modifier-dialog"); };
+      void icon;
+    }
+
+    function openDialog(id: string): void { const dialog = document.querySelector<HTMLDialogElement>(`#${id}`); if (dialog && !dialog.open) dialog.showModal(); }
+    function closeDialog(id: string): void { document.querySelector<HTMLDialogElement>(`#${id}`)?.close(); }
+
+    function renderChannelChecks(product?: ProductSummary): void {
+      const container = document.querySelector<HTMLElement>("#channel-checks")!;
+      container.innerHTML = channelOptions.map((channel) => { const current = product ? getAvailability(product, channel) : { isAvailable: true }; const labels: Record<StoreChannel, string> = { POS: "POS", QR: "QR", KIOSK: "Kiosk", PICKUP: "Pickup" }; return `<label class="channel-check"><input type="checkbox" data-channel-check="${channel}" ${current.isAvailable ? "checked" : ""} /><span><strong>${labels[channel]}</strong><small>${channel === "POS" ? "หน้าร้าน" : channel === "QR" ? "สั่งผ่าน QR" : channel === "KIOSK" ? "ตู้สั่งซื้อ" : "รับสินค้า"}</small></span></label>`; }).join("");
+    }
+
+    function renderModifierChecks(product?: ProductSummary): void {
+      const container = document.querySelector<HTMLElement>("#product-modifier-checks")!;
+      if (!catalog?.modifierGroups.length) { container.innerHTML = '<p class="drawer-note">ยังไม่มีกลุ่มตัวเลือก เพิ่มกลุ่มตัวเลือกจากแท็บ “กลุ่มตัวเลือก” ก่อน</p>'; return; }
+      const attached = new Set(catalog.productModifierGroups.filter((mapping) => mapping.productId === product?.id).map((mapping) => mapping.modifierGroupId));
+      container.innerHTML = catalog.modifierGroups.filter((group) => group.status === "ACTIVE").map((group) => `<label class="modifier-check"><input type="checkbox" data-modifier-check="${group.id}" ${attached.has(group.id) ? "checked" : ""} /><span><strong>${escapeHtml(group.name)}</strong><small>${group.required ? "จำเป็นต้องเลือก" : "เลือกได้"} · ${group.modifiers.length} ตัวเลือก</small></span></label>`).join("");
+    }
+
+    function renderVariantRows(product?: ProductSummary): void {
+      const list = document.querySelector<HTMLElement>("#variant-list")!;
+      const addVariant = document.querySelector<HTMLButtonElement>("#add-variant")!;
+      const helper = document.querySelector<HTMLElement>("#variant-helper")!;
+      const note = document.querySelector<HTMLElement>("#variant-note")!;
+      list.replaceChildren();
+      if (product) {
+        addVariant.hidden = true;
+        helper.textContent = "ตัวเลือกที่มีอยู่ของสินค้า";
+        note.hidden = false;
+        note.textContent = "ระบบจะแสดง variant ที่มีอยู่ให้ดู แต่ API รุ่นนี้ยังไม่รองรับการแก้ไข variant ในหน้าแก้ไขสินค้า";
+        for (const variant of product.variants) {
+          const row = document.createElement("div"); row.className = "variant-row variant-row-readonly"; row.innerHTML = `<span><strong></strong><small></small></span><strong class="variant-row-price"></strong>`; row.querySelector("strong")!.textContent = variant.name; row.querySelector("small")!.textContent = variant.code; row.querySelector(".variant-row-price")!.textContent = money(variant.priceMinor, product.currency); list.append(row);
+        }
+        return;
+      }
+      addVariant.hidden = false;
+      helper.textContent = "เพิ่มขนาดหรือราคาที่แตกต่างกัน (ไม่บังคับ)";
+      note.hidden = true;
+      const addRow = (): void => {
+        const row = document.createElement("div"); row.className = "variant-row"; row.innerHTML = `<input class="variant-code" maxlength="32" placeholder="SMALL" aria-label="รหัส variant" /><input class="variant-name" maxlength="160" placeholder="ชื่อ variant" aria-label="ชื่อ variant" /><input class="variant-price" inputmode="decimal" min="0" step="0.01" type="number" placeholder="ราคา" aria-label="ราคา variant" /><button class="icon-action danger variant-remove" type="button" aria-label="ลบ variant">×</button>`; row.querySelector("button")!.addEventListener("click", () => row.remove()); list.append(row);
+      };
+      addVariant.onclick = addRow;
+    }
+
+    function openProductDrawer(product?: ProductSummary): void {
+      productEditId = product?.id ?? null;
+      productDrawer.dataset.dirty = "false";
+      document.querySelector<HTMLElement>("#product-drawer-eyebrow")!.textContent = product ? "Edit product" : "New product";
+      document.querySelector<HTMLElement>("#product-drawer-title")!.textContent = product ? "แก้ไขสินค้า" : "เพิ่มสินค้า";
+      document.querySelector<HTMLInputElement>("#product-name")!.value = product?.name ?? "";
+      const sku = document.querySelector<HTMLInputElement>("#product-sku")!; sku.value = product?.sku ?? ""; sku.disabled = Boolean(product); sku.required = !product;
+      document.querySelector<HTMLSelectElement>("#product-category")!.value = product?.categoryId ?? "";
+      document.querySelector<HTMLTextAreaElement>("#product-description")!.value = product?.description ?? "";
+      document.querySelector<HTMLInputElement>("#product-price")!.value = product ? String(product.basePriceMinor / 100) : "";
+      document.querySelector<HTMLElement>("#product-form-error")!.hidden = true;
+      renderVariantRows(product);
+      renderChannelChecks(product);
+      renderModifierChecks(product);
+      productDrawer.showModal();
+      window.setTimeout(() => document.querySelector<HTMLInputElement>("#product-name")?.focus(), 0);
+    }
+
+    function collectVariants(): Array<{ code: string; name: string; priceMinor: number }> | undefined {
+      const formRows = [...document.querySelectorAll<HTMLElement>("#variant-list .variant-row:not(.variant-row-readonly)")];
+      if (!formRows.length) return undefined;
+      return formRows.map((row, index) => { const code = row.querySelector<HTMLInputElement>(".variant-code")?.value.trim() ?? ""; const name = row.querySelector<HTMLInputElement>(".variant-name")?.value.trim() ?? ""; const price = Number(row.querySelector<HTMLInputElement>(".variant-price")?.value ?? ""); return { code: code || `VARIANT_${index + 1}`, name: name || `Variant ${index + 1}`, priceMinor: Math.round(price * 100) }; });
+    }
+
+    async function saveProduct(event: SubmitEvent): Promise<void> {
       event.preventDefault();
+      if (!productForm.reportValidity()) return;
+      const submit = document.querySelector<HTMLButtonElement>("#product-submit")!;
+      const formError = document.querySelector<HTMLElement>("#product-form-error")!;
+      submit.disabled = true; formError.hidden = true;
+      const name = document.querySelector<HTMLInputElement>("#product-name")!.value.trim();
       const price = Number(document.querySelector<HTMLInputElement>("#product-price")!.value);
-      if (!Number.isFinite(price) || price < 0) { showError(new Error("กรุณาระบุราคาที่ถูกต้อง")); return; }
+      if (!Number.isFinite(price) || price < 0) { formError.textContent = "กรุณาระบุราคาที่ถูกต้อง"; formError.hidden = false; submit.disabled = false; return; }
       const categoryId = document.querySelector<HTMLSelectElement>("#product-category")!.value;
       try {
-        await api("/api/catalog/products", {
-          method: "POST",
-          body: JSON.stringify({
-            storeId: selectedStoreId,
-            sku: document.querySelector<HTMLInputElement>("#product-sku")!.value.trim(),
-            name: document.querySelector<HTMLInputElement>("#product-name")!.value.trim(),
-            description: document.querySelector<HTMLTextAreaElement>("#product-description")!.value.trim(),
-            basePriceMinor: Math.round(price * 100),
-            ...(categoryId ? { categoryId } : {})
-          })
-        });
-        (event.currentTarget as HTMLFormElement).reset();
+        let productId = productEditId;
+        if (productEditId) {
+          await api(`/api/catalog/products/${productEditId}?storeId=${encodeURIComponent(selectedStoreId)}`, { method: "PATCH", body: JSON.stringify({ categoryId: categoryId || null, name, description: document.querySelector<HTMLTextAreaElement>("#product-description")!.value.trim(), basePriceMinor: Math.round(price * 100) }) });
+        } else {
+          const variants = collectVariants();
+          const result = await api<{ product: ProductSummary }>("/api/catalog/products", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, categoryId: categoryId || undefined, sku: document.querySelector<HTMLInputElement>("#product-sku")!.value.trim(), name, description: document.querySelector<HTMLTextAreaElement>("#product-description")!.value.trim(), basePriceMinor: Math.round(price * 100), ...(variants ? { variants } : {}) }) });
+          productId = result.product.id;
+        }
+        if (!productId) throw new Error("ไม่พบรหัสสินค้า");
+        const productBefore = catalog?.products.find((item) => item.id === productId);
+        const channelUpdates = channelOptions.map(async (channel) => { const checked = document.querySelector<HTMLInputElement>(`[data-channel-check="${channel}"]`)!.checked; const current = productBefore ? getAvailability(productBefore, channel).isAvailable : true; if (checked !== current) await api(`/api/catalog/products/${productId}/availability`, { method: "PATCH", body: JSON.stringify({ storeId: selectedStoreId, channel, isAvailable: checked }) }); });
+        await Promise.all(channelUpdates);
+        const desiredGroups = new Set([...document.querySelectorAll<HTMLInputElement>("[data-modifier-check]:checked")].map((input) => input.dataset.modifierCheck!));
+        const existingGroups = catalog?.productModifierGroups.filter((mapping) => mapping.productId === productId) ?? [];
+        await Promise.all(existingGroups.filter((mapping) => !desiredGroups.has(mapping.modifierGroupId)).map((mapping) => api(`/api/catalog/product-modifier-groups?storeId=${encodeURIComponent(selectedStoreId)}&productId=${encodeURIComponent(productId!)}&modifierGroupId=${encodeURIComponent(mapping.modifierGroupId)}`, { method: "DELETE" })));
+        await Promise.all([...desiredGroups].filter((groupId) => !existingGroups.some((mapping) => mapping.modifierGroupId === groupId)).map((modifierGroupId) => api("/api/catalog/product-modifier-groups", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, productId, modifierGroupId }) })));
+        productDrawer.close();
+        productForm.reset();
+        highlightProductId = productId;
         await loadCatalog();
-        showSuccess("เพิ่มสินค้าแล้ว");
-      } catch (cause) { showError(cause); }
-    });
-
-    document.querySelector<HTMLFormElement>("#menu-form")!.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const name = document.querySelector<HTMLInputElement>("#menu-name")!.value.trim();
-      const code = document.querySelector<HTMLInputElement>("#menu-code")!.value.trim();
-      const channel = document.querySelector<HTMLSelectElement>("#menu-channel")!.value;
-      try {
-        await api("/api/catalog/menus", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, channel, ...(code ? { code } : {}) }) });
-        (event.currentTarget as HTMLFormElement).reset();
-        await loadCatalog();
-        showSuccess("เพิ่มเมนูแล้ว");
-      } catch (cause) { showError(cause); }
-    });
-
-    document.querySelector<HTMLFormElement>("#modifier-form")!.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const name = document.querySelector<HTMLInputElement>("#modifier-name")!.value.trim();
-      const lines = document.querySelector<HTMLTextAreaElement>("#modifier-items")!.value.split("\n").map((line) => line.trim()).filter(Boolean);
-      const modifiers = lines.map((line, index) => {
-        const [modifierName, rawPrice = "0"] = line.split("|");
-        const price = Number(rawPrice);
-        return { code: `OPTION_${index + 1}`, name: modifierName?.trim() || `Option ${index + 1}`, priceDeltaMinor: Math.round((Number.isFinite(price) ? price : 0) * 100) };
-      });
-      const required = document.querySelector<HTMLInputElement>("#modifier-required")!.checked;
-      const selectionType = document.querySelector<HTMLSelectElement>("#modifier-type")!.value;
-      try {
-        await api("/api/catalog/modifier-groups", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, selectionType, required, modifiers }) });
-        (event.currentTarget as HTMLFormElement).reset();
-        await loadCatalog();
-        showSuccess("เพิ่มกลุ่มตัวเลือกแล้ว");
-      } catch (cause) { showError(cause); }
-    });
-
-    document.querySelector("#logout")!.addEventListener("click", async () => {
-      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-      sessionStorage.removeItem("aevo.selectedStoreId");
-      window.location.assign("/login");
-    });
-
-    try { await initialise(); }
-    catch (cause) {
-      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-      else showError(cause);
+        setTab("products", true);
+        showSuccess(productEditId ? "บันทึกการแก้ไขสินค้าแล้ว" : "เพิ่มสินค้าแล้ว");
+      } catch (cause) {
+        formError.textContent = friendlyErrorMessage(cause, "บันทึกสินค้าไม่สำเร็จ ข้อมูลที่กรอกไว้ยังอยู่");
+        formError.hidden = false;
+      } finally { submit.disabled = false; }
     }
+
+    function openMenuItemDialog(menu: MenuSummary): void {
+      const context = document.querySelector<HTMLElement>("#menu-item-context")!; context.textContent = `กำลังเพิ่มสินค้าในเมนู “${menu.name}”`;
+      const menuForm = document.querySelector<HTMLFormElement>("#menu-item-form")!; menuForm.dataset.menuId = menu.id;
+      const productSelect = document.querySelector<HTMLSelectElement>("#menu-item-product")!; productSelect.replaceChildren(); for (const product of catalog?.products.filter((item) => item.status === "ACTIVE") ?? []) productSelect.add(new Option(`${product.name} · ${product.sku}`, product.id));
+      updateMenuItemVariants();
+      document.querySelector<HTMLInputElement>("#menu-item-price")!.value = "";
+      document.querySelector<HTMLElement>("#menu-item-form-error")!.hidden = true;
+      openDialog("menu-item-dialog");
+    }
+
+    function updateMenuItemVariants(): void { const product = catalog?.products.find((item) => item.id === document.querySelector<HTMLSelectElement>("#menu-item-product")!.value); const select = document.querySelector<HTMLSelectElement>("#menu-item-variant")!; select.replaceChildren(new Option("ใช้ราคาหลัก", "")); for (const variant of product?.variants ?? []) select.add(new Option(`${variant.name} · ${money(variant.priceMinor, product?.currency ?? "THB")}`, variant.id)); }
+
+    async function saveMenuItem(event: SubmitEvent): Promise<void> { event.preventDefault(); const form = document.querySelector<HTMLFormElement>("#menu-item-form")!; const productId = document.querySelector<HTMLSelectElement>("#menu-item-product")!.value; const variantId = document.querySelector<HTMLSelectElement>("#menu-item-variant")!.value; const rawPrice = document.querySelector<HTMLInputElement>("#menu-item-price")!.value; const formError = document.querySelector<HTMLElement>("#menu-item-form-error")!; try { await api("/api/catalog/menu-items", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, menuId: form.dataset.menuId, productId, ...(variantId ? { variantId } : {}), ...(rawPrice ? { priceOverrideMinor: Math.round(Number(rawPrice) * 100) } : {}) }) }); closeDialog("menu-item-dialog"); await loadCatalog(); showSuccess("เพิ่มสินค้าในเมนูแล้ว"); } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "เพิ่มสินค้าในเมนูไม่สำเร็จ"); formError.hidden = false; } }
+
+    async function saveCategory(event: SubmitEvent): Promise<void> { event.preventDefault(); const form = document.querySelector<HTMLFormElement>("#category-form")!; if (!form.reportValidity()) return; const formError = document.querySelector<HTMLElement>("#category-form-error")!; try { await api("/api/catalog/categories", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name: document.querySelector<HTMLInputElement>("#category-name")!.value.trim(), code: document.querySelector<HTMLInputElement>("#category-code")!.value.trim() || undefined, parentId: document.querySelector<HTMLSelectElement>("#category-parent")!.value || undefined }) }); closeDialog("category-dialog"); form.reset(); await loadCatalog(); setTab("categories", true); showSuccess("เพิ่มหมวดหมู่แล้ว"); } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "เพิ่มหมวดหมู่ไม่สำเร็จ"); formError.hidden = false; } }
+
+    async function saveMenu(event: SubmitEvent): Promise<void> { event.preventDefault(); const form = document.querySelector<HTMLFormElement>("#menu-form")!; if (!form.reportValidity()) return; const formError = document.querySelector<HTMLElement>("#menu-form-error")!; try { await api("/api/catalog/menus", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name: document.querySelector<HTMLInputElement>("#menu-name")!.value.trim(), code: document.querySelector<HTMLInputElement>("#menu-code")!.value.trim() || undefined, channel: document.querySelector<HTMLSelectElement>("#menu-channel")!.value }) }); closeDialog("menu-dialog"); form.reset(); await loadCatalog(); setTab("menus", true); showSuccess("เพิ่มเมนูแล้ว"); } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "เพิ่มเมนูไม่สำเร็จ"); formError.hidden = false; } }
+
+    async function saveModifier(event: SubmitEvent): Promise<void> { event.preventDefault(); const form = document.querySelector<HTMLFormElement>("#modifier-form")!; if (!form.reportValidity()) return; const formError = document.querySelector<HTMLElement>("#modifier-form-error")!; const lines = document.querySelector<HTMLTextAreaElement>("#modifier-items")!.value.split("\n").map((line) => line.trim()).filter(Boolean); const modifiers = lines.map((line, index) => { const [name, price = "0"] = line.split("|"); return { code: `OPTION_${index + 1}`, name: name?.trim() || `Option ${index + 1}`, priceDeltaMinor: Math.round((Number(price) || 0) * 100) }; }); try { await api("/api/catalog/modifier-groups", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name: document.querySelector<HTMLInputElement>("#modifier-name")!.value.trim(), selectionType: document.querySelector<HTMLSelectElement>("#modifier-type")!.value, required: document.querySelector<HTMLInputElement>("#modifier-required")!.checked, modifiers }) }); closeDialog("modifier-dialog"); form.reset(); await loadCatalog(); setTab("modifiers", true); showSuccess("เพิ่มกลุ่มตัวเลือกแล้ว"); } catch (cause) { formError.textContent = friendlyErrorMessage(cause, "เพิ่มกลุ่มตัวเลือกไม่สำเร็จ"); formError.hidden = false; } }
+
+    productForm.addEventListener("submit", (event) => void saveProduct(event));
+    productForm.addEventListener("input", () => { productDrawer.dataset.dirty = "true"; });
+    document.querySelector<HTMLSelectElement>("#menu-item-product")!.addEventListener("change", updateMenuItemVariants);
+    document.querySelector<HTMLFormElement>("#menu-item-form")!.addEventListener("submit", (event) => void saveMenuItem(event));
+    document.querySelector<HTMLFormElement>("#category-form")!.addEventListener("submit", (event) => void saveCategory(event));
+    document.querySelector<HTMLFormElement>("#menu-form")!.addEventListener("submit", (event) => void saveMenu(event));
+    document.querySelector<HTMLFormElement>("#modifier-form")!.addEventListener("submit", (event) => void saveModifier(event));
+    document.querySelectorAll<HTMLButtonElement>("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.closeDialog!)));
+    productDrawer.addEventListener("cancel", (event) => { if (productDrawer.dataset.dirty === "true" && !window.confirm("มีข้อมูลที่ยังไม่ได้บันทึก ต้องการปิดหรือไม่")) event.preventDefault(); });
+    productDrawer.addEventListener("close", () => { productDrawer.dataset.dirty = "false"; productEditId = null; });
+    document.querySelectorAll<HTMLButtonElement>(".catalog-tab").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab as CatalogTab)));
+    window.addEventListener("popstate", () => setTab(getTabFromUrl(), true));
+    [productSearch, categoryFilter, statusFilter, availabilityFilter, channelFilter, sortFilter].forEach((control) => control.addEventListener("input", renderProducts));
+    tableView.addEventListener("click", () => { viewMode = "table"; localStorage.setItem("aevo.catalog.view", viewMode); tableView.classList.add("is-active"); gridView.classList.remove("is-active"); tableView.setAttribute("aria-pressed", "true"); gridView.setAttribute("aria-pressed", "false"); renderProducts(); });
+    gridView.addEventListener("click", () => { viewMode = "grid"; localStorage.setItem("aevo.catalog.view", viewMode); gridView.classList.add("is-active"); tableView.classList.remove("is-active"); gridView.setAttribute("aria-pressed", "true"); tableView.setAttribute("aria-pressed", "false"); renderProducts(); });
+    refresh.addEventListener("click", () => void loadCatalog());
+    document.querySelector<HTMLButtonElement>("#add-category")!.addEventListener("click", () => openDialog("category-dialog"));
+    document.querySelector<HTMLButtonElement>("#add-menu")!.addEventListener("click", () => openDialog("menu-dialog"));
+    document.querySelector<HTMLButtonElement>("#add-modifier")!.addEventListener("click", () => openDialog("modifier-dialog"));
+
+    async function initialise(): Promise<void> {
+      const { user, stores: authorizedStores } = await loadStaffContext();
+      stores = authorizedStores;
+      const store = findSelectedStore(stores, requestedStoreId);
+      if (!store) { window.location.assign("/staff"); return; }
+      selectedStoreId = store.id;
+      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
+      document.querySelector<HTMLElement>("#store-summary")!.textContent = `${store.name} · ${store.code} · จัดการข้อมูลแยกตามสาขา`;
+      initStaffShell({ user, stores, selectedStoreId, onStoreChange: async (nextStoreId) => { selectedStoreId = nextStoreId; catalog = null; const nextStore = stores.find((item) => item.id === nextStoreId); if (!nextStore) return; history.replaceState(null, "", storeUrl("/staff/catalog", nextStoreId, { tab: currentTab })); document.querySelector<HTMLElement>("#store-summary")!.textContent = `${nextStore.name} · ${nextStore.code} · จัดการข้อมูลแยกตามสาขา`; setLoading(true); await loadCatalog(); } });
+      setTab(currentTab, true);
+      await loadCatalog();
+    }
+
+    try { await initialise(); } catch (cause) { if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login"); else showError(cause, "โหลด Catalog ไม่สำเร็จ กรุณาลองใหม่"); }
   </script>
-  <style>
-    .brand-link { text-decoration: none; }
-    .header-actions { display: flex; align-items: center; gap: 16px; }
-    .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-    .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
-    .store-picker { min-width: 220px; color: var(--muted); font-size: .82rem; font-weight: 750; }
-    select, input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); padding: 11px 12px; }
-    .store-picker select { margin-top: 7px; }
-    .catalog-layout { margin-top: 30px; display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 1.6fr); gap: 18px; align-items: start; }
-    .configuration-panel { margin-top: 18px; }
-    .configuration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    .panel { padding: 22px; }
-    .panel-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 20px; }
-    .panel-heading h2 { margin: 0; font-size: 1.35rem; }
-    .count { min-width: 30px; padding: 5px 9px; border-radius: 999px; text-align: center; color: var(--brand); background: #e7f2ed; font-size: .8rem; font-weight: 800; }
-    .form-stack { display: grid; gap: 12px; }
-    label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
-    .form-stack .button { margin-top: 3px; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    textarea { resize: vertical; }
-    .category-list, .product-list { display: grid; gap: 10px; margin-top: 22px; }
-    .compact-list { display: grid; gap: 8px; margin-top: 18px; }
-    .compact-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-    .compact-item strong, .compact-item small { display: block; }
-    .compact-item small { margin-top: 3px; color: var(--muted); font-size: .76rem; }
-    .checkbox-label { display: flex; align-items: center; gap: 8px; padding-top: 26px; }
-    .checkbox-label input { width: 18px; height: 18px; }
-    .category-item, .product-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 13px; }
-    .category-item strong, .category-item small { display: block; }
-    .category-item small, .product-meta, .product-description { color: var(--muted); font-size: .78rem; }
-    .category-status { color: #25805c; font-size: .72rem; font-weight: 800; }
-    .product-item { align-items: flex-start; }
-    .product-copy { min-width: 0; }
-    .product-title { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
-    .sku { padding: 3px 7px; border-radius: 6px; color: var(--brand); background: #edf5f1; font-size: .68rem; font-weight: 800; letter-spacing: .05em; }
-    .product-meta, .product-description { margin: 6px 0 0; line-height: 1.45; }
-    .product-description { white-space: pre-wrap; }
-    .product-actions { display: grid; justify-items: end; gap: 10px; flex: 0 0 auto; }
-    .price { color: var(--brand); white-space: nowrap; }
-    .product-actions .button { min-height: 38px; padding: 0 10px; font-size: .76rem; }
-    .archived { opacity: .6; }
-    .empty { color: var(--muted); font-size: .9rem; }
-    .success { padding: 12px 14px; border-radius: 10px; color: #176343; background: #eaf8f0; border: 1px solid #c4ead3; }
-    @media (max-width: 760px) { .page-heading { align-items: stretch; flex-direction: column; } .store-picker { min-width: 0; } .catalog-layout, .configuration-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 500px) { .form-row { grid-template-columns: 1fr; } .product-item { flex-direction: column; } .product-actions { width: 100%; display: flex; align-items: center; justify-content: space-between; } .status { display: none; } }
+
+  <style is:global>
+    .catalog-header-actions { display: flex; align-items: center; gap: 8px; }
+    .catalog-tabs { display: flex; gap: 3px; margin-top: 30px; padding: 4px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-soft); }
+    .catalog-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 14px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: .78rem; font-weight: 780; white-space: nowrap; cursor: pointer; }
+    .catalog-tab:hover { color: var(--ink); background: var(--surface); }
+    .catalog-tab.is-active { color: var(--brand); background: var(--surface); box-shadow: var(--shadow-sm); }
+    .catalog-tab b { min-width: 20px; padding: 2px 5px; border-radius: 999px; color: currentColor; background: var(--surface-quiet); font-size: .64rem; text-align: center; }
+    .catalog-panel { margin-top: 18px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+    .catalog-panel-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    .catalog-panel-heading h2 { margin: 0; font-size: 1.16rem; letter-spacing: -.025em; }
+    .catalog-panel-heading p { margin: 5px 0 0; color: var(--muted); font-size: .77rem; line-height: 1.45; }
+    .catalog-panel-heading .staff-eyebrow { margin-bottom: 4px; }
+    .catalog-result-count { color: var(--muted); font-size: .73rem; white-space: nowrap; }
+    .catalog-toolbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: 10px; margin: 0 -10px 13px; border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface), transparent 4%); box-shadow: var(--shadow-sm); backdrop-filter: blur(10px); }
+    .catalog-search { display: flex; align-items: center; flex: 1 1 250px; gap: 8px; min-width: 170px; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface); }
+    .catalog-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: .8rem; }
+    .catalog-filter select { min-height: 42px; max-width: 150px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink-soft); background: var(--surface); font-size: .74rem; font-weight: 680; }
+    .catalog-sort select { max-width: 115px; }
+    .catalog-view-toggle { display: flex; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+    .view-button { display: grid; place-items: center; width: 36px; height: 36px; min-height: 36px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; }
+    .view-button.is-active { color: var(--brand); background: var(--surface); box-shadow: var(--shadow-sm); }
+    .catalog-list { overflow: hidden; }
+    .product-table-head, .product-row { display: grid; grid-template-columns: minmax(180px, 1.65fr) minmax(110px, 1fr) minmax(92px, .75fr) minmax(88px, .7fr) minmax(86px, .8fr) minmax(76px, .7fr) minmax(190px, 1.4fr); align-items: center; gap: 12px; min-width: 970px; padding: 0 14px; }
+    .product-table-head { min-height: 38px; color: var(--subtle); font-size: .65rem; font-weight: 820; letter-spacing: .04em; text-transform: uppercase; }
+    .product-row { min-height: 76px; border-top: 1px solid var(--line); transition: background var(--duration-fast); }
+    .product-row:hover { background: var(--surface-soft); }
+    .product-row.is-highlighted, .product-card.is-highlighted { background: #f0fbf3; box-shadow: inset 3px 0 0 var(--brand); }
+    .product-row.is-archived, .product-card.is-archived { opacity: .62; }
+    .product-leading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .product-thumb { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; border: 1px solid #cfe5d7; border-radius: 10px; color: var(--brand); background: var(--brand-soft); font-size: .9rem; font-weight: 850; }
+    .product-thumb-large { width: 52px; height: 52px; font-size: 1.1rem; }
+    .product-main-copy, .product-card-copy, .category-row-main, .menu-row-main, .modifier-row-main { display: grid; min-width: 0; gap: 3px; }
+    .product-main-copy strong { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
+    .product-main-copy small, .product-category-cell, .product-variant-cell, .product-status-text { overflow: hidden; color: var(--muted); font-size: .69rem; text-overflow: ellipsis; white-space: nowrap; }
+    .product-price-cell { color: var(--ink); font-size: .78rem; font-weight: 780; white-space: nowrap; }
+    .availability-badge, .product-status-text, .category-row-status, .modifier-required { width: fit-content; padding: 4px 7px; border-radius: 999px; font-size: .64rem; font-weight: 780; white-space: nowrap; }
+    .availability-badge[data-state="available"] { color: var(--success); background: var(--success-soft); }
+    .availability-badge[data-state="sold-out"] { color: var(--warning); background: var(--warning-soft); }
+    .availability-badge[data-state="hidden"] { color: var(--muted); background: var(--surface-quiet); }
+    .product-status-text[data-status="ACTIVE"], .category-row-status[data-status="ACTIVE"] { color: var(--success); background: var(--success-soft); }
+    .product-status-text[data-status="ARCHIVED"], .category-row-status[data-status="INACTIVE"] { color: var(--muted); background: var(--surface-quiet); }
+    .product-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
+    .product-action-link { min-height: 34px; padding: 0 7px; border: 0; border-radius: 6px; color: var(--brand); background: transparent; font-size: .68rem; font-weight: 780; cursor: pointer; }
+    .product-action-link:hover { background: var(--brand-soft); }
+    .product-action-link.quiet { color: var(--warning); }
+    .product-action-link.danger { color: var(--danger); }
+    .product-card { display: flex; min-height: 220px; flex-direction: column; padding: 15px; }
+    .catalog-list.is-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 10px; }
+    .catalog-list.is-grid .product-card { border-radius: var(--radius-md); }
+    .product-card-top, .product-card-bottom, .product-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .product-card-copy { margin-top: 18px; }
+    .product-card-category { color: var(--muted); font-size: .67rem; }
+    .product-card h3 { margin: 2px 0 0; overflow: hidden; font-size: .98rem; text-overflow: ellipsis; white-space: nowrap; }
+    .product-card-copy p { margin: 3px 0 0; color: var(--muted); font-size: .7rem; }
+    .product-card-bottom { margin-top: auto; padding-top: 20px; }
+    .product-card-bottom > strong { color: var(--brand); font-size: .92rem; }
+    .product-card-actions { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+    .icon-action { display: grid; place-items: center; width: 36px; height: 36px; min-height: 36px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); cursor: pointer; }
+    .icon-action.danger { color: var(--danger); }
+    .catalog-skeleton-row { display: grid; grid-template-columns: 1.6fr 1fr .8fr; gap: 16px; min-height: 72px; align-items: center; padding: 0 14px; border-top: 1px solid var(--line); }
+    .catalog-skeleton-row .skeleton { height: 12px; }
+    .product-empty { min-height: 280px; }
+    .product-empty-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--brand); background: var(--brand-soft); }
+    .category-summary-strip { display: flex; gap: 16px; margin-bottom: 12px; padding: 11px 12px; border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-soft); font-size: .72rem; }
+    .category-summary-strip strong { color: var(--brand); }
+    .category-list, .menu-list, .modifier-list { display: grid; gap: 8px; }
+    .category-row, .menu-row, .modifier-row { display: flex; align-items: center; gap: 12px; min-height: 65px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .category-row-icon, .menu-row-icon, .modifier-row-icon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 9px; color: var(--brand); background: var(--brand-soft); }
+    .category-row-main, .menu-row-main, .modifier-row-main { flex: 1; }
+    .category-row-main strong, .menu-row-main strong, .modifier-row-main strong { font-size: .8rem; }
+    .category-row-main small, .menu-row-main small, .modifier-row-main small { color: var(--muted); font-size: .68rem; }
+    .category-row-count, .menu-row-stat { display: grid; min-width: 58px; gap: 1px; text-align: right; }
+    .category-row-count strong, .menu-row-stat strong { font-size: .86rem; }
+    .category-row-count small, .menu-row-stat small { color: var(--muted); font-size: .64rem; }
+    .menu-row { min-height: 72px; }
+    .menu-row-main { display: flex; align-items: center; gap: 10px; }
+    .modifier-row { flex-wrap: wrap; }
+    .modifier-row-main { display: flex; align-items: center; gap: 10px; min-width: 220px; }
+    .modifier-required[data-required="true"] { color: var(--warning); background: var(--warning-soft); }
+    .modifier-required[data-required="false"] { color: var(--muted); background: var(--surface-quiet); }
+    .modifier-options-preview { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 5px; padding-left: 46px; }
+    .modifier-options-preview span { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--surface-soft); font-size: .66rem; }
+    .availability-table-wrap { overflow-x: auto; }
+    .availability-table { min-width: 680px; }
+    .availability-head, .availability-row { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(4, minmax(95px, .65fr)); align-items: center; gap: 9px; padding: 0 8px; }
+    .availability-head { min-height: 38px; color: var(--subtle); font-size: .66rem; font-weight: 820; text-align: center; text-transform: uppercase; }
+    .availability-head span:first-child { text-align: left; }
+    .availability-row { min-height: 68px; border-top: 1px solid var(--line); }
+    .availability-product { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .availability-product .product-thumb { width: 32px; height: 32px; flex-basis: 32px; font-size: .74rem; }
+    .availability-product > span:last-child { display: grid; min-width: 0; gap: 2px; }
+    .availability-product strong { overflow: hidden; font-size: .77rem; text-overflow: ellipsis; white-space: nowrap; }
+    .availability-product small { color: var(--muted); font-size: .64rem; }
+    .availability-toggle { display: grid; justify-items: center; gap: 2px; min-height: 44px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); cursor: pointer; }
+    .availability-toggle:hover { border-color: var(--line-strong); }
+    .availability-toggle span { font-size: .69rem; font-weight: 800; }
+    .availability-toggle small { font-size: .6rem; }
+    .availability-toggle[data-availability="available"] { border-color: #c8e6d1; color: var(--success); background: var(--success-soft); }
+    .availability-toggle[data-availability="sold-out"] { border-color: #f2d697; color: var(--warning); background: var(--warning-soft); }
+    .availability-toggle[data-availability="hidden"] { color: var(--muted); background: var(--surface-quiet); }
+    .catalog-drawer, .catalog-modal { padding: 0; border: 0; background: transparent; }
+    .catalog-drawer { position: fixed; inset: 0 0 0 auto; width: min(520px, 100%); height: 100dvh; max-height: none; margin: 0; border-radius: var(--radius-lg) 0 0 var(--radius-lg); box-shadow: -18px 0 48px rgba(20, 50, 36, .14); }
+    .catalog-drawer::backdrop, .catalog-modal::backdrop { background: rgba(17, 37, 27, .32); }
+    .catalog-drawer-card, .catalog-modal-card { display: flex; flex-direction: column; height: 100%; max-height: inherit; overflow: hidden; background: var(--surface); }
+    .catalog-modal { width: min(460px, calc(100% - 28px)); max-height: min(700px, calc(100dvh - 28px)); border-radius: var(--radius-lg); box-shadow: 0 22px 60px rgba(20, 50, 36, .2); }
+    .catalog-modal-card { height: auto; max-height: inherit; }
+    .catalog-drawer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px 17px; border-bottom: 1px solid var(--line); }
+    .catalog-drawer-heading .staff-eyebrow { margin-bottom: 4px; }
+    .catalog-drawer-heading h2 { margin: 0; font-size: 1.2rem; letter-spacing: -.025em; }
+    .catalog-drawer-form, .catalog-modal-form { overflow: auto; padding: 20px 22px 0; }
+    .catalog-modal-form { overflow: auto; }
+    .drawer-form-section { padding-bottom: 22px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+    .drawer-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+    .drawer-section-heading strong { font-size: .86rem; }
+    .drawer-section-heading span, .drawer-note, .field-hint { color: var(--muted); font-size: .68rem; line-height: 1.45; }
+    .catalog-drawer-form label, .catalog-modal-form label { display: grid; gap: 6px; margin-bottom: 12px; color: var(--ink-soft); font-size: .74rem; font-weight: 760; }
+    .catalog-drawer-form input, .catalog-drawer-form select, .catalog-drawer-form textarea, .catalog-modal-form input, .catalog-modal-form select, .catalog-modal-form textarea { width: 100%; min-height: 44px; padding: 0 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface); font-size: .8rem; font-weight: 500; }
+    .catalog-drawer-form textarea, .catalog-modal-form textarea { min-height: 82px; padding-top: 10px; resize: vertical; }
+    .catalog-drawer-form input:disabled { color: var(--muted); background: var(--surface-soft); }
+    .drawer-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .required-mark { color: var(--danger); }
+    .money-input { position: relative; }
+    .money-input input { padding-right: 55px; }
+    .money-input span { position: absolute; top: 13px; right: 11px; color: var(--muted); font-size: .72rem; font-weight: 700; }
+    .variant-list { display: grid; gap: 7px; }
+    .variant-row { display: grid; grid-template-columns: .75fr 1.3fr .85fr 36px; align-items: center; gap: 6px; }
+    .variant-row input { min-height: 40px; padding: 0 8px; font-size: .72rem; }
+    .variant-row-readonly { display: flex; justify-content: space-between; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+    .variant-row-readonly span { display: grid; gap: 2px; }
+    .variant-row-readonly span strong { font-size: .76rem; }
+    .variant-row-readonly span small { color: var(--muted); font-size: .66rem; }
+    .variant-row-price { color: var(--brand); font-size: .75rem; }
+    .drawer-add-line { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 9px; padding: 0 10px; border: 1px dashed var(--line-strong); border-radius: 7px; color: var(--brand); background: transparent; font-size: .72rem; font-weight: 760; cursor: pointer; }
+    .drawer-note { margin: 9px 0 0; }
+    .channel-checks, .modifier-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .channel-check, .modifier-check { display: flex !important; align-items: center; gap: 9px; min-height: 54px; margin: 0 !important; padding: 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+    .channel-check:has(input:checked), .modifier-check:has(input:checked) { border-color: #b9dcc5; background: var(--brand-quiet); }
+    .channel-check input, .modifier-check input, .checkbox-field input { width: 17px !important; min-height: 17px !important; accent-color: var(--brand); }
+    .channel-check span, .modifier-check span { display: grid; gap: 2px; }
+    .channel-check strong, .modifier-check strong { font-size: .72rem; }
+    .channel-check small, .modifier-check small { color: var(--muted); font-size: .62rem; font-weight: 500; }
+    .checkbox-field { display: flex !important; align-items: center; gap: 8px; padding-top: 24px; }
+    .drawer-error { margin: 0 0 13px; padding: 10px 11px; border: 1px solid #f2c9c6; border-radius: 7px; color: var(--danger); background: var(--danger-soft); font-size: .72rem; line-height: 1.45; }
+    .catalog-drawer-footer { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px; margin: 0 -22px; padding: 14px 22px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface), transparent 4%); }
+    .catalog-modal-form .catalog-drawer-footer { margin-top: 10px; }
+    .menu-item-context { margin: 0 0 16px; padding: 10px 11px; border-radius: 7px; color: var(--brand); background: var(--brand-quiet); font-size: .75rem; font-weight: 700; }
+    .icon-action.variant-remove { min-height: 40px; width: 36px; }
+    .staff-icon-fallback { display: inline-flex; font-size: 1.1rem; line-height: 1; }
+    @media (max-width: 1080px) { .catalog-toolbar { flex-wrap: wrap; } .catalog-search { flex-basis: 100%; } .catalog-filter select { max-width: none; } }
+    @media (max-width: 720px) { .catalog-header-actions { margin-top: 17px; } .catalog-header-actions .button { flex: 1; } .catalog-panel { padding: 15px; } .catalog-panel-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .catalog-panel-heading > .button { width: 100%; } .catalog-toolbar { margin-right: -5px; margin-left: -5px; } .catalog-filter { flex: 1 1 calc(50% - 4px); } .catalog-filter select { width: 100%; max-width: none; } .catalog-sort { flex-basis: 50%; } .catalog-view-toggle { margin-left: auto; } .category-summary-strip { flex-direction: column; gap: 5px; } .menu-row { align-items: flex-start; flex-wrap: wrap; } .menu-row-main { flex-basis: calc(100% - 50px); } .menu-row .button { margin-left: 44px; } .modifier-options-preview { padding-left: 0; } }
+    @media (max-width: 520px) { .catalog-tabs { margin-right: -16px; margin-left: -16px; border-right: 0; border-left: 0; border-radius: 0; } .catalog-tab { padding: 0 11px; } .catalog-tab span { font-size: .72rem; } .catalog-drawer { width: 100%; border-radius: 0; } .catalog-drawer-heading, .catalog-drawer-form { padding-right: 16px; padding-left: 16px; } .catalog-drawer-footer { margin-right: -16px; margin-left: -16px; padding-right: 16px; padding-left: 16px; } .drawer-form-row, .channel-checks, .modifier-checks { grid-template-columns: 1fr; } .variant-row { grid-template-columns: 1fr 1.5fr 1fr 36px; } }
   </style>
-</BaseLayout>
+</StaffShell>

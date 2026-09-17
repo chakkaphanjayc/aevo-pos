@@ -8,12 +8,16 @@ import type {
   CreateModifierGroupInput,
   CreateProductInput,
   ProductAvailabilitySummary,
+  ProductModifierGroupMapping,
   ProductSummary,
   ProductVariantSummary,
   MenuSummary,
   MenuItemSummary,
   ModifierGroupSummary,
   ModifierSummary,
+  PublicCatalogCategory,
+  PublicCatalogSnapshot,
+  PublicProductItem,
   SessionPrincipal,
   UpdateProductAvailabilityInput,
   UpdateProductInput
@@ -198,7 +202,7 @@ export function buildAvailabilityPatchParams(
 }
 
 export async function listCatalog(database: Database, principal: SessionPrincipal, storeId: string): Promise<CatalogSnapshot> {
-  const [categoriesResult, productsResult, variantsResult, availabilityResult, menusResult, menuItemsResult, modifierGroupsResult, modifiersResult] = await Promise.all([
+  const [categoriesResult, productsResult, variantsResult, availabilityResult, menusResult, menuItemsResult, modifierGroupsResult, modifiersResult, productModifierGroupsResult] = await Promise.all([
     database.client
       .from("categories")
       .select("id,organization_id,parent_id,code,name,slug,sort_order,status")
@@ -241,6 +245,11 @@ export async function listCatalog(database: Database, principal: SessionPrincipa
       .from("modifiers")
       .select("id,organization_id,modifier_group_id,code,name,price_delta_minor,sort_order,status")
       .eq("organization_id", principal.organizationId)
+      .order("sort_order", { ascending: true }),
+    database.client
+      .from("product_modifier_groups")
+      .select("organization_id,product_id,modifier_group_id,sort_order")
+      .eq("organization_id", principal.organizationId)
       .order("sort_order", { ascending: true })
   ]);
   throwIfError(categoriesResult.error, "category list");
@@ -250,7 +259,9 @@ export async function listCatalog(database: Database, principal: SessionPrincipa
   throwIfError(menusResult.error, "menu list");
   throwIfError(menuItemsResult.error, "menu item list");
   throwIfError(modifierGroupsResult.error, "modifier group list");
-  throwIfError(modifiersResult.error, "modifier list");
+  if (productModifierGroupsResult.error && productModifierGroupsResult.error.code !== "PGRST205") {
+    throwIfError(productModifierGroupsResult.error, "product modifier group list");
+  }
 
   const variantsByProduct = new Map<string, ProductVariantSummary[]>();
   for (const row of (variantsResult.data ?? []) as Row[]) {
@@ -293,7 +304,12 @@ export async function listCatalog(database: Database, principal: SessionPrincipa
     modifierGroups: ((modifierGroupsResult.data ?? []) as Row[]).map((row) => mapModifierGroup(
       row,
       modifiersByGroup.get(String(row.id)) ?? []
-    ))
+    )),
+    productModifierGroups: ((productModifierGroupsResult.data ?? []) as Row[]).map((row): ProductModifierGroupMapping => ({
+      productId: String(row.product_id),
+      modifierGroupId: String(row.modifier_group_id),
+      sortOrder: Number(row.sort_order ?? 0)
+    }))
   };
 }
 
@@ -528,4 +544,166 @@ export async function updateProductAvailability(
   const row = (Array.isArray(result.data) ? result.data[0] : result.data) as Row | undefined;
   if (!row) throw new Error("Supabase availability update returned no row");
   return mapAvailability(row);
+}
+
+export interface CreateProductModifierGroupInput {
+  storeId: string;
+  productId: string;
+  modifierGroupId: string;
+  sortOrder?: number;
+}
+
+export async function createProductModifierGroup(
+  database: Database,
+  principal: SessionPrincipal,
+  input: CreateProductModifierGroupInput
+): Promise<ProductModifierGroupMapping> {
+  const productCheck = await database.client
+    .from("products")
+    .select("id")
+    .eq("id", input.productId)
+    .eq("organization_id", principal.organizationId)
+    .maybeSingle();
+  throwIfError(productCheck.error, "product check");
+  if (!productCheck.data) throw new Error("Product was not found in the organization");
+  const groupCheck = await database.client
+    .from("modifier_groups")
+    .select("id")
+    .eq("id", input.modifierGroupId)
+    .eq("organization_id", principal.organizationId)
+    .maybeSingle();
+  throwIfError(groupCheck.error, "modifier group check");
+  if (!groupCheck.data) throw new Error("Modifier group was not found in the organization");
+  const result = await database.client
+    .from("product_modifier_groups")
+    .upsert({
+      organization_id: principal.organizationId,
+      product_id: input.productId,
+      modifier_group_id: input.modifierGroupId,
+      sort_order: input.sortOrder ?? 0
+    }, { onConflict: "organization_id,product_id,modifier_group_id" })
+    .select("organization_id,product_id,modifier_group_id,sort_order")
+    .single();
+  throwIfError(result.error, "product modifier group create");
+  const row = result.data as Row;
+  return {
+    productId: String(row.product_id),
+    modifierGroupId: String(row.modifier_group_id),
+    sortOrder: Number(row.sort_order ?? 0)
+  };
+}
+
+export async function deleteProductModifierGroup(
+  database: Database,
+  principal: SessionPrincipal,
+  productId: string,
+  modifierGroupId: string
+): Promise<void> {
+  const result = await database.client
+    .from("product_modifier_groups")
+    .delete()
+    .eq("organization_id", principal.organizationId)
+    .eq("product_id", productId)
+    .eq("modifier_group_id", modifierGroupId);
+  throwIfError(result.error, "product modifier group delete");
+}
+
+export interface StoreByCodeRecord {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  currency: string;
+  status: string;
+}
+
+export async function getStoreByCode(
+  database: Database,
+  storeCode: string
+): Promise<StoreByCodeRecord | null> {
+  const result = await database.client
+    .from("stores")
+    .select("id,organization_id,code,name,currency,status")
+    .eq("code", storeCode.trim().toUpperCase())
+    .maybeSingle();
+  if (result.error || !result.data) return null;
+  const row = result.data as Row;
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    code: String(row.code),
+    name: String(row.name),
+    currency: String(row.currency ?? "THB"),
+    status: String(row.status)
+  };
+}
+
+export async function getPublicCatalog(
+  database: Database,
+  storeCode: string,
+  channel: CatalogChannel = "QR"
+): Promise<PublicCatalogSnapshot | null> {
+  const store = await getStoreByCode(database, storeCode);
+  if (!store || store.status !== "ACTIVE") return null;
+
+  const catalog = await listCatalog(
+    database,
+    { organizationId: store.organizationId } as SessionPrincipal,
+    store.id
+  );
+
+  const productModMap = new Map<string, string[]>();
+  for (const mapping of catalog.productModifierGroups) {
+    const list = productModMap.get(mapping.productId) ?? [];
+    list.push(mapping.modifierGroupId);
+    productModMap.set(mapping.productId, list);
+  }
+
+  const activeCategories: PublicCatalogCategory[] = catalog.categories
+    .filter((c) => c.status === "ACTIVE")
+    .map((c) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const modifierGroupMap = new Map(catalog.modifierGroups.map((g) => [g.id, g]));
+
+  const publicProducts: PublicProductItem[] = [];
+  for (const product of catalog.products) {
+    if (product.status !== "ACTIVE") continue;
+    const avail = product.availability.find((a) => a.channel === channel);
+    if (!avail || !avail.isAvailable) continue;
+
+    const attachedGroupIds = productModMap.get(product.id) ?? [];
+    const attachedGroups = attachedGroupIds
+      .map((id) => modifierGroupMap.get(id))
+      .filter((g): g is ModifierGroupSummary => g !== undefined && g.status === "ACTIVE")
+      .map((g) => ({
+        ...g,
+        modifiers: g.modifiers.filter((m) => m.status === "ACTIVE")
+      }));
+
+    publicProducts.push({
+      id: product.id,
+      ...(product.categoryId === undefined ? {} : { categoryId: product.categoryId }),
+      name: product.name,
+      description: product.description,
+      basePriceMinor: product.basePriceMinor,
+      effectivePriceMinor: avail.priceOverrideMinor ?? product.basePriceMinor,
+      currency: product.currency,
+      soldOut: avail.soldOut,
+      variants: product.variants.filter((v) => v.status === "ACTIVE"),
+      modifierGroups: attachedGroups
+    });
+  }
+
+  return {
+    store: {
+      id: store.id,
+      code: store.code,
+      name: store.name,
+      currency: store.currency
+    },
+    channel,
+    categories: activeCategories,
+    products: publicProducts
+  };
 }

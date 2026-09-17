@@ -80,11 +80,18 @@ export interface ProductSummary {
   availability: ProductAvailabilitySummary[];
 }
 
+export interface ProductModifierGroupMapping {
+  productId: string;
+  modifierGroupId: string;
+  sortOrder: number;
+}
+
 export interface CatalogSnapshot {
   categories: CategorySummary[];
   products: ProductSummary[];
   menus: MenuSummary[];
   modifierGroups: ModifierGroupSummary[];
+  productModifierGroups: ProductModifierGroupMapping[];
 }
 
 export interface MenuSummary {
@@ -321,6 +328,64 @@ export interface StoreSummary {
   name: string;
   code: string;
   timezone: string;
+}
+
+export interface TableSummary {
+  id: string;
+  organizationId: string;
+  storeId: string;
+  tableNumber: string;
+  label?: string;
+  qrCodeUrl?: string;
+  status: "ACTIVE" | "INACTIVE";
+}
+
+export interface PublicProductItem {
+  id: string;
+  categoryId?: string;
+  name: string;
+  description: string;
+  basePriceMinor: number;
+  effectivePriceMinor: number;
+  currency: string;
+  soldOut: boolean;
+  variants: ProductVariantSummary[];
+  modifierGroups: ModifierGroupSummary[];
+}
+
+export interface PublicCatalogCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
+export interface PublicCatalogSnapshot {
+  store: {
+    id: string;
+    code: string;
+    name: string;
+    currency: string;
+  };
+  channel: CatalogChannel;
+  categories: PublicCatalogCategory[];
+  products: PublicProductItem[];
+}
+
+export interface CreatePublicOrderInput {
+  storeCode: string;
+  channel: "QR";
+  fulfillmentType: "TAKEAWAY" | "DINE_IN";
+  tableNumber?: string;
+  customerName?: string;
+  customerPhone?: string;
+  notes?: string;
+  items: Array<{
+    productId: string;
+    variantId?: string;
+    modifierIds?: string[];
+    quantity: number;
+    note?: string;
+  }>;
 }
 
 export interface ApiErrorBody {

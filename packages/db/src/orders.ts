@@ -1,5 +1,6 @@
 import type {
   CreateOrderInput,
+  CreatePublicOrderInput,
   FulfillmentType,
   OrderChannel,
   OrderListItem,
@@ -12,6 +13,7 @@ import type {
 } from "@aevo/contracts";
 import { fulfillmentTypes, orderChannels, orderStatuses, paymentMethods } from "@aevo/contracts";
 import { assertOrderTransition } from "@aevo/ordering";
+import { getStoreByCode } from "./catalog";
 import type { Database } from "./client";
 
 type Row = Record<string, unknown>;
@@ -274,7 +276,7 @@ export async function createOrder(
   const result = await database.client.rpc("create_order", {
     p_organization_id: principal.organizationId,
     p_store_id: normalized.storeId,
-    p_created_by: principal.userId,
+    p_created_by: (principal.userId && principal.userId.length > 0) ? principal.userId : null,
     p_channel: normalized.channel,
     p_fulfillment_type: normalized.fulfillmentType,
     p_currency: normalized.currency ?? null,
@@ -289,6 +291,41 @@ export async function createOrder(
   const row = firstRow(result.data);
   if (!row?.order_id) throw new Error("Supabase order creation returned no order");
   return getOrder(database, principal, normalized.storeId, String(row.order_id));
+}
+
+export async function createPublicOrder(
+  database: Database,
+  input: CreatePublicOrderInput,
+  idempotencyKey: string
+): Promise<OrderSummary> {
+  const store = await getStoreByCode(database, input.storeCode);
+  if (!store || store.status !== "ACTIVE") {
+    throw new OrderValidationError(`Store "${input.storeCode}" was not found or is inactive`);
+  }
+
+  const tablePrefix = input.tableNumber ? `[โต๊ะ ${input.tableNumber.trim()}] ` : "";
+  const combinedNotes = (tablePrefix + (input.notes?.trim() ?? "")).trim() || undefined;
+
+  const orderInput: CreateOrderInput = {
+    storeId: store.id,
+    channel: "QR",
+    fulfillmentType: input.fulfillmentType,
+    ...(input.customerName ? { customerName: input.customerName.trim() } : {}),
+    ...(input.customerPhone ? { customerPhone: input.customerPhone.trim() } : {}),
+    ...(combinedNotes ? { notes: combinedNotes } : {}),
+    items: input.items
+  };
+
+  const anonymousPrincipal: SessionPrincipal = {
+    userId: "",
+    email: "anonymous@customer",
+    organizationId: store.organizationId,
+    membershipId: "",
+    role: "VIEWER",
+    permissions: []
+  };
+
+  return createOrder(database, anonymousPrincipal, orderInput, idempotencyKey);
 }
 
 export async function transitionOrder(

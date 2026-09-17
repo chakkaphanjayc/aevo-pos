@@ -52,3 +52,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+/** api() with an auto-generated or custom Idempotency-Key header. */
+export function apiWithIdempotency<T>(path: string, method: string, body: unknown, key?: string): Promise<T> {
+  return api<T>(path, {
+    method,
+    body: JSON.stringify(body),
+    headers: { "idempotency-key": key || crypto.randomUUID() }
+  });
+}

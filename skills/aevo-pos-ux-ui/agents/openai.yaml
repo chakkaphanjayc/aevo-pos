@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aevo POS UX/UI"
+  short_description: "Thai-first UX/UI for Aevo POS Staff workflows"
+  brand_color: "#176348"
+  default_prompt: "Use $aevo-pos-ux-ui to review and improve this Aevo POS interface while preserving existing retail workflows."
+
+policy:
+  allow_implicit_invocation: true

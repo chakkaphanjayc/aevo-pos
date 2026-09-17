@@ -1,0 +1,1240 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+
+const { store: storeCode } = Astro.params;
+
+// The Worker currently deploys the web app as static assets. Store codes are
+// tenant data and cannot be enumerated safely at build time, so this route is
+// intentionally left to the runtime/dev router until a server adapter is used.
+export function getStaticPaths() {
+  return [];
+}
+---
+<BaseLayout title="สั่งอาหารออนไลน์">
+  <div class="qr-app" id="qr-app" data-store-code={storeCode || ""}>
+    <!-- Store Header -->
+    <header class="qr-header">
+      <div class="qr-header-info">
+        <span class="qr-brand-tag">AEVO SELF-ORDER</span>
+        <h1 class="qr-store-name" id="store-title">กำลังโหลดร้านค้า…</h1>
+        <div class="qr-meta-row">
+          <span class="qr-table-pill" id="table-badge" hidden>📍 โต๊ะ <strong id="table-number-text"></strong></span>
+          <span class="status online" id="store-status">เปิดรับออเดอร์</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Category Tabs -->
+    <nav class="qr-categories-wrap" aria-label="หมวดหมู่อาหาร">
+      <div class="qr-categories" id="category-tabs">
+        <button class="qr-cat-pill active" data-category="all" type="button">ทั้งหมด</button>
+      </div>
+    </nav>
+
+    <!-- Product Grid -->
+    <main class="qr-main">
+      <div class="qr-loading" id="loading-state">
+        <div class="qr-spinner"></div>
+        <p>กำลังเตรียมเมนูแสนอร่อย…</p>
+      </div>
+
+      <div class="qr-error-state" id="error-state" hidden>
+        <span class="qr-error-icon">🏬</span>
+        <h2>ไม่พบร้านค้า</h2>
+        <p id="error-message">ร้านค้านี้อาจยังไม่เปิดบริการ หรือรหัสร้านไม่ถูกต้อง</p>
+      </div>
+
+      <div class="qr-product-grid" id="product-grid" hidden></div>
+    </main>
+
+    <!-- Bottom floating cart bar -->
+    <div class="qr-cart-bar" id="cart-bar" hidden>
+      <div class="qr-cart-bar-details">
+        <span class="qr-cart-count-badge" id="cart-item-count">0</span>
+        <div class="qr-cart-bar-total">
+          <small>ยอดรวม</small>
+          <strong id="cart-bar-total-text">฿0.00</strong>
+        </div>
+      </div>
+      <button class="qr-btn qr-btn-primary qr-view-cart-btn" id="open-cart-btn" type="button">
+        ดูตะกร้า 🛒
+      </button>
+    </div>
+
+    <!-- Modifier Selection Dialog -->
+    <dialog class="qr-modal" id="mod-modal">
+      <div class="qr-modal-content">
+        <header class="qr-modal-header">
+          <div>
+            <h3 id="mod-product-title">ตัวเลือกสินค้า</h3>
+            <p class="qr-modal-subtitle" id="mod-product-desc"></p>
+          </div>
+          <button class="qr-close-btn" id="mod-close-btn" type="button" aria-label="ปิด">✕</button>
+        </header>
+
+        <div class="qr-modal-body" id="mod-groups-container"></div>
+
+        <footer class="qr-modal-footer">
+          <div class="qr-mod-total-display">
+            <small>ราคารวม</small>
+            <strong id="mod-price-display">฿0.00</strong>
+          </div>
+          <button class="qr-btn qr-btn-primary" id="mod-add-btn" type="button">เพิ่มลงตะกร้า</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <!-- Cart Bottom Sheet / Drawer -->
+    <dialog class="qr-modal qr-cart-modal" id="cart-modal">
+      <div class="qr-modal-content qr-cart-content">
+        <header class="qr-modal-header">
+          <h3>ตะกร้าสินค้า</h3>
+          <button class="qr-close-btn" id="cart-close-btn" type="button" aria-label="ปิด">✕</button>
+        </header>
+
+        <div class="qr-modal-body qr-cart-body">
+          <!-- Items -->
+          <div class="qr-cart-items-list" id="cart-items-container">
+            <p class="qr-empty-cart">ยังไม่มีสินค้าในตะกร้า</p>
+          </div>
+
+          <!-- Checkout Details -->
+          <div class="qr-checkout-details" id="checkout-details">
+            <div class="qr-form-group">
+              <label for="qr-fulfillment">ประเภทการรับสินค้า</label>
+              <div class="qr-segmented-control" id="qr-fulfillment">
+                <button class="qr-segment active" data-type="DINE_IN" type="button" id="seg-dinein">ทานที่ร้าน</button>
+                <button class="qr-segment" data-type="TAKEAWAY" type="button" id="seg-takeaway">ซื้อกลับ</button>
+              </div>
+            </div>
+
+            <div class="qr-form-row">
+              <div class="qr-form-group" id="table-group">
+                <label for="input-table">หมายเลขโต๊ะ</label>
+                <input class="qr-input" type="text" id="input-table" placeholder="เช่น 5 หรือ A1" maxlength="32" />
+              </div>
+              <div class="qr-form-group">
+                <label for="input-customer">ชื่อลูกค้า (ไม่จำเป็น)</label>
+                <input class="qr-input" type="text" id="input-customer" placeholder="ชื่อเล่นของคุณ" maxlength="160" />
+              </div>
+            </div>
+
+            <div class="qr-form-group">
+              <label for="input-phone">เบอร์โทรติดต่อ (ไม่จำเป็น)</label>
+              <input class="qr-input" type="tel" id="input-phone" placeholder="08x-xxx-xxxx" maxlength="40" />
+            </div>
+
+            <div class="qr-form-group">
+              <label for="input-notes">ข้อความถึงร้าน / หมายเหตุ</label>
+              <textarea class="qr-input qr-textarea" id="input-notes" rows="2" placeholder="เช่น ไม่ใส่ผักชี, แยกน้ำแข็ง" maxlength="500"></textarea>
+            </div>
+
+            <!-- Order Summary Lines -->
+            <div class="qr-bill-summary">
+              <div class="qr-bill-row"><span>ยอดรวมสินค้า</span><span id="bill-subtotal">฿0.00</span></div>
+              <div class="qr-bill-row qr-bill-grand"><span>ยอดสุทธิ</span><strong id="bill-total">฿0.00</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="qr-modal-footer qr-cart-footer">
+          <button class="qr-btn qr-btn-primary qr-submit-order-btn" id="submit-order-btn" type="button">
+            ยืนยันการสั่งอาหาร
+          </button>
+        </footer>
+      </div>
+    </dialog>
+
+    <!-- Success Confirmation Modal -->
+    <dialog class="qr-modal" id="success-modal">
+      <div class="qr-modal-content qr-success-content">
+        <div class="qr-success-icon">🎉</div>
+        <h2>สั่งอาหารสำเร็จแล้ว!</h2>
+        <p class="qr-success-message">ออเดอร์ของคุณถูกส่งไปยังครัวเรียบร้อยแล้ว</p>
+
+        <div class="qr-order-card">
+          <div class="qr-order-num-label">หมายเลขคำสั่งซื้อ</div>
+          <div class="qr-order-number" id="success-order-num">-</div>
+          <div class="qr-order-meta" id="success-order-meta"></div>
+        </div>
+
+        <p class="qr-success-hint">กรุณารอรับอาหารตามคิว หรือติดต่อเคาน์เตอร์แคชเชียร์</p>
+        <button class="qr-btn qr-btn-primary qr-done-btn" id="success-done-btn" type="button">
+          สั่งอาหารเพิ่ม
+        </button>
+      </div>
+    </dialog>
+  </div>
+
+  <script>
+    import { api, apiWithIdempotency, ApiError } from "../../lib/api";
+    import type {
+      PublicCatalogSnapshot,
+      PublicProductItem,
+      CreatePublicOrderInput,
+      OrderSummary
+    } from "@aevo/contracts";
+    import {
+      createEmptyQrCart,
+      addQrItem,
+      updateQrQuantity,
+      clearQrCart,
+      calculateQrTotals,
+      formatMoney,
+      saveCustomerInfo,
+      type QrCartItemModifier
+    } from "../../lib/qr-cart";
+
+    const appEl = document.getElementById("qr-app")!;
+    const storeCode = appEl.dataset.storeCode || "";
+
+    // Parse optional table from URL query (?table=...)
+    const queryParams = new URLSearchParams(window.location.search);
+    const initialTable = queryParams.get("table") || "";
+
+    let catalog: PublicCatalogSnapshot | null = null;
+    let cart = createEmptyQrCart(storeCode, initialTable || undefined);
+    let selectedCategoryId = "all";
+
+    // Modals
+    const modModal = document.getElementById("mod-modal") as HTMLDialogElement;
+    const cartModal = document.getElementById("cart-modal") as HTMLDialogElement;
+    const successModal = document.getElementById("success-modal") as HTMLDialogElement;
+
+    // Active product for modifier selection
+    let currentModalProduct: PublicProductItem | null = null;
+    let currentModalVariantId: string | undefined;
+
+    /* ---------------------------------------------------------------- */
+    /* Init & Load Catalog                                              */
+    /* ---------------------------------------------------------------- */
+    async function loadPublicMenu() {
+      const loadingEl = document.getElementById("loading-state")!;
+      const errorEl = document.getElementById("error-state")!;
+      const gridEl = document.getElementById("product-grid")!;
+
+      if (!storeCode) {
+        loadingEl.hidden = true;
+        errorEl.hidden = false;
+        return;
+      }
+
+      try {
+        catalog = await api<PublicCatalogSnapshot>(`/api/public/catalog?storeCode=${encodeURIComponent(storeCode)}&channel=QR`);
+        loadingEl.hidden = true;
+        gridEl.hidden = false;
+
+        document.getElementById("store-title")!.textContent = catalog.store.name;
+
+        if (initialTable) {
+          const tableBadge = document.getElementById("table-badge")!;
+          document.getElementById("table-number-text")!.textContent = initialTable;
+          tableBadge.hidden = false;
+          (document.getElementById("input-table") as HTMLInputElement).value = initialTable;
+        }
+
+        renderCategories();
+        renderProducts();
+      } catch (cause) {
+        loadingEl.hidden = true;
+        errorEl.hidden = false;
+        const msg = cause instanceof ApiError ? cause.message : "ไม่สามารถเชื่อมต่อร้านค้าได้";
+        document.getElementById("error-message")!.textContent = msg;
+      }
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Render Categories                                                */
+    /* ---------------------------------------------------------------- */
+    function renderCategories() {
+      if (!catalog) return;
+      const tabsContainer = document.getElementById("category-tabs")!;
+      tabsContainer.innerHTML = "";
+
+      const allBtn = document.createElement("button");
+      allBtn.className = "qr-cat-pill active";
+      allBtn.dataset.cat = "all";
+      allBtn.type = "button";
+      allBtn.textContent = "ทั้งหมด";
+      allBtn.addEventListener("click", () => filterCategory("all"));
+      tabsContainer.appendChild(allBtn);
+
+      for (const cat of catalog.categories) {
+        const btn = document.createElement("button");
+        btn.className = "qr-cat-pill";
+        btn.dataset.cat = cat.id;
+        btn.type = "button";
+        btn.textContent = cat.name;
+        btn.addEventListener("click", () => filterCategory(cat.id));
+        tabsContainer.appendChild(btn);
+      }
+    }
+
+    function filterCategory(catId: string) {
+      selectedCategoryId = catId;
+      document.querySelectorAll(".qr-cat-pill").forEach((pill) => {
+        pill.classList.toggle("active", (pill as HTMLElement).dataset.cat === catId);
+      });
+      renderProducts();
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Render Products                                                  */
+    /* ---------------------------------------------------------------- */
+    function renderProducts() {
+      if (!catalog) return;
+      const grid = document.getElementById("product-grid")!;
+      grid.innerHTML = "";
+
+      const filtered = selectedCategoryId === "all"
+        ? catalog.products
+        : catalog.products.filter((p) => p.categoryId === selectedCategoryId);
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '<div class="qr-no-products">ไม่มีสินค้าในหมวดหมู่นี้</div>';
+        return;
+      }
+
+      for (const product of filtered) {
+        const card = document.createElement("article");
+        card.className = `qr-card${product.soldOut ? " sold-out" : ""}`;
+
+        const priceText = formatMoney(product.effectivePriceMinor, product.currency);
+        const hasCustomization = product.variants.length > 0 || product.modifierGroups.length > 0;
+
+        card.innerHTML = `
+          <div class="qr-card-body">
+            <h4 class="qr-card-name"></h4>
+            <p class="qr-card-desc"></p>
+            <div class="qr-card-price-row">
+              <span class="qr-card-price"></span>
+              <button class="qr-card-add-btn" type="button" ${product.soldOut ? "disabled" : ""}>
+                ${product.soldOut ? "หมด" : hasCustomization ? "เลือก" : "+ เพิ่ม"}
+              </button>
+            </div>
+          </div>
+        `;
+
+        card.querySelector(".qr-card-name")!.textContent = product.name;
+        card.querySelector(".qr-card-desc")!.textContent = product.description || "";
+        card.querySelector(".qr-card-price")!.textContent = priceText;
+
+        const addBtn = card.querySelector<HTMLButtonElement>(".qr-card-add-btn")!;
+        addBtn.addEventListener("click", () => {
+          if (product.soldOut) return;
+          if (hasCustomization) {
+            openModifierModal(product);
+          } else {
+            cart = addQrItem(cart, {
+              productId: product.id,
+              productName: product.name,
+              unitPriceMinor: product.effectivePriceMinor,
+              quantity: 1,
+              modifiers: []
+            });
+            updateCartUi();
+          }
+        });
+
+        grid.appendChild(card);
+      }
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* Modifier / Option Modal                                          */
+    /* ---------------------------------------------------------------- */
+    function openModifierModal(product: PublicProductItem) {
+      currentModalProduct = product;
+      currentModalVariantId = product.variants[0]?.id;
+
+      document.getElementById("mod-product-title")!.textContent = product.name;
+      document.getElementById("mod-product-desc")!.textContent = product.description || "";
+
+      const container = document.getElementById("mod-groups-container")!;
+      container.innerHTML = "";
+
+      // Variants
+      if (product.variants.length > 0) {
+        const varGroup = document.createElement("div");
+        varGroup.className = "qr-mod-group";
+        varGroup.innerHTML = `
+          <div class="qr-mod-group-title">
+            <strong>ขนาด / รูปแบบ</strong>
+            <span class="qr-mod-req">จำเป็น</span>
+          </div>
+          <div class="qr-mod-options"></div>
+        `;
+        const optsContainer = varGroup.querySelector(".qr-mod-options")!;
+        product.variants.forEach((v, idx) => {
+          const opt = document.createElement("label");
+          opt.className = "qr-mod-opt";
+          opt.innerHTML = `
+            <input type="radio" name="variant_opt" value="${v.id}" ${idx === 0 ? "checked" : ""} />
+            <span>${v.name}</span>
+            <span class="qr-opt-delta">${formatMoney(v.priceMinor)}</span>
+          `;
+          opt.querySelector("input")!.addEventListener("change", () => {
+            currentModalVariantId = v.id;
+            updateModalPrice();
+          });
+          optsContainer.appendChild(opt);
+        });
+        container.appendChild(varGroup);
+      }
+
+      // Modifier Groups
+      for (const group of product.modifierGroups) {
+        const grpEl = document.createElement("div");
+        grpEl.className = "qr-mod-group";
+        grpEl.dataset.groupId = group.id;
+        grpEl.dataset.required = String(group.required);
+        grpEl.dataset.min = String(group.minSelections);
+        grpEl.dataset.max = String(group.maxSelections);
+        grpEl.dataset.type = group.selectionType;
+
+        const reqText = group.required ? "จำเป็น" : "ไม่จำเป็น";
+        grpEl.innerHTML = `
+          <div class="qr-mod-group-title">
+            <strong>${group.name}</strong>
+            <span class="qr-mod-req">${reqText}</span>
+          </div>
+          <div class="qr-mod-options"></div>
+        `;
+
+        const optsContainer = grpEl.querySelector(".qr-mod-options")!;
+        for (const mod of group.modifiers) {
+          const opt = document.createElement("label");
+          opt.className = "qr-mod-opt";
+          const inputType = group.selectionType === "SINGLE" ? "radio" : "checkbox";
+          const deltaText = mod.priceDeltaMinor > 0 ? `+${formatMoney(mod.priceDeltaMinor)}` : "ฟรี";
+
+          opt.innerHTML = `
+            <input type="${inputType}" name="mod_group_${group.id}" value="${mod.id}" data-delta="${mod.priceDeltaMinor}" data-name="${mod.name}" />
+            <span>${mod.name}</span>
+            <span class="qr-opt-delta">${deltaText}</span>
+          `;
+
+          opt.querySelector("input")!.addEventListener("change", () => {
+            updateModalPrice();
+          });
+          optsContainer.appendChild(opt);
+        }
+        container.appendChild(grpEl);
+      }
+
+      updateModalPrice();
+      modModal.showModal();
+    }
+
+    function updateModalPrice() {
+      if (!currentModalProduct) return;
+      let unitPrice = currentModalProduct.effectivePriceMinor;
+
+      if (currentModalVariantId && currentModalProduct.variants.length > 0) {
+        const selectedVar = currentModalProduct.variants.find((v) => v.id === currentModalVariantId);
+        if (selectedVar) unitPrice = selectedVar.priceMinor;
+      }
+
+      const checkedModifiers = document.querySelectorAll<HTMLInputElement>("#mod-groups-container input:checked");
+      let modTotal = 0;
+      checkedModifiers.forEach((inp) => {
+        if (inp.name !== "variant_opt") {
+          modTotal += Number(inp.dataset.delta || 0);
+        }
+      });
+
+      document.getElementById("mod-price-display")!.textContent = formatMoney(unitPrice + modTotal);
+
+      // Validate required groups
+      let isValid = true;
+      const groups = document.querySelectorAll<HTMLElement>(".qr-mod-group[data-group-id]");
+      groups.forEach((grp) => {
+        const required = grp.dataset.required === "true";
+        const min = Number(grp.dataset.min || 0);
+        const count = grp.querySelectorAll("input:checked").length;
+        if (required && count < Math.max(1, min)) {
+          isValid = false;
+        }
+      });
+
+      (document.getElementById("mod-add-btn") as HTMLButtonElement).disabled = !isValid;
+    }
+
+    document.getElementById("mod-close-btn")!.addEventListener("click", () => modModal.close());
+
+    document.getElementById("mod-add-btn")!.addEventListener("click", () => {
+      if (!currentModalProduct) return;
+
+      let unitPrice = currentModalProduct.effectivePriceMinor;
+      let variantName: string | undefined;
+
+      if (currentModalVariantId && currentModalProduct.variants.length > 0) {
+        const selectedVar = currentModalProduct.variants.find((v) => v.id === currentModalVariantId);
+        if (selectedVar) {
+          unitPrice = selectedVar.priceMinor;
+          variantName = selectedVar.name;
+        }
+      }
+
+      const checkedMods: QrCartItemModifier[] = [];
+      document.querySelectorAll<HTMLInputElement>("#mod-groups-container input:checked").forEach((inp) => {
+        if (inp.name !== "variant_opt") {
+          checkedMods.push({
+            modifierId: inp.value,
+            name: inp.dataset.name || "",
+            priceDeltaMinor: Number(inp.dataset.delta || 0)
+          });
+        }
+      });
+
+      cart = addQrItem(cart, {
+        productId: currentModalProduct.id,
+        productName: currentModalProduct.name,
+        variantId: currentModalVariantId,
+        variantName,
+        unitPriceMinor: unitPrice,
+        quantity: 1,
+        modifiers: checkedMods
+      });
+
+      modModal.close();
+      updateCartUi();
+    });
+
+    /* ---------------------------------------------------------------- */
+    /* Cart UI & Bottom Bar                                             */
+    /* ---------------------------------------------------------------- */
+    function updateCartUi() {
+      const cartBar = document.getElementById("cart-bar")!;
+      const totalCount = cart.items.reduce((s, i) => s + i.quantity, 0);
+
+      if (totalCount > 0) {
+        const totals = calculateQrTotals(cart);
+        document.getElementById("cart-item-count")!.textContent = String(totalCount);
+        document.getElementById("cart-bar-total-text")!.textContent = formatMoney(totals.totalMinor);
+        cartBar.hidden = false;
+      } else {
+        cartBar.hidden = true;
+      }
+
+      renderCartDrawer();
+    }
+
+    function renderCartDrawer() {
+      const container = document.getElementById("cart-items-container")!;
+      if (cart.items.length === 0) {
+        container.innerHTML = '<p class="qr-empty-cart">ยังไม่มีสินค้าในตะกร้า</p>';
+        document.getElementById("bill-subtotal")!.textContent = "฿0.00";
+        document.getElementById("bill-total")!.textContent = "฿0.00";
+        (document.getElementById("submit-order-btn") as HTMLButtonElement).disabled = true;
+        return;
+      }
+
+      container.innerHTML = "";
+      for (const item of cart.items) {
+        const row = document.createElement("div");
+        row.className = "qr-cart-row";
+
+        const varLabel = item.variantName ? ` (${item.variantName})` : "";
+        const modsList = item.modifiers.map((m) => `<small class="qr-cart-item-mod">+ ${m.name}</small>`).join("");
+        const total = (item.unitPriceMinor + item.modifierPriceMinor) * item.quantity;
+
+        row.innerHTML = `
+          <div class="qr-cart-item-info">
+            <strong>${item.productName}${varLabel}</strong>
+            ${modsList}
+            <span class="qr-cart-item-price">${formatMoney(total)}</span>
+          </div>
+          <div class="qr-cart-qty-ctrl">
+            <button class="qr-qty-btn dec" type="button">-</button>
+            <span class="qr-qty-val">${item.quantity}</span>
+            <button class="qr-qty-btn inc" type="button">+</button>
+          </div>
+        `;
+
+        row.querySelector(".dec")!.addEventListener("click", () => {
+          cart = updateQrQuantity(cart, item.id, item.quantity - 1);
+          updateCartUi();
+        });
+        row.querySelector(".inc")!.addEventListener("click", () => {
+          cart = updateQrQuantity(cart, item.id, item.quantity + 1);
+          updateCartUi();
+        });
+
+        container.appendChild(row);
+      }
+
+      const totals = calculateQrTotals(cart);
+      document.getElementById("bill-subtotal")!.textContent = formatMoney(totals.subtotalMinor);
+      document.getElementById("bill-total")!.textContent = formatMoney(totals.totalMinor);
+      (document.getElementById("submit-order-btn") as HTMLButtonElement).disabled = false;
+    }
+
+    document.getElementById("open-cart-btn")!.addEventListener("click", () => {
+      cartModal.showModal();
+    });
+    document.getElementById("cart-close-btn")!.addEventListener("click", () => {
+      cartModal.close();
+    });
+
+    // Fulfillment segment buttons
+    document.getElementById("seg-dinein")!.addEventListener("click", () => {
+      cart.fulfillmentType = "DINE_IN";
+      document.getElementById("seg-dinein")!.classList.add("active");
+      document.getElementById("seg-takeaway")!.classList.remove("active");
+      document.getElementById("table-group")!.hidden = false;
+    });
+    document.getElementById("seg-takeaway")!.addEventListener("click", () => {
+      cart.fulfillmentType = "TAKEAWAY";
+      document.getElementById("seg-takeaway")!.classList.add("active");
+      document.getElementById("seg-dinein")!.classList.remove("active");
+      document.getElementById("table-group")!.hidden = true;
+    });
+
+    /* ---------------------------------------------------------------- */
+    /* Submit Order                                                     */
+    /* ---------------------------------------------------------------- */
+    const submitBtn = document.getElementById("submit-order-btn") as HTMLButtonElement;
+    submitBtn.addEventListener("click", async () => {
+      if (cart.items.length === 0) return;
+
+      const customerName = (document.getElementById("input-customer") as HTMLInputElement).value.trim();
+      const customerPhone = (document.getElementById("input-phone") as HTMLInputElement).value.trim();
+      const tableNumber = (document.getElementById("input-table") as HTMLInputElement).value.trim();
+      const notes = (document.getElementById("input-notes") as HTMLTextAreaElement).value.trim();
+
+      saveCustomerInfo(customerName, customerPhone);
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "กำลังส่งออเดอร์…";
+
+      const orderInput: CreatePublicOrderInput = {
+        storeCode,
+        channel: "QR",
+        fulfillmentType: cart.fulfillmentType,
+        ...(tableNumber ? { tableNumber } : {}),
+        ...(customerName ? { customerName } : {}),
+        ...(customerPhone ? { customerPhone } : {}),
+        ...(notes ? { notes } : {}),
+        items: cart.items.map((i) => ({
+          productId: i.productId,
+          ...(i.variantId ? { variantId: i.variantId } : {}),
+          ...(i.modifiers.length > 0 ? { modifierIds: i.modifiers.map((m) => m.modifierId) } : {}),
+          quantity: i.quantity,
+          ...(i.note ? { note: i.note } : {})
+        }))
+      };
+
+      try {
+        const { order } = await apiWithIdempotency<{ order: OrderSummary }>(
+          "/api/public/orders",
+          "POST",
+          orderInput
+        );
+
+        cartModal.close();
+        cart = clearQrCart(cart);
+        updateCartUi();
+
+        // Show Success confirmation
+        document.getElementById("success-order-num")!.textContent = order.orderNumber;
+        const metaText = `ร้าน ${catalog?.store.name ?? ""} · ${order.fulfillmentType === "DINE_IN" ? (tableNumber ? `โต๊ะ ${tableNumber}` : "ทานที่ร้าน") : "ซื้อกลับ"}`;
+        document.getElementById("success-order-meta")!.textContent = metaText;
+
+        successModal.showModal();
+      } catch (cause) {
+        alert(cause instanceof Error ? cause.message : "ส่งออเดอร์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "ยืนยันการสั่งอาหาร";
+      }
+    });
+
+    document.getElementById("success-done-btn")!.addEventListener("click", () => {
+      successModal.close();
+    });
+
+    loadPublicMenu();
+  </script>
+
+  <style>
+    :root {
+      --qr-bg: #f8fafc;
+      --qr-card: #ffffff;
+      --qr-brand: #185f48;
+      --qr-brand-hover: #124635;
+      --qr-accent: #22c55e;
+      --qr-text: #0f172a;
+      --qr-muted: #64748b;
+      --qr-line: #e2e8f0;
+      --qr-radius: 16px;
+    }
+
+    body {
+      background: var(--qr-bg);
+      color: var(--qr-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      margin: 0;
+      padding-bottom: 90px;
+    }
+
+    .qr-app {
+      max-width: 600px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: var(--qr-bg);
+      position: relative;
+    }
+
+    /* Header */
+    .qr-header {
+      background: linear-gradient(135deg, var(--qr-brand), #0d382b);
+      color: white;
+      padding: 24px 20px 18px;
+      border-radius: 0 0 24px 24px;
+      box-shadow: 0 4px 20px rgba(18, 70, 53, .15);
+    }
+    .qr-brand-tag {
+      font-size: .68rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      background: rgba(255, 255, 255, .15);
+      padding: 3px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .qr-store-name {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin: 0 0 8px;
+      letter-spacing: -.02em;
+    }
+    .qr-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: .8rem;
+    }
+    .qr-table-pill {
+      background: rgba(255, 255, 255, .2);
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    /* Categories */
+    .qr-categories-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(248, 250, 252, .92);
+      backdrop-filter: blur(10px);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--qr-line);
+    }
+    .qr-categories {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .qr-categories::-webkit-scrollbar { display: none; }
+    .qr-cat-pill {
+      all: unset;
+      cursor: pointer;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: .86rem;
+      font-weight: 600;
+      color: var(--qr-muted);
+      background: var(--qr-card);
+      border: 1px solid var(--qr-line);
+      white-space: nowrap;
+      transition: all .15s ease;
+    }
+    .qr-cat-pill.active {
+      background: var(--qr-brand);
+      color: white;
+      border-color: var(--qr-brand);
+      box-shadow: 0 2px 8px rgba(24, 95, 72, .25);
+    }
+
+    /* Product Grid */
+    .qr-main {
+      padding: 16px;
+    }
+    .qr-product-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .qr-card {
+      background: var(--qr-card);
+      border: 1px solid var(--qr-line);
+      border-radius: var(--qr-radius);
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .03);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: transform .1s, border-color .15s;
+    }
+    .qr-card:active {
+      transform: scale(.99);
+    }
+    .qr-card.sold-out {
+      opacity: .5;
+    }
+    .qr-card-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .qr-card-name {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 750;
+    }
+    .qr-card-desc {
+      margin: 4px 0 10px;
+      font-size: .8rem;
+      color: var(--qr-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .qr-card-price-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .qr-card-price {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--qr-brand);
+    }
+    .qr-card-add-btn {
+      all: unset;
+      cursor: pointer;
+      background: #eef5f2;
+      color: var(--qr-brand);
+      border: 1px solid #d1e5db;
+      font-weight: 750;
+      font-size: .82rem;
+      padding: 8px 16px;
+      border-radius: 999px;
+      transition: all .15s;
+    }
+    .qr-card-add-btn:hover:not([disabled]) {
+      background: var(--qr-brand);
+      color: white;
+    }
+
+    /* Floating Cart Bar */
+    .qr-cart-bar {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      max-width: 568px;
+      margin: 0 auto;
+      background: var(--qr-brand);
+      color: white;
+      border-radius: 999px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 30px rgba(18, 70, 53, .35);
+      z-index: 50;
+      animation: slideUp .25s ease-out;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .qr-cart-bar-details {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .qr-cart-count-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: white;
+      color: var(--qr-brand);
+      font-weight: 850;
+      font-size: .9rem;
+      display: grid;
+      place-items: center;
+    }
+    .qr-cart-bar-total small {
+      display: block;
+      font-size: .68rem;
+      opacity: .8;
+    }
+    .qr-cart-bar-total strong {
+      font-size: 1.1rem;
+    }
+    .qr-view-cart-btn {
+      background: white;
+      color: var(--qr-brand);
+      font-weight: 800;
+      padding: 8px 18px;
+      border-radius: 999px;
+    }
+
+    /* Modal / Drawer */
+    .qr-modal {
+      border: none;
+      padding: 0;
+      background: transparent;
+      max-width: 500px;
+      width: 100%;
+    }
+    .qr-modal::backdrop {
+      background: rgba(15, 23, 42, .6);
+      backdrop-filter: blur(4px);
+    }
+    .qr-modal-content {
+      background: white;
+      border-radius: 24px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: 85vh;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .2);
+    }
+    .qr-modal-header {
+      padding: 18px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--qr-line);
+    }
+    .qr-modal-header h3 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+    .qr-modal-subtitle {
+      margin: 4px 0 0;
+      font-size: .8rem;
+      color: var(--qr-muted);
+    }
+    .qr-close-btn {
+      all: unset;
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #f1f5f9;
+      color: var(--qr-muted);
+      font-size: .9rem;
+    }
+    .qr-modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .qr-modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--qr-line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fafafa;
+    }
+    .qr-mod-total-display small {
+      display: block;
+      font-size: .72rem;
+      color: var(--qr-muted);
+    }
+    .qr-mod-total-display strong {
+      font-size: 1.25rem;
+      color: var(--qr-brand);
+    }
+
+    /* Options in modal */
+    .qr-mod-group {
+      background: #f8fafc;
+      border: 1px solid var(--qr-line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .qr-mod-group-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .qr-mod-req {
+      font-size: .7rem;
+      padding: 2px 7px;
+      border-radius: 99px;
+      background: #e2e8f0;
+      color: var(--qr-muted);
+      font-weight: 700;
+    }
+    .qr-mod-options {
+      display: grid;
+      gap: 8px;
+    }
+    .qr-mod-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: white;
+      border-radius: 10px;
+      border: 1px solid var(--qr-line);
+      cursor: pointer;
+      font-size: .88rem;
+    }
+    .qr-opt-delta {
+      margin-left: auto;
+      color: var(--qr-muted);
+      font-size: .8rem;
+      font-weight: 700;
+    }
+
+    /* Cart Drawer items */
+    .qr-cart-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--qr-line);
+    }
+    .qr-cart-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .qr-cart-item-info strong {
+      display: block;
+      font-size: .92rem;
+    }
+    .qr-cart-item-mod {
+      display: block;
+      font-size: .75rem;
+      color: var(--qr-muted);
+    }
+    .qr-cart-item-price {
+      display: block;
+      margin-top: 4px;
+      font-weight: 750;
+      color: var(--qr-brand);
+      font-size: .88rem;
+    }
+    .qr-cart-qty-ctrl {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--qr-line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .qr-qty-btn {
+      all: unset;
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      background: #f8fafc;
+    }
+    .qr-qty-val {
+      min-width: 28px;
+      text-align: center;
+      font-weight: 750;
+      font-size: .88rem;
+    }
+
+    /* Form in checkout */
+    .qr-checkout-details {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .qr-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .qr-form-group label {
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--qr-muted);
+    }
+    .qr-form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .qr-input {
+      border: 1px solid var(--qr-line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: .9rem;
+      background: #f8fafc;
+    }
+    .qr-input:focus {
+      outline: 2px solid var(--qr-brand);
+      background: white;
+    }
+    .qr-textarea { resize: vertical; }
+    .qr-segmented-control {
+      display: flex;
+      background: #e2e8f0;
+      padding: 3px;
+      border-radius: 10px;
+      gap: 4px;
+    }
+    .qr-segment {
+      all: unset;
+      cursor: pointer;
+      flex: 1;
+      text-align: center;
+      padding: 8px;
+      font-size: .84rem;
+      font-weight: 700;
+      border-radius: 8px;
+      color: var(--qr-muted);
+    }
+    .qr-segment.active {
+      background: white;
+      color: var(--qr-brand);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, .08);
+    }
+
+    /* Bill summary */
+    .qr-bill-summary {
+      background: #f8fafc;
+      padding: 12px 14px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .qr-bill-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: .85rem;
+      color: var(--qr-muted);
+    }
+    .qr-bill-grand {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--qr-brand);
+      border-top: 1px solid var(--qr-line);
+      padding-top: 6px;
+      margin-top: 2px;
+    }
+
+    /* Buttons */
+    .qr-btn {
+      all: unset;
+      cursor: pointer;
+      box-sizing: border-box;
+      text-align: center;
+      font-weight: 750;
+      font-size: .95rem;
+      padding: 12px 20px;
+      border-radius: 14px;
+      transition: all .15s;
+    }
+    .qr-btn-primary {
+      background: var(--qr-brand);
+      color: white;
+    }
+    .qr-btn-primary:hover:not([disabled]) {
+      background: var(--qr-brand-hover);
+    }
+    .qr-btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    .qr-submit-order-btn {
+      width: 100%;
+    }
+
+    /* Success Card */
+    .qr-success-content {
+      padding: 36px 24px;
+      text-align: center;
+    }
+    .qr-success-icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+    }
+    .qr-success-content h2 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    .qr-success-message {
+      color: var(--qr-muted);
+      font-size: .9rem;
+      margin: 6px 0 20px;
+    }
+    .qr-order-card {
+      background: #f0fdf4;
+      border: 1.5px dashed #86efac;
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+    .qr-order-num-label {
+      font-size: .75rem;
+      font-weight: 750;
+      color: #166534;
+      letter-spacing: .05em;
+    }
+    .qr-order-number {
+      font-size: 1.6rem;
+      font-weight: 850;
+      color: var(--qr-brand);
+      margin: 6px 0;
+    }
+    .qr-order-meta {
+      font-size: .8rem;
+      color: #166534;
+    }
+    .qr-success-hint {
+      font-size: .82rem;
+      color: var(--qr-muted);
+      margin-bottom: 24px;
+    }
+    .qr-done-btn {
+      width: 100%;
+    }
+
+    /* States */
+    .qr-loading, .qr-error-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .qr-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e2e8f0;
+      border-top-color: var(--qr-brand);
+      border-radius: 50%;
+      margin: 0 auto 16px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .qr-error-icon { font-size: 3rem; }
+    .qr-empty-cart { text-align: center; color: var(--qr-muted); padding: 24px 0; }
+  </style>
+</BaseLayout>

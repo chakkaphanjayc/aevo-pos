@@ -11,10 +11,14 @@ import {
   createMenuItem,
   createModifierGroup,
   createProduct,
+  createProductModifierGroup,
+  deleteProductModifierGroup,
   listAuthorizedStores,
   listCatalog,
   createOrder,
+  createPublicOrder,
   getOrder,
+  getPublicCatalog,
   listOrders,
   OrderConflictError,
   OrderNotFoundError,
@@ -25,6 +29,7 @@ import {
   updateProductAvailability
 } from "@aevo/db";
 import { InvalidOrderTransitionError } from "@aevo/ordering";
+import { createStoreRoomBroadcaster, type RealtimeEventName, type RealtimePayloadMap } from "@aevo/realtime";
 import { Elysia, t } from "elysia";
 import { AppError, forbidden, unauthorized } from "./errors";
 import { clearSessionCookie, clientIp, decodeAuthSessionCookie, encodeAuthSessionCookie, readCookie, sessionCookie } from "./http";
@@ -42,6 +47,7 @@ export function createApp(dependencies: AppDependencies) {
   const auth = dependencies.auth ?? new AuthService(database);
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
+  const publicOrderLimiter = new FixedWindowRateLimiter(10, 60_000);
   const secureCookie = config.nodeEnv === "production";
   const cookieSameSite = config.sessionCookieSameSite ?? "lax";
   const catalogChannelSchema = t.Union([
@@ -105,6 +111,17 @@ export function createApp(dependencies: AppDependencies) {
     return "order.create";
   }
 
+  async function broadcastStoreEvent<E extends RealtimeEventName>(
+    storeId: string,
+    event: E,
+    payload: RealtimePayloadMap[E]
+  ): Promise<void> {
+    if (typeof (database.client as { channel?: unknown })?.channel === "function") {
+      const broadcaster = createStoreRoomBroadcaster(database.client as never, storeId);
+      await broadcaster.broadcast(event, payload);
+    }
+  }
+
   return new Elysia({ name: "aevo-api" })
     .derive({ as: "global" }, ({ request, set }) => {
       const requestId = request.headers.get("x-request-id")?.slice(0, 128) || randomUUID();
@@ -134,8 +151,8 @@ export function createApp(dependencies: AppDependencies) {
     })
     .options("/*", ({ set }) => {
       set.status = 204;
-      set.headers["access-control-allow-methods"] = "GET,POST,PATCH,OPTIONS";
-      set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id";
+      set.headers["access-control-allow-methods"] = "GET,POST,PATCH,DELETE,OPTIONS";
+      set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id,idempotency-key";
       set.headers["access-control-expose-headers"] = "x-request-id";
       set.headers["access-control-max-age"] = "600";
       return "";
@@ -252,7 +269,9 @@ export function createApp(dependencies: AppDependencies) {
       assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "order.create");
       try {
-        return { order: await createOrder(database, principal, body, idempotencyKey(request)) };
+        const order = await createOrder(database, principal, body, idempotencyKey(request));
+        await broadcastStoreEvent(body.storeId, "order.created", { order });
+        return { order };
       } catch (error) {
         return rethrowOrderError(error);
       }
@@ -280,7 +299,15 @@ export function createApp(dependencies: AppDependencies) {
       assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, orderActionPermission(body.toStatus));
       try {
-        return { order: await transitionOrder(database, principal, params.orderId, body, idempotencyKey(request)) };
+        const order = await transitionOrder(database, principal, params.orderId, body, idempotencyKey(request));
+        await broadcastStoreEvent(body.storeId, "order.status", {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          fromStatus: (body.expectedStatus as never) ?? "DRAFT",
+          toStatus: order.status,
+          occurredAt: new Date().toISOString()
+        });
+        return { order };
       } catch (error) {
         return rethrowOrderError(error);
       }
@@ -307,7 +334,14 @@ export function createApp(dependencies: AppDependencies) {
       assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "payment.receive");
       try {
-        return { order: await recordOrderPayment(database, principal, params.orderId, body, idempotencyKey(request)) };
+        const order = await recordOrderPayment(database, principal, params.orderId, body, idempotencyKey(request));
+        await broadcastStoreEvent(body.storeId, "order.payment", {
+          orderId: order.id,
+          paymentMethod: body.method,
+          amountMinor: body.amountMinor,
+          occurredAt: new Date().toISOString()
+        });
+        return { order };
       } catch (error) {
         return rethrowOrderError(error);
       }
@@ -326,6 +360,46 @@ export function createApp(dependencies: AppDependencies) {
       return await listCatalog(database, principal, query.storeId);
     }, {
       query: t.Object({ storeId: t.String({ format: "uuid" }) })
+    })
+    .get("/api/public/catalog", async ({ query }) => {
+      const catalog = await getPublicCatalog(database, query.storeCode, (query.channel as never) || "QR");
+      if (!catalog) throw new AppError(404, "STORE_NOT_FOUND", "Store was not found or is inactive");
+      return catalog;
+    }, {
+      query: t.Object({
+        storeCode: t.String({ minLength: 1, maxLength: 32 }),
+        channel: t.Optional(catalogChannelSchema)
+      })
+    })
+    .post("/api/public/orders", async ({ request, body }) => {
+      const ip = clientIp(request) ?? "unknown";
+      if (!publicOrderLimiter.consume(ip)) {
+        throw new AppError(429, "RATE_LIMITED", "Too many orders submitted. Please wait a moment.");
+      }
+      try {
+        const order = await createPublicOrder(database, body, idempotencyKey(request));
+        await broadcastStoreEvent(order.storeId, "order.created", { order });
+        return { order };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      body: t.Object({
+        storeCode: t.String({ minLength: 1, maxLength: 32 }),
+        channel: t.Literal("QR"),
+        fulfillmentType: t.Union([t.Literal("TAKEAWAY"), t.Literal("DINE_IN")]),
+        tableNumber: t.Optional(t.String({ maxLength: 32 })),
+        customerName: t.Optional(t.String({ maxLength: 160 })),
+        customerPhone: t.Optional(t.String({ maxLength: 40 })),
+        notes: t.Optional(t.String({ maxLength: 2000 })),
+        items: t.Array(t.Object({
+          productId: t.String({ format: "uuid" }),
+          variantId: t.Optional(t.String({ format: "uuid" })),
+          modifierIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 50 })),
+          quantity: t.Integer({ minimum: 1, maximum: 999 }),
+          note: t.Optional(t.String({ maxLength: 1000 }))
+        }), { minItems: 1, maxItems: 100 })
+      })
     })
     .post("/api/catalog/categories", async ({ request, body }) => {
       assertAllowedOrigin(request);
@@ -459,6 +533,38 @@ export function createApp(dependencies: AppDependencies) {
         isAvailable: t.Optional(t.Boolean()),
         soldOut: t.Optional(t.Boolean()),
         priceOverrideMinor: t.Optional(t.Nullable(t.Integer({ minimum: 0, maximum: 2147483647 })))
+      })
+    })
+    .post("/api/catalog/product-modifier-groups", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "catalog.manage");
+      try {
+        return { productModifierGroup: await createProductModifierGroup(database, principal, body) };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        productId: t.String({ format: "uuid" }),
+        modifierGroupId: t.String({ format: "uuid" }),
+        sortOrder: t.Optional(t.Integer({ minimum: 0, maximum: 999 }))
+      })
+    })
+    .delete("/api/catalog/product-modifier-groups", async ({ request, query }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, query.storeId, "catalog.manage");
+      try {
+        await deleteProductModifierGroup(database, principal, query.productId, query.modifierGroupId);
+        return { ok: true };
+      } catch (error) {
+        return rethrowCatalogError(error);
+      }
+    }, {
+      query: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        productId: t.String({ format: "uuid" }),
+        modifierGroupId: t.String({ format: "uuid" })
       })
     });
 }

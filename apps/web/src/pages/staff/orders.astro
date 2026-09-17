@@ -1,136 +1,328 @@
 ---
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
 ---
-<BaseLayout title="Orders">
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand brand-link" href="/staff"><span class="brand-mark">A</span> Aevo Staff</a>
-      <div class="header-actions"><span class="status" id="connection-status">Online</span><button id="logout" class="button secondary" type="button">ออกจากระบบ</button></div>
-    </header>
-    <main class="page">
-      <div class="page-heading">
-        <div>
-          <a class="back" id="workspace-link" href="/staff">← กลับ workspace</a>
-          <p class="eyebrow">Orders · Phase 2</p>
-          <h1>รายการออเดอร์</h1>
-          <p class="lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
-        </div>
-        <div class="toolbar">
-          <label>สถานะ<select id="status-filter" aria-label="กรองสถานะ"><option value="">ทั้งหมด</option><option value="DRAFT">Draft</option><option value="PENDING_PAYMENT">รอชำระเงิน</option><option value="PAID">ชำระแล้ว</option><option value="CONFIRMED">ยืนยันแล้ว</option><option value="PREPARING">กำลังเตรียม</option><option value="READY">พร้อมรับ</option><option value="COMPLETED">เสร็จสิ้น</option><option value="CANCELLED">ยกเลิก</option></select></label>
-          <button class="button secondary" id="refresh" type="button">รีเฟรช</button>
-        </div>
+
+<StaffShell title="ออเดอร์" active="orders">
+  <div class="staff-page orders-page">
+    <div class="staff-page-header orders-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Orders · Store activity</p>
+        <h1 class="staff-page-title">ออเดอร์</h1>
+        <p class="staff-page-lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
       </div>
-      <p class="error" id="error" role="alert" hidden></p>
-      <section class="card panel">
-        <div class="panel-heading"><div><p class="eyebrow">Unified order engine</p><h2>ออเดอร์ของสาขา</h2></div><span class="count" id="order-count">0</span></div>
-        <div class="order-list" id="orders" aria-live="polite"><p class="empty">กำลังโหลดออเดอร์…</p></div>
-      </section>
-    </main>
+      <div class="orders-header-actions">
+        <a class="button" id="pos-link" href="#"><StaffIcon name="pos" size={17} />เปิด POS</a>
+        <button class="button secondary" id="refresh" type="button"><StaffIcon name="refresh" size={16} />รีเฟรช</button>
+      </div>
+    </div>
+
+    <p class="error" id="error" role="alert" hidden></p>
+    <div class="orders-summary" aria-label="สรุปออเดอร์">
+      <div class="orders-summary-item surface"><span class="orders-summary-label">รายการที่โหลด</span><strong id="total-count">—</strong><small>ล่าสุด 100 รายการ</small></div>
+      <div class="orders-summary-item surface"><span class="orders-summary-label">กำลังดำเนินการ</span><strong id="open-count">—</strong><small>ยังไม่เสร็จสิ้น</small></div>
+      <div class="orders-summary-item surface"><span class="orders-summary-label">พร้อมรับ / เสร็จแล้ว</span><strong id="ready-count">—</strong><small>สถานะปลายทาง</small></div>
+      <div class="orders-summary-item surface"><span class="orders-summary-label">ยอดรวมที่แสดง</span><strong id="sales-total">—</strong><small>จากรายการที่โหลด</small></div>
+    </div>
+
+    <section class="orders-panel surface" aria-labelledby="orders-heading">
+      <div class="orders-panel-heading"><div><span class="staff-eyebrow">Order queue</span><h2 id="orders-heading">รายการล่าสุด</h2></div><span class="orders-panel-note" id="result-count">กำลังโหลด…</span></div>
+      <div class="orders-toolbar">
+        <label class="orders-search"><StaffIcon name="search" size={17} /><span class="sr-only">ค้นหาออเดอร์</span><input id="search" type="search" placeholder="ค้นหาเลขออเดอร์…" autocomplete="off" /></label>
+        <label class="orders-filter"><span>สถานะ</span><select id="status-filter" aria-label="กรองสถานะ"><option value="">ทั้งหมด</option><option value="DRAFT">Draft</option><option value="PENDING_PAYMENT">รอชำระเงิน</option><option value="PAID">ชำระแล้ว</option><option value="CONFIRMED">ยืนยันแล้ว</option><option value="PREPARING">กำลังเตรียม</option><option value="READY">พร้อมรับ</option><option value="COMPLETED">เสร็จสิ้น</option><option value="CANCELLED">ยกเลิก</option></select></label>
+      </div>
+      <div class="orders-list-wrap" id="orders-list-wrap">
+        <div class="orders-table-head" aria-hidden="true"><span>ออเดอร์</span><span>ช่องทาง / เวลา</span><span>รายการ</span><span>ยอดรวม</span><span>สถานะ</span><span></span></div>
+        <div class="orders-list" id="orders" aria-live="polite"><div class="orders-loading-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><div class="orders-loading-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></div>
+      </div>
+    </section>
   </div>
+
+  <dialog class="order-dialog" id="order-dialog" aria-labelledby="order-dialog-title">
+    <div class="order-dialog-card">
+      <div class="order-dialog-heading"><div><span class="staff-eyebrow">Order detail</span><h2 id="order-dialog-title">รายละเอียดออเดอร์</h2></div><button class="staff-icon-button" id="detail-close" type="button" aria-label="ปิด"><StaffIcon name="close" size={18} /></button></div>
+      <div class="order-dialog-body" id="order-detail"><div class="empty-state"><p>กำลังโหลดรายละเอียด…</p></div></div>
+    </div>
+  </dialog>
+
   <script>
     import { api, ApiError } from "../../lib/api";
-    import type { OrderListItem, SessionPrincipal, StoreSummary } from "@aevo/contracts";
+    import { friendlyErrorMessage, getSelectedStoreId, findSelectedStore, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { OrderListItem, OrderStatus, OrderSummary, StoreSummary } from "@aevo/contracts";
 
     const error = document.querySelector<HTMLParagraphElement>("#error")!;
     const list = document.querySelector<HTMLElement>("#orders")!;
-    const count = document.querySelector<HTMLElement>("#order-count")!;
+    const search = document.querySelector<HTMLInputElement>("#search")!;
     const statusFilter = document.querySelector<HTMLSelectElement>("#status-filter")!;
     const refresh = document.querySelector<HTMLButtonElement>("#refresh")!;
-    const params = new URLSearchParams(window.location.search);
-    let selectedStoreId = params.get("store") || sessionStorage.getItem("aevo.selectedStoreId") || "";
+    const dialog = document.querySelector<HTMLDialogElement>("#order-dialog")!;
+    const detail = document.querySelector<HTMLElement>("#order-detail")!;
+    const requestedStoreId = getSelectedStoreId();
+    let selectedStoreId = "";
+    let stores: StoreSummary[] = [];
     let orders: OrderListItem[] = [];
+    let lastLoaded = false;
+    let ordersLoadVersion = 0;
 
-    const statusLabels: Record<string, string> = {
-      DRAFT: "Draft", PENDING_PAYMENT: "รอชำระเงิน", PAID: "ชำระแล้ว", CONFIRMED: "ยืนยันแล้ว",
-      QUEUED: "เข้าคิว", ACCEPTED: "รับงานแล้ว", PREPARING: "กำลังเตรียม", PARTIALLY_READY: "พร้อมบางรายการ",
-      READY: "พร้อมรับ", SERVED: "เสิร์ฟแล้ว", PICKED_UP: "รับสินค้าแล้ว", COMPLETED: "เสร็จสิ้น",
-      CANCELLED: "ยกเลิก", REFUNDED: "คืนเงินแล้ว", PARTIALLY_REFUNDED: "คืนเงินบางส่วน", NO_SHOW: "ไม่มารับ"
+    function ordersCacheKey(): string {
+      return `aevo.staff.orders.v1.${selectedStoreId}.${statusFilter.value || "ALL"}`;
+    }
+
+    function readCachedOrders(): OrderListItem[] | null {
+      try {
+        const raw = sessionStorage.getItem(ordersCacheKey());
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { cachedAt?: number; orders?: OrderListItem[] };
+        if (!parsed.cachedAt || Date.now() - parsed.cachedAt > 45_000 || !Array.isArray(parsed.orders)) return null;
+        return parsed.orders;
+      } catch {
+        return null;
+      }
+    }
+
+    function cacheOrders(nextOrders: OrderListItem[]): void {
+      try {
+        sessionStorage.setItem(ordersCacheKey(), JSON.stringify({ cachedAt: Date.now(), orders: nextOrders }));
+      } catch {
+        // Storage is an optimization only; the API remains the source of truth.
+      }
+    }
+
+    const statusLabels: Record<OrderStatus, string> = {
+      DRAFT: "Draft", PENDING_PAYMENT: "รอชำระเงิน", PAID: "ชำระแล้ว", CONFIRMED: "ยืนยันแล้ว", QUEUED: "เข้าคิว", ACCEPTED: "รับงานแล้ว", PREPARING: "กำลังเตรียม", PARTIALLY_READY: "พร้อมบางรายการ", READY: "พร้อมรับ", SERVED: "เสิร์ฟแล้ว", PICKED_UP: "รับสินค้าแล้ว", COMPLETED: "เสร็จสิ้น", CANCELLED: "ยกเลิก", REFUNDED: "คืนเงินแล้ว", PARTIALLY_REFUNDED: "คืนเงินบางส่วน", NO_SHOW: "ไม่มารับ"
     };
+    const channelLabels: Record<string, string> = { POS: "หน้าร้าน", QR: "QR", KIOSK: "Kiosk", PICKUP: "รับเอง", STAFF: "Staff", API: "API" };
+    const fulfillmentLabels: Record<string, string> = { TAKEAWAY: "ซื้อกลับ", DINE_IN: "ทานที่ร้าน", PICKUP: "รับสินค้า" };
 
-    function money(minor: number, currency: string) {
+    function money(minor: number, currency: string): string {
       return new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
     }
 
-    function render() {
-      count.textContent = String(orders.length);
+    function escapeHtml(value: string): string {
+      const element = document.createElement("span");
+      element.textContent = value;
+      return element.innerHTML;
+    }
+
+    function visibleOrders(): OrderListItem[] {
+      const needle = search.value.trim().toLowerCase();
+      return orders.filter((order) => !needle || `${order.orderNumber} ${order.channel} ${order.fulfillmentType}`.toLowerCase().includes(needle));
+    }
+
+    function updateSummary(): void {
+      const open = orders.filter((order) => !["COMPLETED", "CANCELLED", "REFUNDED", "PICKED_UP"].includes(order.status)).length;
+      const ready = orders.filter((order) => ["READY", "SERVED", "PICKED_UP", "COMPLETED"].includes(order.status)).length;
+      const total = orders.reduce((sum, order) => sum + order.totalMinor, 0);
+      document.querySelector<HTMLElement>("#total-count")!.textContent = String(orders.length);
+      document.querySelector<HTMLElement>("#open-count")!.textContent = String(open);
+      document.querySelector<HTMLElement>("#ready-count")!.textContent = String(ready);
+      document.querySelector<HTMLElement>("#sales-total")!.textContent = money(total, orders[0]?.currency ?? "THB");
+      document.querySelector<HTMLElement>("#result-count")!.textContent = `${visibleOrders().length} รายการ`;
+    }
+
+    function render(): void {
+      const rows = visibleOrders();
+      updateSummary();
       list.replaceChildren();
-      if (!orders.length) {
-        list.innerHTML = '<p class="empty">ยังไม่มีออเดอร์ในสาขานี้</p>';
+      if (!rows.length) {
+        list.innerHTML = `<div class="empty-state orders-empty"><span class="orders-empty-icon">▤</span><strong>${orders.length ? "ไม่พบออเดอร์ที่ค้นหา" : "ยังไม่มีออเดอร์ในสาขานี้"}</strong><p>${orders.length ? "ลองเปลี่ยนคำค้นหาหรือเลือกสถานะอื่น" : "ออเดอร์จาก POS และช่องทางอื่นจะปรากฏที่นี่"}</p></div>`;
         return;
       }
-      for (const order of orders) {
-        const card = document.createElement("article");
-        card.className = "order-row";
-        card.innerHTML = `<div><p class="order-number"></p><p class="muted order-meta"></p></div><div class="order-total"><strong></strong><span class="status-pill"></span></div>`;
-        card.querySelector(".order-number")!.textContent = order.orderNumber;
-        card.querySelector(".order-meta")!.textContent = `${order.channel} · ${order.fulfillmentType} · ${order.itemCount} รายการ · ${new Date(order.createdAt).toLocaleString("th-TH")}`;
-        card.querySelector(".order-total strong")!.textContent = money(order.totalMinor, order.currency);
-        const pill = card.querySelector<HTMLElement>(".status-pill")!;
-        pill.textContent = statusLabels[order.status] || order.status;
+      const fragment = document.createDocumentFragment();
+      for (const order of rows) {
+        const row = document.createElement("button");
+        row.className = "order-row";
+        row.type = "button";
+        row.innerHTML = `
+          <span class="order-cell order-cell-main"><strong></strong><small></small></span>
+          <span class="order-cell"><strong class="order-channel"></strong><small class="order-time"></small></span>
+          <span class="order-cell order-cell-items"><strong></strong><small>รายการ</small></span>
+          <span class="order-cell order-cell-total"><strong></strong><small>ยอดรวม</small></span>
+          <span class="order-status"></span>
+          <span class="order-row-arrow" aria-hidden="true">→</span>
+        `;
+        row.querySelector<HTMLElement>(".order-cell-main strong")!.textContent = order.orderNumber;
+        row.querySelector<HTMLElement>(".order-cell-main small")!.textContent = order.paymentStatus === "PAID" ? "ชำระเงินแล้ว" : "ยังไม่ชำระเงิน";
+        row.querySelector<HTMLElement>(".order-channel")!.textContent = channelLabels[order.channel] ?? order.channel;
+        row.querySelector<HTMLElement>(".order-time")!.textContent = new Date(order.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        row.querySelector<HTMLElement>(".order-cell-items strong")!.textContent = String(order.itemCount);
+        row.querySelector<HTMLElement>(".order-cell-total strong")!.textContent = money(order.totalMinor, order.currency);
+        const pill = row.querySelector<HTMLElement>(".order-status")!;
+        pill.textContent = statusLabels[order.status] ?? order.status;
         pill.dataset.status = order.status;
-        list.append(card);
+        row.addEventListener("click", () => void openOrder(order.id));
+        fragment.append(row);
+      }
+      list.append(fragment);
+    }
+
+    function setLoading(loading: boolean): void {
+      refresh.disabled = loading;
+      statusFilter.disabled = loading;
+      if (loading && !lastLoaded) list.innerHTML = '<div class="orders-loading-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><div class="orders-loading-row"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>';
+    }
+
+    async function loadOrders(): Promise<void> {
+      if (!selectedStoreId) return;
+      const loadVersion = ++ordersLoadVersion;
+      const hadVisibleOrders = lastLoaded;
+      setLoading(!hadVisibleOrders);
+      const cached = !hadVisibleOrders ? readCachedOrders() : null;
+      if (cached) {
+        orders = cached;
+        lastLoaded = true;
+        error.hidden = true;
+        render();
+      }
+      try {
+        const query = new URLSearchParams({ storeId: selectedStoreId, limit: "100" });
+        if (statusFilter.value) query.set("status", statusFilter.value);
+        const result = await api<{ orders: OrderListItem[] }>(`/api/orders?${query}`);
+        if (loadVersion !== ordersLoadVersion) return;
+        orders = result.orders;
+        lastLoaded = true;
+        cacheOrders(orders);
+        error.hidden = true;
+        render();
+      } catch (cause) {
+        if (loadVersion !== ordersLoadVersion) return;
+        error.textContent = friendlyErrorMessage(cause, "โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่");
+        error.hidden = false;
+        if (!lastLoaded) list.innerHTML = `<div class="empty-state orders-empty"><strong>ยังโหลดรายการไม่ได้</strong><p>ตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง</p></div>`;
+      } finally {
+        if (loadVersion === ordersLoadVersion) setLoading(false);
       }
     }
 
-    async function loadOrders() {
-      if (!selectedStoreId) { window.location.assign("/staff"); return; }
-      error.hidden = true;
-      refresh.disabled = true;
+    async function openOrder(orderId: string): Promise<void> {
+      detail.innerHTML = '<div class="empty-state"><p>กำลังโหลดรายละเอียด…</p></div>';
+      dialog.showModal();
       try {
-        const query = new URLSearchParams({ storeId: selectedStoreId });
-        if (statusFilter.value) query.set("status", statusFilter.value);
-        const result = await api<{ orders: OrderListItem[] }>(`/api/orders?${query}`);
-        orders = result.orders;
-        render();
+        const result = await api<{ order: OrderSummary }>(`/api/orders/${encodeURIComponent(orderId)}?storeId=${encodeURIComponent(selectedStoreId)}`);
+        const order = result.order;
+        detail.innerHTML = `
+          <div class="order-detail-meta"><div><span>เลขออเดอร์</span><strong>${escapeHtml(order.orderNumber)}</strong></div><div><span>สถานะ</span><strong class="detail-status" data-status="${order.status}">${escapeHtml(statusLabels[order.status] ?? order.status)}</strong></div><div><span>ประเภท</span><strong>${escapeHtml(fulfillmentLabels[order.fulfillmentType] ?? order.fulfillmentType)}</strong></div><div><span>เวลา</span><strong>${new Date(order.createdAt).toLocaleString("th-TH")}</strong></div></div>
+          <div class="order-detail-items">${order.items.map((item) => `<div class="order-detail-item"><div><strong>${escapeHtml(item.productName)}${item.variantName ? ` · ${escapeHtml(item.variantName)}` : ""}</strong><small>${item.quantity} × ${money(item.unitPriceMinor, order.currency)}${item.modifiers.length ? ` · ${item.modifiers.map((modifier) => escapeHtml(modifier.name)).join(", ")}` : ""}</small></div><strong>${money(item.subtotalMinor, order.currency)}</strong></div>`).join("")}</div>
+          <div class="order-detail-total"><span>ยอดรวม</span><strong>${money(order.totalMinor, order.currency)}</strong></div>
+          ${order.customerName ? `<p class="order-detail-customer">ลูกค้า: ${escapeHtml(order.customerName)}</p>` : ""}
+        `;
       } catch (cause) {
-        if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-        else { error.textContent = cause instanceof Error ? cause.message : "โหลดออเดอร์ไม่สำเร็จ"; error.hidden = false; }
-      } finally { refresh.disabled = false; }
+        detail.innerHTML = `<div class="empty-state"><strong>โหลดรายละเอียดไม่ได้</strong><p>${escapeHtml(friendlyErrorMessage(cause, "กรุณาลองใหม่อีกครั้ง"))}</p></div>`;
+      }
+    }
+
+    document.querySelector<HTMLButtonElement>("#detail-close")!.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    search.addEventListener("input", render);
+    statusFilter.addEventListener("change", () => {
+      const url = new URL(window.location.href);
+      if (statusFilter.value) url.searchParams.set("status", statusFilter.value); else url.searchParams.delete("status");
+      history.replaceState(null, "", `${url.pathname}${url.search}`);
+      orders = [];
+      lastLoaded = false;
+      void loadOrders();
+    });
+    refresh.addEventListener("click", () => void loadOrders());
+
+    async function initialise(): Promise<void> {
+      const { user, stores: authorizedStores } = await loadStaffContext();
+      stores = authorizedStores;
+      const store = findSelectedStore(stores, requestedStoreId);
+      if (!store) {
+        window.location.assign("/staff");
+        return;
+      }
+      selectedStoreId = store.id;
+      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
+      const fromUrl = new URLSearchParams(window.location.search).get("status");
+      if (fromUrl) statusFilter.value = fromUrl;
+      document.querySelector<HTMLElement>("#store-summary")!.textContent = `${store.name} · ${store.code} · ${user.displayName || user.email}`;
+      document.querySelector<HTMLAnchorElement>("#pos-link")!.href = storeUrl("/staff/pos", selectedStoreId);
+      initStaffShell({
+        user,
+        stores,
+        selectedStoreId,
+        onStoreChange: async (nextStoreId) => {
+          selectedStoreId = nextStoreId;
+          orders = [];
+          lastLoaded = false;
+          const nextStore = stores.find((item) => item.id === nextStoreId);
+          if (!nextStore) return;
+          history.replaceState(null, "", storeUrl("/staff/orders", nextStoreId));
+          statusFilter.value = "";
+          document.querySelector<HTMLElement>("#store-summary")!.textContent = `${nextStore.name} · ${nextStore.code} · ${user.displayName || user.email}`;
+          document.querySelector<HTMLAnchorElement>("#pos-link")!.href = storeUrl("/staff/pos", selectedStoreId);
+          await loadOrders();
+        }
+      });
+      await loadOrders();
     }
 
     try {
-      const [{ user }, { stores }] = await Promise.all([
-        api<{ user: SessionPrincipal }>("/api/auth/me"),
-        api<{ stores: StoreSummary[] }>("/api/stores")
-      ]);
-      const store = stores.find((item) => item.id === selectedStoreId);
-      if (!store) window.location.assign("/staff");
-      else {
-        sessionStorage.setItem("aevo.selectedStoreId", store.id);
-        document.querySelector("#store-summary")!.textContent = `${store.name} · ${store.code} · ${user.displayName || user.email}`;
-        document.querySelector<HTMLAnchorElement>("#workspace-link")!.href = `/staff/workspace?store=${encodeURIComponent(store.id)}`;
-        await loadOrders();
-      }
+      await initialise();
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-      else { error.textContent = cause instanceof Error ? cause.message : "โหลด workspace ไม่สำเร็จ"; error.hidden = false; }
+      else { error.textContent = friendlyErrorMessage(cause, "โหลดออเดอร์ไม่สำเร็จ กรุณาลองใหม่"); error.hidden = false; }
     }
-    statusFilter.addEventListener("change", () => void loadOrders());
-    refresh.addEventListener("click", () => void loadOrders());
-    document.querySelector("#logout")!.addEventListener("click", async () => {
-      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-      sessionStorage.removeItem("aevo.selectedStoreId");
-      window.location.assign("/login");
-    });
   </script>
-  <style>
-    .brand-link { text-decoration: none; }
-    .header-actions, .toolbar { display: flex; align-items: center; gap: 16px; }
-    .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
-    .toolbar { align-items: flex-end; }
-    .toolbar label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
-    .toolbar select { min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: white; }
-    .panel { padding: 22px; }
-    .order-list { display: grid; gap: 10px; }
-    .order-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
-    .order-number, .order-meta { margin: 0; }
-    .order-number { font-weight: 850; letter-spacing: .04em; }
-    .order-meta { margin-top: 5px; font-size: .82rem; }
-    .order-total { display: grid; justify-items: end; gap: 7px; white-space: nowrap; }
-    .status-pill { padding: 4px 9px; border-radius: 999px; color: var(--brand); background: #e7f2ed; font-size: .75rem; font-weight: 800; }
-    .status-pill[data-status="CANCELLED"], .status-pill[data-status="REFUNDED"] { color: #9c2f2f; background: #fde8e8; }
-    .status-pill[data-status="READY"], .status-pill[data-status="COMPLETED"] { color: #7c5b00; background: #fff3c4; }
-    @media (max-width: 700px) { .page-heading { display: block; } .toolbar { margin-top: 18px; justify-content: space-between; } .order-row { align-items: flex-start; } .order-total { text-align: right; } }
-    @media (max-width: 520px) { .status { display: none; } .order-row { padding: 13px; } .order-meta { line-height: 1.45; } }
+
+  <style is:global>
+    .orders-header-actions { display: flex; gap: 8px; }
+    .orders-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 28px; }
+    .orders-summary-item { display: grid; gap: 3px; padding: 14px 15px; }
+    .orders-summary-label { color: var(--muted); font-size: .7rem; font-weight: 760; }
+    .orders-summary-item strong { color: var(--ink); font-size: 1.25rem; letter-spacing: -.03em; }
+    .orders-summary-item small { color: var(--subtle); font-size: .67rem; }
+    .orders-panel { margin-top: 22px; overflow: hidden; }
+    .orders-panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 19px 20px 14px; }
+    .orders-panel-heading .staff-eyebrow { margin-bottom: 4px; }
+    .orders-panel-heading h2 { margin: 0; font-size: 1.1rem; }
+    .orders-panel-note { color: var(--muted); font-size: .73rem; }
+    .orders-toolbar { display: flex; align-items: end; gap: 10px; padding: 0 20px 16px; border-bottom: 1px solid var(--line); }
+    .orders-search { display: flex; align-items: center; flex: 1; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface); }
+    .orders-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: .82rem; }
+    .orders-filter { display: grid; gap: 5px; min-width: 180px; color: var(--muted); font-size: .7rem; font-weight: 760; }
+    .orders-filter select { min-height: 44px; padding: 0 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface); font-size: .8rem; }
+    .orders-list-wrap { overflow-x: auto; }
+    .orders-table-head, .order-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(125px, 1fr) 74px minmax(115px, .8fr) minmax(108px, .8fr) 26px; align-items: center; gap: 12px; min-width: 700px; padding: 0 20px; }
+    .orders-table-head { min-height: 39px; color: var(--subtle); font-size: .67rem; font-weight: 790; letter-spacing: .03em; text-transform: uppercase; }
+    .orders-list { padding-bottom: 5px; }
+    .order-row { width: 100%; min-height: 76px; border: 0; border-top: 1px solid var(--line); color: var(--ink); background: var(--surface); text-align: left; cursor: pointer; transition: background var(--duration-fast); }
+    .order-row:hover { background: var(--surface-soft); }
+    .order-cell { display: grid; min-width: 0; gap: 3px; }
+    .order-cell strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+    .order-cell small { overflow: hidden; color: var(--muted); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+    .order-cell-main strong { color: var(--brand); letter-spacing: .03em; }
+    .order-cell-items, .order-cell-total { text-align: right; }
+    .order-cell-total strong { color: var(--ink); }
+    .order-status, .detail-status { display: inline-flex; width: fit-content; align-items: center; min-height: 27px; padding: 0 9px; border: 1px solid #c9e6d2; border-radius: 999px; color: var(--success); background: var(--success-soft); font-size: .68rem; font-weight: 780; white-space: nowrap; }
+    .order-status[data-status="DRAFT"], .order-status[data-status="PENDING_PAYMENT"], .order-status[data-status="PREPARING"] { border-color: #f2d697; color: var(--warning); background: var(--warning-soft); }
+    .order-status[data-status="CANCELLED"], .order-status[data-status="REFUNDED"], .order-status[data-status="NO_SHOW"] { border-color: #f1c9c6; color: var(--danger); background: var(--danger-soft); }
+    .order-row-arrow { color: var(--subtle); font-size: 1.1rem; text-align: right; }
+    .orders-loading-row { display: grid; grid-template-columns: 1.3fr 1fr .5fr; gap: 18px; min-width: 700px; min-height: 76px; align-items: center; padding: 0 20px; border-top: 1px solid var(--line); }
+    .orders-loading-row .skeleton { height: 12px; }
+    .orders-empty { min-width: 0; min-height: 250px; }
+    .orders-empty-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; color: var(--brand); background: var(--brand-soft); }
+    .order-dialog { width: min(520px, calc(100% - 28px)); max-height: min(760px, calc(100dvh - 28px)); padding: 0; border: 0; border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 24px 70px rgba(14, 48, 32, .2); }
+    .order-dialog::backdrop { background: rgba(13, 31, 23, .35); }
+    .order-dialog-card { display: grid; max-height: inherit; }
+    .order-dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px; border-bottom: 1px solid var(--line); }
+    .order-dialog-heading .staff-eyebrow { margin-bottom: 4px; }
+    .order-dialog-heading h2 { margin: 0; font-size: 1.15rem; }
+    .order-dialog-body { overflow: auto; padding: 20px; }
+    .order-detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .order-detail-meta div { display: grid; gap: 3px; }
+    .order-detail-meta span { color: var(--muted); font-size: .7rem; }
+    .order-detail-meta strong { font-size: .8rem; }
+    .order-detail-items { display: grid; gap: 12px; padding: 18px 0; }
+    .order-detail-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+    .order-detail-item div { display: grid; gap: 3px; }
+    .order-detail-item strong { font-size: .8rem; }
+    .order-detail-item small { color: var(--muted); font-size: .7rem; line-height: 1.45; }
+    .order-detail-total { display: flex; justify-content: space-between; padding-top: 15px; border-top: 1px solid var(--line); font-size: .82rem; }
+    .order-detail-total strong { color: var(--brand); font-size: 1.15rem; }
+    .order-detail-customer { margin: 16px 0 0; color: var(--muted); font-size: .76rem; }
+    @media (max-width: 800px) { .orders-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 620px) { .orders-header-actions { margin-top: 18px; } .orders-header-actions .button { flex: 1; } .orders-summary { gap: 8px; margin-top: 22px; } .orders-summary-item { padding: 12px; } .orders-toolbar { align-items: stretch; flex-direction: column; } .orders-filter { min-width: 0; } .orders-panel-heading { padding-left: 15px; padding-right: 15px; } .orders-toolbar { padding-left: 15px; padding-right: 15px; } .orders-table-head, .order-row, .orders-loading-row { padding-left: 15px; padding-right: 15px; } }
   </style>
-</BaseLayout>
+</StaffShell>

@@ -17,6 +17,8 @@
         "@aevo/config": "workspace:*",
         "@aevo/contracts": "workspace:*",
         "@aevo/db": "workspace:*",
+        "@aevo/ordering": "workspace:*",
+        "@aevo/realtime": "workspace:*",
         "elysia": "^1.4.15",
       },
       "devDependencies": {
@@ -102,6 +104,17 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/realtime": {
+      "name": "@aevo/realtime",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aevo/contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.21",
+        "typescript": "^5.9.2",
+      },
+    },
   },
   "packages": {
     "@aevo/api": ["@aevo/api@workspace:apps/api"],
@@ -115,6 +128,8 @@
     "@aevo/db": ["@aevo/db@workspace:packages/db"],
 
     "@aevo/ordering": ["@aevo/ordering@workspace:packages/ordering"],
+
+    "@aevo/realtime": ["@aevo/realtime@workspace:packages/realtime"],
 
     "@aevo/web": ["@aevo/web@workspace:apps/web"],
 

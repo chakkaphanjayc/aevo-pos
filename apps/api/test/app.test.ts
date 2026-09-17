@@ -126,5 +126,24 @@ describe("API foundation", () => {
     }));
     expect(response.status).toBe(204);
     expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
+    expect(response.headers.get("access-control-allow-methods")).toContain("DELETE");
+  });
+
+  test("product-modifier-groups requires catalog permission", async () => {
+    const response = await app.handle(new Request("http://localhost/api/catalog/product-modifier-groups", {
+      method: "POST",
+      headers: {
+        cookie: cookieHeader(),
+        origin: config.webOrigin,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        storeId: "00000000-0000-4000-8000-000000000011",
+        productId: "00000000-0000-4000-8000-000000000022",
+        modifierGroupId: "00000000-0000-4000-8000-000000000033"
+      })
+    }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
   });
 });
