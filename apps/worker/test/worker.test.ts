@@ -23,3 +23,31 @@ test("Worker routes API paths to Elysia and everything else to assets", async ()
   expect(assetResponse.status).toBe(200);
   expect(await assetResponse.text()).toBe("asset");
 });
+
+test("health remains a liveness check when runtime configuration is missing", async () => {
+  let runtimeCalls = 0;
+  const worker = createWorker(() => {
+    runtimeCalls += 1;
+    throw new Error("Missing required environment variable: SUPABASE_URL");
+  });
+  const response = await worker.fetch(new Request("http://localhost:8787/health", {
+    headers: { "x-request-id": "health-request" }
+  }), {} as never);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("x-request-id")).toBe("health-request");
+  expect(await response.json()).toMatchObject({ status: "ok", requestId: "health-request" });
+  expect(runtimeCalls).toBe(0);
+});
+
+test("readiness returns a structured configuration error instead of a Worker 1101", async () => {
+  const worker = createWorker(() => {
+    throw new Error("Missing required environment variable: SUPABASE_SECRET_KEY");
+  });
+  const response = await worker.fetch(new Request("http://localhost:8787/ready", {
+    headers: { "x-request-id": "ready-request" }
+  }), {} as never);
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({
+    error: { code: "RUNTIME_NOT_CONFIGURED", requestId: "ready-request" }
+  });
+});

@@ -1,0 +1,357 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Catalog">
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand brand-link" href="/staff"><span class="brand-mark">A</span> Aevo Staff</a>
+      <div class="header-actions"><span class="status">Online</span><button id="logout" class="button secondary" type="button">ออกจากระบบ</button></div>
+    </header>
+    <main class="page">
+      <div class="page-heading">
+        <div>
+          <a class="back" href="/staff">← กลับไปเลือกสาขา</a>
+          <p class="eyebrow">Catalog · Phase 1</p>
+          <h1>จัดการสินค้าและหมวดหมู่</h1>
+          <p class="lede">ตั้งค่าเมนูพื้นฐานสำหรับ POS, QR และ Kiosk โดยข้อมูลทั้งหมดแยกตามองค์กรและสาขา</p>
+        </div>
+        <label class="store-picker">สาขา<select id="store" aria-label="เลือกสาขา"></select></label>
+      </div>
+      <p class="error" id="error" role="alert" hidden></p>
+      <p class="success" id="success" role="status" hidden></p>
+
+      <section class="catalog-layout">
+        <section class="card panel">
+          <div class="panel-heading"><div><p class="eyebrow">Categories</p><h2>หมวดหมู่</h2></div><span class="count" id="category-count">0</span></div>
+          <form id="category-form" class="form-stack">
+            <label>ชื่อหมวดหมู่<input id="category-name" name="name" required maxlength="160" placeholder="เช่น กาแฟ" /></label>
+            <label>รหัส (ถ้ามี)<input id="category-code" name="code" maxlength="32" placeholder="COFFEE" /></label>
+            <button class="button" type="submit">เพิ่มหมวดหมู่</button>
+          </form>
+          <div class="category-list" id="categories" aria-live="polite"></div>
+        </section>
+
+        <section class="card panel">
+          <div class="panel-heading"><div><p class="eyebrow">Products</p><h2>สินค้า</h2></div><span class="count" id="product-count">0</span></div>
+          <form id="product-form" class="form-stack product-form">
+            <div class="form-row">
+              <label>SKU<input id="product-sku" name="sku" required maxlength="64" placeholder="LATTE" /></label>
+              <label>ชื่อสินค้า<input id="product-name" name="name" required maxlength="160" placeholder="Latte" /></label>
+            </div>
+            <div class="form-row">
+              <label>หมวดหมู่<select id="product-category" name="categoryId"><option value="">ไม่ระบุ</option></select></label>
+              <label>ราคา (บาท)<input id="product-price" name="price" required inputmode="decimal" min="0" step="0.01" type="number" placeholder="65" /></label>
+            </div>
+            <label>รายละเอียด<textarea id="product-description" name="description" maxlength="2000" rows="2" placeholder="รายละเอียดสินค้า (ถ้ามี)"></textarea></label>
+            <button class="button" type="submit">เพิ่มสินค้า</button>
+          </form>
+          <div class="product-list" id="products" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section class="card panel configuration-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Menus & modifiers</p><h2>เมนูและตัวเลือกสินค้า</h2></div><span class="count" id="menu-count">0</span></div>
+        <div class="configuration-grid">
+          <div>
+            <form id="menu-form" class="form-stack">
+              <label>ชื่อเมนู<input id="menu-name" required maxlength="160" placeholder="เมนูหน้าร้าน" /></label>
+              <div class="form-row">
+                <label>รหัส (ถ้ามี)<input id="menu-code" maxlength="32" placeholder="POS_MAIN" /></label>
+                <label>ช่องทาง<select id="menu-channel"><option value="POS">POS</option><option value="QR">QR</option><option value="KIOSK">Kiosk</option><option value="PICKUP">Pickup</option></select></label>
+              </div>
+              <button class="button" type="submit">เพิ่มเมนู</button>
+            </form>
+            <div class="compact-list" id="menus" aria-live="polite"></div>
+          </div>
+          <div>
+            <form id="modifier-form" class="form-stack">
+              <label>กลุ่มตัวเลือก<input id="modifier-name" required maxlength="160" placeholder="ประเภทนม" /></label>
+              <div class="form-row">
+                <label>รูปแบบ<select id="modifier-type"><option value="SINGLE">เลือก 1 รายการ</option><option value="MULTIPLE">เลือกได้หลายรายการ</option></select></label>
+                <label class="checkbox-label"><input id="modifier-required" type="checkbox" /> บังคับเลือก</label>
+              </div>
+              <label>ตัวเลือก (หนึ่งรายการต่อบรรทัด)<textarea id="modifier-items" rows="3" placeholder="นมปกติ|0\nนมโอ๊ต|20"></textarea></label>
+              <button class="button" type="submit">เพิ่มกลุ่มตัวเลือก</button>
+            </form>
+            <div class="compact-list" id="modifier-groups" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    import { api, ApiError } from "../../lib/api";
+    import type { CategorySummary, MenuSummary, ModifierGroupSummary, ProductSummary, SessionPrincipal, StoreSummary } from "@aevo/contracts";
+
+    const error = document.querySelector<HTMLParagraphElement>("#error")!;
+    const success = document.querySelector<HTMLParagraphElement>("#success")!;
+    const storeSelect = document.querySelector<HTMLSelectElement>("#store")!;
+    let stores: StoreSummary[] = [];
+    let categories: CategorySummary[] = [];
+    let products: ProductSummary[] = [];
+    let menus: MenuSummary[] = [];
+    let modifierGroups: ModifierGroupSummary[] = [];
+    let selectedStoreId = new URLSearchParams(window.location.search).get("store") || sessionStorage.getItem("aevo.selectedStoreId") || "";
+
+    function showError(cause: unknown) {
+      error.textContent = cause instanceof Error ? cause.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
+      error.hidden = false;
+      success.hidden = true;
+    }
+
+    function showSuccess(message: string) {
+      success.textContent = message;
+      success.hidden = false;
+      error.hidden = true;
+      window.setTimeout(() => { success.hidden = true; }, 2600);
+    }
+
+    function money(minor: number, currency: string) {
+      return new Intl.NumberFormat("th-TH", { style: "currency", currency }).format(minor / 100);
+    }
+
+    function renderCategories() {
+      document.querySelector("#category-count")!.textContent = String(categories.length);
+      const list = document.querySelector<HTMLElement>("#categories")!;
+      list.replaceChildren();
+      if (!categories.length) {
+        list.innerHTML = '<p class="empty">ยังไม่มีหมวดหมู่ เริ่มจากสร้างหมวดแรก</p>';
+      }
+      for (const category of categories) {
+        const item = document.createElement("div");
+        item.className = "category-item";
+        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status">เปิดใช้งาน</span>`;
+        item.querySelector("strong")!.textContent = category.name;
+        item.querySelector("small")!.textContent = `${category.code} · ${category.slug}`;
+        list.append(item);
+      }
+      const categorySelect = document.querySelector<HTMLSelectElement>("#product-category")!;
+      const current = categorySelect.value;
+      categorySelect.replaceChildren(new Option("ไม่ระบุ", ""));
+      for (const category of categories) categorySelect.add(new Option(category.name, category.id));
+      categorySelect.value = current;
+    }
+
+    function renderProducts() {
+      document.querySelector("#product-count")!.textContent = String(products.length);
+      const list = document.querySelector<HTMLElement>("#products")!;
+      list.replaceChildren();
+      if (!products.length) list.innerHTML = '<p class="empty">ยังไม่มีสินค้าในองค์กรนี้</p>';
+      for (const product of products) {
+        const category = categories.find((item) => item.id === product.categoryId);
+        const posAvailability = product.availability.find((item) => item.channel === "POS");
+        const soldOut = posAvailability?.soldOut ?? false;
+        const item = document.createElement("article");
+        item.className = `product-item${product.status === "ARCHIVED" ? " archived" : ""}`;
+        item.innerHTML = `
+          <div class="product-copy"><div class="product-title"><strong></strong><span class="sku"></span></div>
+          <p class="product-meta"></p><p class="product-description"></p></div>
+          <div class="product-actions"><strong class="price"></strong><button class="sold-out button secondary" type="button"></button></div>`;
+        item.querySelector("strong")!.textContent = product.name;
+        item.querySelector(".sku")!.textContent = product.sku;
+        item.querySelector(".product-meta")!.textContent = `${category?.name ?? "ไม่ระบุหมวดหมู่"} · ${product.variants.length} variant`;
+        item.querySelector(".product-description")!.textContent = product.description || "ไม่มีรายละเอียด";
+        item.querySelector(".price")!.textContent = money(product.basePriceMinor, product.currency);
+        const soldOutButton = item.querySelector<HTMLButtonElement>(".sold-out")!;
+        soldOutButton.textContent = soldOut ? "ยกเลิก Sold out" : "ตั้ง Sold out";
+        soldOutButton.addEventListener("click", async () => {
+          soldOutButton.disabled = true;
+          try {
+            await api(`/api/catalog/products/${product.id}/availability`, {
+              method: "PATCH", body: JSON.stringify({ storeId: selectedStoreId, channel: "POS", soldOut: !soldOut })
+            });
+            await loadCatalog();
+            showSuccess(soldOut ? "เปิดขายสินค้าแล้ว" : "ตั้งสินค้าเป็น Sold out แล้ว");
+          } catch (cause) { showError(cause); soldOutButton.disabled = false; }
+        });
+        list.append(item);
+      }
+    }
+
+    function renderConfigurations() {
+      document.querySelector("#menu-count")!.textContent = String(menus.length);
+      const menuList = document.querySelector<HTMLElement>("#menus")!;
+      menuList.replaceChildren();
+      if (!menus.length) menuList.innerHTML = '<p class="empty">ยังไม่มีเมนู</p>';
+      for (const menu of menus) {
+        const item = document.createElement("div");
+        item.className = "compact-item";
+        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status">เปิดใช้งาน</span>`;
+        item.querySelector("strong")!.textContent = menu.name;
+        item.querySelector("small")!.textContent = `${menu.code} · ${menu.channel}`;
+        menuList.append(item);
+      }
+      const modifierList = document.querySelector<HTMLElement>("#modifier-groups")!;
+      modifierList.replaceChildren();
+      if (!modifierGroups.length) modifierList.innerHTML = '<p class="empty">ยังไม่มีกลุ่มตัวเลือก</p>';
+      for (const group of modifierGroups) {
+        const item = document.createElement("div");
+        item.className = "compact-item";
+        item.innerHTML = `<span><strong></strong><small></small></span><span class="category-status"></span>`;
+        item.querySelector("strong")!.textContent = group.name;
+        item.querySelector("small")!.textContent = group.modifiers.map((modifier) => modifier.name).join(" · ") || "ยังไม่มีตัวเลือก";
+        item.querySelector(".category-status")!.textContent = group.required ? "บังคับเลือก" : "เลือกได้";
+        modifierList.append(item);
+      }
+    }
+
+    async function loadCatalog() {
+      const snapshot = await api<{ categories: CategorySummary[]; products: ProductSummary[]; menus: MenuSummary[]; modifierGroups: ModifierGroupSummary[] }>(`/api/catalog?storeId=${encodeURIComponent(selectedStoreId)}`);
+      categories = snapshot.categories;
+      products = snapshot.products;
+      menus = snapshot.menus;
+      modifierGroups = snapshot.modifierGroups;
+      renderCategories();
+      renderProducts();
+      renderConfigurations();
+    }
+
+    async function initialise() {
+      const [{ user }, storesResult] = await Promise.all([
+        api<{ user: SessionPrincipal }>("/api/auth/me"),
+        api<{ stores: StoreSummary[] }>("/api/stores")
+      ]);
+      stores = storesResult.stores;
+      if (!selectedStoreId || !stores.some((store) => store.id === selectedStoreId)) selectedStoreId = stores[0]?.id || "";
+      if (!selectedStoreId) throw new Error("บัญชีนี้ยังไม่มีสาขาที่เข้าถึงได้");
+      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
+      document.querySelector("#welcome");
+      storeSelect.replaceChildren(...stores.map((store) => new Option(`${store.name} · ${store.code}`, store.id)));
+      storeSelect.value = selectedStoreId;
+      await loadCatalog();
+      document.title = `Catalog · ${user.displayName || user.email}`;
+    }
+
+    storeSelect.addEventListener("change", async () => {
+      selectedStoreId = storeSelect.value;
+      sessionStorage.setItem("aevo.selectedStoreId", selectedStoreId);
+      history.replaceState(null, "", `/staff/catalog?store=${encodeURIComponent(selectedStoreId)}`);
+      try { await loadCatalog(); } catch (cause) { showError(cause); }
+    });
+
+    document.querySelector<HTMLFormElement>("#category-form")!.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.querySelector<HTMLInputElement>("#category-name")!.value.trim();
+      const code = document.querySelector<HTMLInputElement>("#category-code")!.value.trim();
+      try {
+        await api("/api/catalog/categories", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, ...(code ? { code } : {}) }) });
+        (event.currentTarget as HTMLFormElement).reset();
+        await loadCatalog();
+        showSuccess("เพิ่มหมวดหมู่แล้ว");
+      } catch (cause) { showError(cause); }
+    });
+
+    document.querySelector<HTMLFormElement>("#product-form")!.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const price = Number(document.querySelector<HTMLInputElement>("#product-price")!.value);
+      if (!Number.isFinite(price) || price < 0) { showError(new Error("กรุณาระบุราคาที่ถูกต้อง")); return; }
+      const categoryId = document.querySelector<HTMLSelectElement>("#product-category")!.value;
+      try {
+        await api("/api/catalog/products", {
+          method: "POST",
+          body: JSON.stringify({
+            storeId: selectedStoreId,
+            sku: document.querySelector<HTMLInputElement>("#product-sku")!.value.trim(),
+            name: document.querySelector<HTMLInputElement>("#product-name")!.value.trim(),
+            description: document.querySelector<HTMLTextAreaElement>("#product-description")!.value.trim(),
+            basePriceMinor: Math.round(price * 100),
+            ...(categoryId ? { categoryId } : {})
+          })
+        });
+        (event.currentTarget as HTMLFormElement).reset();
+        await loadCatalog();
+        showSuccess("เพิ่มสินค้าแล้ว");
+      } catch (cause) { showError(cause); }
+    });
+
+    document.querySelector<HTMLFormElement>("#menu-form")!.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.querySelector<HTMLInputElement>("#menu-name")!.value.trim();
+      const code = document.querySelector<HTMLInputElement>("#menu-code")!.value.trim();
+      const channel = document.querySelector<HTMLSelectElement>("#menu-channel")!.value;
+      try {
+        await api("/api/catalog/menus", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, channel, ...(code ? { code } : {}) }) });
+        (event.currentTarget as HTMLFormElement).reset();
+        await loadCatalog();
+        showSuccess("เพิ่มเมนูแล้ว");
+      } catch (cause) { showError(cause); }
+    });
+
+    document.querySelector<HTMLFormElement>("#modifier-form")!.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.querySelector<HTMLInputElement>("#modifier-name")!.value.trim();
+      const lines = document.querySelector<HTMLTextAreaElement>("#modifier-items")!.value.split("\n").map((line) => line.trim()).filter(Boolean);
+      const modifiers = lines.map((line, index) => {
+        const [modifierName, rawPrice = "0"] = line.split("|");
+        const price = Number(rawPrice);
+        return { code: `OPTION_${index + 1}`, name: modifierName?.trim() || `Option ${index + 1}`, priceDeltaMinor: Math.round((Number.isFinite(price) ? price : 0) * 100) };
+      });
+      const required = document.querySelector<HTMLInputElement>("#modifier-required")!.checked;
+      const selectionType = document.querySelector<HTMLSelectElement>("#modifier-type")!.value;
+      try {
+        await api("/api/catalog/modifier-groups", { method: "POST", body: JSON.stringify({ storeId: selectedStoreId, name, selectionType, required, modifiers }) });
+        (event.currentTarget as HTMLFormElement).reset();
+        await loadCatalog();
+        showSuccess("เพิ่มกลุ่มตัวเลือกแล้ว");
+      } catch (cause) { showError(cause); }
+    });
+
+    document.querySelector("#logout")!.addEventListener("click", async () => {
+      await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+      sessionStorage.removeItem("aevo.selectedStoreId");
+      window.location.assign("/login");
+    });
+
+    try { await initialise(); }
+    catch (cause) {
+      if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
+      else showError(cause);
+    }
+  </script>
+  <style>
+    .brand-link { text-decoration: none; }
+    .header-actions { display: flex; align-items: center; gap: 16px; }
+    .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+    .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
+    .store-picker { min-width: 220px; color: var(--muted); font-size: .82rem; font-weight: 750; }
+    select, input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); padding: 11px 12px; }
+    .store-picker select { margin-top: 7px; }
+    .catalog-layout { margin-top: 30px; display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 1.6fr); gap: 18px; align-items: start; }
+    .configuration-panel { margin-top: 18px; }
+    .configuration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .panel { padding: 22px; }
+    .panel-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 20px; }
+    .panel-heading h2 { margin: 0; font-size: 1.35rem; }
+    .count { min-width: 30px; padding: 5px 9px; border-radius: 999px; text-align: center; color: var(--brand); background: #e7f2ed; font-size: .8rem; font-weight: 800; }
+    .form-stack { display: grid; gap: 12px; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: .82rem; font-weight: 700; }
+    .form-stack .button { margin-top: 3px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    textarea { resize: vertical; }
+    .category-list, .product-list { display: grid; gap: 10px; margin-top: 22px; }
+    .compact-list { display: grid; gap: 8px; margin-top: 18px; }
+    .compact-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .compact-item strong, .compact-item small { display: block; }
+    .compact-item small { margin-top: 3px; color: var(--muted); font-size: .76rem; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; padding-top: 26px; }
+    .checkbox-label input { width: 18px; height: 18px; }
+    .category-item, .product-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 13px; }
+    .category-item strong, .category-item small { display: block; }
+    .category-item small, .product-meta, .product-description { color: var(--muted); font-size: .78rem; }
+    .category-status { color: #25805c; font-size: .72rem; font-weight: 800; }
+    .product-item { align-items: flex-start; }
+    .product-copy { min-width: 0; }
+    .product-title { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+    .sku { padding: 3px 7px; border-radius: 6px; color: var(--brand); background: #edf5f1; font-size: .68rem; font-weight: 800; letter-spacing: .05em; }
+    .product-meta, .product-description { margin: 6px 0 0; line-height: 1.45; }
+    .product-description { white-space: pre-wrap; }
+    .product-actions { display: grid; justify-items: end; gap: 10px; flex: 0 0 auto; }
+    .price { color: var(--brand); white-space: nowrap; }
+    .product-actions .button { min-height: 38px; padding: 0 10px; font-size: .76rem; }
+    .archived { opacity: .6; }
+    .empty { color: var(--muted); font-size: .9rem; }
+    .success { padding: 12px 14px; border-radius: 10px; color: #176343; background: #eaf8f0; border: 1px solid #c4ead3; }
+    @media (max-width: 760px) { .page-heading { align-items: stretch; flex-direction: column; } .store-picker { min-width: 0; } .catalog-layout, .configuration-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 500px) { .form-row { grid-template-columns: 1fr; } .product-item { flex-direction: column; } .product-actions { width: 100%; display: flex; align-items: center; justify-content: space-between; } .status { display: none; } }
+  </style>
+</BaseLayout>

@@ -1,8 +1,8 @@
 # Aevo Store Operations Platform
 
-Phase 0 foundation for a multi-tenant store operations platform. POS, catalog,
-kiosk, KDS, queue, payment providers, LINE and Odoo remain later phases; the
-foundation already provides the shared tenant/auth/event boundaries they need.
+Phase 2 of a multi-tenant store operations platform. The Worker serves the
+Astro staff shell and Elysia API, while Supabase Auth/PostgreSQL provide the
+tenant boundary, catalog and unified Order aggregate.
 
 ## Architecture
 
@@ -24,6 +24,7 @@ packages/
   config/              Fail-fast environment validation
   contracts/           Shared API/domain types
   db/                  Supabase client, tenant repositories and seed command
+  ordering/            Pure order lifecycle and integer-unit pricing rules
 supabase/
   migrations/          PostgreSQL schema, role matrix and RLS policies
 ```
@@ -62,6 +63,49 @@ domain/outbox events, idempotency keys and audit logs. RLS is enabled on every
 public application table. `private.is_org_member` and
 `private.has_org_permission` are non-exposed `SECURITY DEFINER` helpers with a
 fixed search path; no browser key can bypass tenant policies.
+
+## Catalog (Phase 1)
+
+After applying both migrations, an authorized staff member can open
+`/staff/catalog` from the selected store workspace. The catalog foundation
+provides organization-scoped categories, products, variants, menus,
+modifier groups and store/channel availability (including Sold out state).
+Prices are stored as integer minor units, so `65.00 THB` is sent to the API as
+`6500`. The API protects every catalog write with `catalog.manage` and an
+explicit store-access check.
+
+The catalog migration is
+`supabase/migrations/20260916120000_catalog.sql`. The follow-up
+`supabase/migrations/20260916150000_phase1_hardening.sql` is safe to apply to
+projects that already have the first catalog migration; it adds the missing
+tenant-safe store key and prevents duplicate no-variant menu items. The
+`supabase/migrations/20260916152000_atomic_availability.sql` adds the atomic
+availability PATCH RPC. If the project was already migrated before this phase
+was added, apply all three follow-up files once through the SQL Editor or run
+`bun run db:migrate` after linking the project.
+
+## Unified orders (Phase 2)
+
+All ordering channels use one `orders` aggregate; there are no separate POS,
+QR or kiosk order tables. The migration
+`supabase/migrations/20260916160000_order_engine.sql` creates tenant-safe
+orders, immutable item/modifier snapshots, payments, refunds, per-store order
+numbers, and RLS-protected domain/outbox records. Creation, payment and
+status transitions are atomic Postgres RPCs with idempotency keys.
+
+The authenticated API exposes:
+
+```text
+GET  /api/orders?storeId=<uuid>&status=<status>
+GET  /api/orders/<orderId>?storeId=<uuid>
+POST /api/orders                         (Idempotency-Key required)
+POST /api/orders/<orderId>/transition    (Idempotency-Key required)
+POST /api/orders/<orderId>/payments      (Idempotency-Key required)
+```
+
+The staff Orders workspace is available at `/staff/orders`. POS checkout,
+queue numbering and preparation stations build on this aggregate in later
+phases.
 
 ## Create the first admin/owner
 
@@ -143,6 +187,12 @@ the Astro site separately during local development.
 The first user is still created by the one-off `bun run db:seed` command above;
 the Worker deliberately has no public setup endpoint.
 
+If the deployed login shows `Request failed (500)` or Cloudflare error 1101,
+check `/health` and `/ready`. `/health` is a liveness check; `/ready` and
+`/api/*` require all three Worker values below. `WEB_ORIGIN` must include the
+scheme (for example `https://aevo-pos.example.workers.dev`), and the old
+`MONGODB_URI`/`MONGODB_DATABASE` variables are not used by this Supabase build.
+
 ## Environment
 
 See `.env.example` for a complete local template.
@@ -189,20 +239,16 @@ this repository does not contain or guess your project credentials.
 - Domain/outbox/idempotency/audit tables have no browser write policies.
 - Structured logs exclude password, token, cookie and integration-secret data.
 
-## Known Phase 0 limitations
+## Known limitations
 
 - No self-service registration, password reset, MFA or passkeys UI.
 - No organization switcher UI when a user belongs to multiple organizations.
 - The login limiter is instance-local.
-- Device identity, WebSocket rooms, offline POS, orders, catalog and external
-  integrations belong to later phases.
-- The staff cards prove authorized store retrieval; operational workspaces are
-  intentionally placeholders until Phase 1/2.
-- Transactional order/outbox commands should use a Postgres function/RPC or a
-  server-side transaction when those domains are implemented; the current
-  foundation only reads through PostgREST.
+- Device identity, WebSocket rooms, offline POS, queue, preparation/KDS and
+  external integrations belong to later phases.
+- The Orders workspace is read-only for now; POS checkout UI is Phase 3.
 
-## Recommended Phase 1 order
+## Recommended next implementation order
 
 1. Categories, products and variants with organization-scoped SKU constraints.
 2. Modifier groups/modifiers and flexible menu composition.
@@ -210,3 +256,5 @@ this repository does not contain or guess your project credentials.
 4. Sold-out overrides and effective-availability queries.
 5. Catalog administration UI and audit events.
 6. Coffee-shop acceptance fixture covering size, temperature, milk and extras.
+7. POS cart and cash checkout using `POST /api/orders` plus payment RPC.
+8. Queue tickets and preparation tasks consuming the outbox events.

@@ -13,6 +13,7 @@ grant usage on schema private to authenticated;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
   new.updated_at = timezone('utc', now());
@@ -62,6 +63,23 @@ create table if not exists public.stores (
   updated_at timestamptz not null default timezone('utc', now()),
   unique (organization_id, code)
 );
+
+-- Keep the store id and tenant id addressable as a composite key. Catalog
+-- tables use this key in their foreign keys so a row can never point at a
+-- store from another organization, even if an id is copied accidentally.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.stores'::regclass
+      and conname = 'stores_organization_id_id_key'
+  ) then
+    alter table public.stores
+      add constraint stores_organization_id_id_key unique (organization_id, id);
+  end if;
+end;
+$$;
 
 create table if not exists public.roles (
   id uuid primary key default gen_random_uuid(),

@@ -14,8 +14,9 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
       <p class="lede" id="store-summary">กำลังตรวจสอบสิทธิ์และบริบทสาขา</p>
       <p class="error" id="error" role="alert" hidden></p>
       <section class="workspace-grid" aria-label="Workspaces">
+        <a class="card workspace-card workspace-link" id="catalog-link" href="#"><span class="workspace-icon">▤</span><h2>Catalog</h2><p>จัดการสินค้า หมวดหมู่ และ Sold out</p><span class="coming-soon ready">Phase 1</span></a>
         <article class="card workspace-card"><span class="workspace-icon">▦</span><h2>POS</h2><p>รับออเดอร์และรับชำระเงิน</p><span class="coming-soon">Phase 3</span></article>
-        <article class="card workspace-card"><span class="workspace-icon">◫</span><h2>Orders</h2><p>ดูรายการและสถานะออเดอร์</p><span class="coming-soon">กำลังพัฒนา</span></article>
+        <a class="card workspace-card workspace-link" id="orders-link" href="#"><span class="workspace-icon">◫</span><h2>Orders</h2><p>ดูรายการและสถานะออเดอร์</p><span class="coming-soon ready">Phase 2</span></a>
         <article class="card workspace-card"><span class="workspace-icon">✦</span><h2>Preparation</h2><p>จัดการงานเตรียมสินค้า</p><span class="coming-soon">กำลังพัฒนา</span></article>
         <article class="card workspace-card"><span class="workspace-icon">⌁</span><h2>Queue</h2><p>คิวรับสินค้าและจอแสดงผล</p><span class="coming-soon">กำลังพัฒนา</span></article>
       </section>
@@ -39,6 +40,8 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
         window.location.assign("/staff");
       } else {
         sessionStorage.setItem("aevo.selectedStoreId", store.id);
+        document.querySelector<HTMLAnchorElement>("#catalog-link")!.href = `/staff/catalog?store=${encodeURIComponent(store.id)}`;
+        document.querySelector<HTMLAnchorElement>("#orders-link")!.href = `/staff/orders?store=${encodeURIComponent(store.id)}`;
         document.querySelector("#welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
         document.querySelector("#store-summary")!.textContent = `${store.name} · ${store.code} · ${store.timezone}`;
       }
@@ -59,10 +62,12 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     .back { display: inline-block; margin-bottom: 22px; color: var(--brand); font-weight: 750; text-decoration: none; }
     .workspace-grid { margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
     .workspace-card { min-height: 210px; padding: 24px; display: flex; flex-direction: column; align-items: flex-start; }
+    .workspace-link { color: inherit; text-decoration: none; }
     .workspace-card h2 { margin: 14px 0 4px; }
     .workspace-card p { margin: 0 0 20px; color: var(--muted); line-height: 1.5; }
     .workspace-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: white; background: var(--brand); font-size: 1.35rem; }
     .coming-soon { margin-top: auto; padding: 5px 9px; border-radius: 999px; color: var(--brand); background: #e7f2ed; font-size: .76rem; font-weight: 800; }
+    .coming-soon.ready { color: #8a5e00; background: #fff4cf; }
     @media (max-width: 520px) { .status { display: none; } }
   </style>
 </BaseLayout>
