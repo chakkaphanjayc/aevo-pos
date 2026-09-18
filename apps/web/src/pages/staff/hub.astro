@@ -1,0 +1,1222 @@
+---
+import StaffShell from "../../components/staff/StaffShell.astro";
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+---
+
+<StaffShell title="Aevo Hub" active="hub">
+  <div class="staff-page hub-page">
+    <!-- Hub Organization & Store Control Bar -->
+    <div class="hub-context-bar surface">
+      <div class="hub-context-selectors">
+        <!-- Organization Selector -->
+        <div class="context-pill">
+          <span class="context-label">องค์กร (Organization):</span>
+          <select id="hub-org-select" class="context-select" aria-label="เลือกองค์กร">
+            <option value="">กำลังโหลดองค์กร…</option>
+          </select>
+          <button id="btn-open-create-org" class="button secondary btn-sm" type="button" title="สร้างองค์กรใหม่">
+            + สร้างองค์กร
+          </button>
+        </div>
+
+        <!-- Store / Branch Selector -->
+        <div class="context-pill">
+          <span class="context-label">สาขา (Store / Branch):</span>
+          <select id="hub-store-select" class="context-select" aria-label="เลือกสาขา">
+            <option value="">กำลังโหลดสาขา…</option>
+          </select>
+          <button id="btn-open-create-store" class="button secondary btn-sm" type="button" title="สร้างสาขาใหม่">
+            + สร้างสาขา
+          </button>
+        </div>
+      </div>
+
+      <div class="hub-context-actions">
+        <button id="btn-manage-billing" class="button outline btn-sm" type="button">
+          <StaffIcon name="receipt" size={14} />
+          <span>จัดการบิล & ข้อมูลชำระเงิน</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Header Banner -->
+    <div class="hub-header surface">
+      <div class="hub-header-main">
+        <div class="hub-badge-row">
+          <span class="hub-tag-badge">
+            <StaffIcon name="hub" size={14} />
+            <span>Aevo Hub Platform</span>
+          </span>
+          <span class="hub-plan-badge" id="hub-overall-status">Standard Tier</span>
+        </div>
+        <h1 class="hub-title" id="hub-welcome">Aevo Hub Ecosystem</h1>
+        <p class="hub-lede">ศูนย์กลางบัญชี ผู้ใช้งาน ร้านค้า สินค้า การชำระเงิน และการเลือกซื้อบริการแอปธุรกิจในเครือ Aevo</p>
+      </div>
+      <div class="hub-quick-stats">
+        <div class="hub-stat-card">
+          <span class="hub-stat-label">แอปในแพ็กเกจ</span>
+          <strong class="hub-stat-value" id="stat-active-apps">—</strong>
+          <span class="hub-stat-sub" id="stat-total-apps">จากทั้งหมด 7 แอป</span>
+        </div>
+        <div class="hub-stat-card">
+          <span class="hub-stat-label">สาขาทั้งหมด</span>
+          <strong class="hub-stat-value" id="stat-total-stores">—</strong>
+          <span class="hub-stat-sub">พร้อมระบบ Cloud Sync</span>
+        </div>
+        <div class="hub-stat-card">
+          <span class="hub-stat-label">สมาชิกในทีม</span>
+          <strong class="hub-stat-value" id="stat-total-members">—</strong>
+          <span class="hub-stat-sub">สิทธิ์การใช้งาน RBAC</span>
+        </div>
+        <div class="hub-stat-card">
+          <span class="hub-stat-label">สถานะการทดลอง</span>
+          <strong class="hub-stat-value" id="stat-trial-status">14 วัน</strong>
+          <span class="hub-stat-sub" id="stat-trial-sub">Free Trial ทุกแอป</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error / Notification banner -->
+    <div class="hub-alert" id="hub-alert" role="alert" hidden>
+      <span class="hub-alert-icon" id="hub-alert-icon">ℹ</span>
+      <span id="hub-alert-text"></span>
+    </div>
+
+    <!-- Section 1: Business Apps Launcher -->
+    <section class="hub-section">
+      <div class="hub-section-header">
+        <div>
+          <span class="staff-eyebrow">Business Applications</span>
+          <h2>แอปพลิเคชันธุรกิจ (Aevo Apps)</h2>
+        </div>
+        <p class="hub-section-desc">ติดตั้งและคิดค่าบริการแยกตามแอป เชื่อมต่อข้อมูลกลางอัตโนมัติผ่าน Aevo API Gateway</p>
+      </div>
+
+      <div class="hub-apps-grid" id="apps-grid">
+        <!-- Skeleton Loaders -->
+        <article class="hub-app-card surface loading-skeleton"><div class="skeleton-icon"></div><div class="skeleton-text"></div><div class="skeleton-btn"></div></article>
+        <article class="hub-app-card surface loading-skeleton"><div class="skeleton-icon"></div><div class="skeleton-text"></div><div class="skeleton-btn"></div></article>
+        <article class="hub-app-card surface loading-skeleton"><div class="skeleton-icon"></div><div class="skeleton-text"></div><div class="skeleton-btn"></div></article>
+      </div>
+    </section>
+
+    <!-- Section 2: Subscriptions & Billing Status -->
+    <section class="hub-section">
+      <div class="hub-section-header">
+        <div>
+          <span class="staff-eyebrow">Licensing & Billing</span>
+          <h2>สถานะแพ็กเกจและสมาชิก (Subscriptions)</h2>
+        </div>
+        <button id="btn-manage-billing-sec" class="button secondary btn-sm" type="button">
+          เปิด Stripe Billing Portal →
+        </button>
+      </div>
+
+      <div class="hub-billing-container surface">
+        <div class="hub-trial-notice">
+          <div class="hub-trial-notice-icon">
+            <StaffIcon name="hub" size={16} />
+          </div>
+          <div class="hub-trial-notice-copy">
+            <strong>สิทธิพิเศษช่วงทดลองใช้ (Free Trial Guarantee)</strong>
+            <p>ทุกแอปเปิดให้ทดลองใช้งานฟรี 14 วันเต็ม ไม่ต้องผูกบัตรเครดิต เมื่อครบกำหนดระบบจะปรับเป็นโหมดอ่านอย่างเดียว (Read-only) โดยข้อมูลทั้งหมดจะยังคงอยู่และมี Grace Period เพิ่มเติม 14 วัน</p>
+          </div>
+        </div>
+
+        <div class="hub-subs-table-wrapper">
+          <table class="hub-subs-table">
+            <thead>
+              <tr>
+                <th>แอปพลิเคชัน</th>
+                <th>แผนบริการ</th>
+                <th>สถานะ</th>
+                <th>ระยะเวลาคงเหลือ</th>
+                <th>วันสิ้นสุดรอบ</th>
+                <th>การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="subs-table-body">
+              <tr><td colspan="6" class="text-muted text-center py-4">กำลังโหลดข้อมูลแพ็กเกจ…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Central Settings & Integrations -->
+    <section class="hub-section">
+      <div class="hub-section-header">
+        <div>
+          <span class="staff-eyebrow">Platform Administration</span>
+          <h2>การจัดการและศูนย์เชื่อมต่อระบบ (Platform Core)</h2>
+        </div>
+      </div>
+
+      <div class="hub-admin-grid">
+        <a class="hub-admin-card surface" href="/staff/users">
+          <div class="hub-admin-icon"><StaffIcon name="user" size={20} /></div>
+          <div class="hub-admin-copy">
+            <h3>ผู้ใช้งานและสิทธิ์ (Users & Roles)</h3>
+            <p>กำหนดบทบาท Owner, Admin, Cashier, Booking Staff และสิทธิ์รายสาขา</p>
+          </div>
+          <span class="hub-admin-arrow">→</span>
+        </a>
+
+        <a class="hub-admin-card surface" href="/staff/devices">
+          <div class="hub-admin-icon"><StaffIcon name="settings" size={20} /></div>
+          <div class="hub-admin-copy">
+            <h3>อุปกรณ์และฮาร์ดแวร์ (Devices & Kiosks)</h3>
+            <p>จัดการการจับคู่อุปกรณ์ Kiosk, KDS ครัว, จอคิว และเครื่องพิมพ์ใบเสร็จ</p>
+          </div>
+          <span class="hub-admin-arrow">→</span>
+        </a>
+
+        <a class="hub-admin-card surface" href="/staff/audit">
+          <div class="hub-admin-icon"><StaffIcon name="receipt" size={20} /></div>
+          <div class="hub-admin-copy">
+            <h3>ประวัติการใช้งาน (Audit Logs)</h3>
+            <p>ตรวจสอบประวัติคำสั่งซื้อ การยกเลิกบิล คืนเงิน และการเปิดปิดกะ</p>
+          </div>
+          <span class="hub-admin-arrow">→</span>
+        </a>
+
+        <div class="hub-admin-card surface hub-admin-card-odoo">
+          <div class="hub-admin-icon odoo-icon">ERP</div>
+          <div class="hub-admin-copy">
+            <div class="d-flex align-items-center gap-2">
+              <h3>Odoo 19 Bridge</h3>
+              <span class="badge badge-success">เชื่อมต่อพร้อมใช้งาน</span>
+            </div>
+            <p>เชื่อมต่อสินค้า ลูกค้า บัญชี และสต๊อกเข้าสู่ Odoo Back Office อัตโนมัติ</p>
+          </div>
+          <span class="hub-admin-arrow">⚙</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal: Create Organization -->
+  <dialog id="modal-create-org" class="hub-modal">
+    <form id="form-create-org" method="dialog" class="hub-modal-box surface">
+      <div class="hub-modal-header">
+        <h3>สร้างองค์กรใหม่ (Create Organization)</h3>
+        <button type="button" class="hub-modal-close" data-close-dialog="modal-create-org">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <div class="form-group">
+          <label for="new-org-name">ชื่อองค์กร / บริษัท *</label>
+          <input type="text" id="new-org-name" name="name" required placeholder="เช่น บจก. เอโว คอร์ปอเรชั่น" class="input" />
+        </div>
+        <div class="form-group">
+          <label for="new-org-slug">รหัส Slug (ภาษาอังกฤษตัวพิมพ์เล็กและขีดกลาง)</label>
+          <input type="text" id="new-org-slug" name="slug" placeholder="เช่น aevo-corp" pattern="^[a-z0-9-]+$" class="input" />
+          <small class="text-muted">ใช้สำหรับ URL และระบุตัวตนในระบบ</small>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="button secondary" data-close-dialog="modal-create-org">ยกเลิก</button>
+        <button type="submit" class="button primary" id="btn-submit-org">บันทึกและเปิดใช้งาน</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: Create Store -->
+  <dialog id="modal-create-store" class="hub-modal">
+    <form id="form-create-store" method="dialog" class="hub-modal-box surface">
+      <div class="hub-modal-header">
+        <h3>สร้างสาขาใหม่ (Create Store / Branch)</h3>
+        <button type="button" class="hub-modal-close" data-close-dialog="modal-create-store">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <div class="form-group">
+          <label for="new-store-name">ชื่อสาขา *</label>
+          <input type="text" id="new-store-name" name="name" required placeholder="เช่น สาขาสยามสแควร์ (Siam Square)" class="input" />
+        </div>
+        <div class="form-group">
+          <label for="new-store-code">รหัสสาขา *</label>
+          <input type="text" id="new-store-code" name="code" required placeholder="เช่น BKK-01" class="input" />
+          <small class="text-muted">รหัสสาขาตัวย่อสำหรับใบเสร็จและหน้าจอ POS</small>
+        </div>
+        <div class="form-group">
+          <label for="new-store-tz">โซนเวลา (Timezone)</label>
+          <select id="new-store-tz" name="timezone" class="input">
+            <option value="Asia/Bangkok" selected>Asia/Bangkok (UTC+7)</option>
+            <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
+            <option value="UTC">UTC (Universal Time)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="button secondary" data-close-dialog="modal-create-store">ยกเลิก</button>
+        <button type="submit" class="button primary" id="btn-submit-store">บันทึกสาขา</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    import { gateway, GatewayError } from "../../lib/gateway-client";
+    import { friendlyErrorMessage, initStaffShell, loadStaffContext, storeUrl } from "../../lib/staff-ui";
+    import type { AppCatalogItem, AppSubscriptionSummary, OrganizationSummary, StoreSummary } from "@aevo/contracts";
+
+    const alertBox = document.querySelector<HTMLElement>("#hub-alert")!;
+    const alertText = document.querySelector<HTMLElement>("#hub-alert-text")!;
+    const alertIcon = document.querySelector<HTMLElement>("#hub-alert-icon")!;
+    const appsGrid = document.querySelector<HTMLElement>("#apps-grid")!;
+    const subsBody = document.querySelector<HTMLElement>("#subs-table-body")!;
+
+    const orgSelect = document.querySelector<HTMLSelectElement>("#hub-org-select")!;
+    const storeSelect = document.querySelector<HTMLSelectElement>("#hub-store-select")!;
+
+    const modalCreateOrg = document.querySelector<HTMLDialogElement>("#modal-create-org")!;
+    const formCreateOrg = document.querySelector<HTMLFormElement>("#form-create-org")!;
+    const modalCreateStore = document.querySelector<HTMLDialogElement>("#modal-create-store")!;
+    const formCreateStore = document.querySelector<HTMLFormElement>("#form-create-store")!;
+
+    let currentOrgId: string | undefined;
+    let currentStoreId: string | undefined;
+    let availableOrgs: OrganizationSummary[] = [];
+    let availableStores: StoreSummary[] = [];
+
+    function showAlert(message: string, isError = false): void {
+      alertText.textContent = message;
+      alertIcon.textContent = isError ? "⚠️" : "✓";
+      alertBox.classList.toggle("hub-alert-error", isError);
+      alertBox.hidden = false;
+      setTimeout(() => { alertBox.hidden = true; }, 6000);
+    }
+
+    // Modal dialog controls
+    document.querySelectorAll<HTMLElement>("[data-close-dialog]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const dialogId = btn.getAttribute("data-close-dialog");
+        if (dialogId) {
+          const dlg = document.getElementById(dialogId) as HTMLDialogElement | null;
+          dlg?.close();
+        }
+      });
+    });
+
+    document.querySelector("#btn-open-create-org")?.addEventListener("click", () => {
+      formCreateOrg.reset();
+      modalCreateOrg.showModal();
+    });
+
+    document.querySelector("#btn-open-create-store")?.addEventListener("click", () => {
+      formCreateStore.reset();
+      modalCreateStore.showModal();
+    });
+
+    // Handle Create Organization submission
+    formCreateOrg.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nameInput = document.querySelector<HTMLInputElement>("#new-org-name")!;
+      const slugInput = document.querySelector<HTMLInputElement>("#new-org-slug")!;
+      const submitBtn = document.querySelector<HTMLButtonElement>("#btn-submit-org")!;
+
+      const name = nameInput.value.trim();
+      const slug = slugInput.value.trim() || undefined;
+      if (!name) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "กำลังบันทึก…";
+
+      try {
+        const res = await gateway.hub.createOrganization({ name, slug });
+        modalCreateOrg.close();
+        showAlert(`สร้างองค์กร "${res.organization.name}" สำเร็จ`);
+        gateway.setOrganizationId(res.organization.id);
+        currentOrgId = res.organization.id;
+        await loadHub();
+      } catch (err) {
+        showAlert(friendlyErrorMessage(err, "ไม่สามารถสร้างองค์กรได้"), true);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "บันทึกและเปิดใช้งาน";
+      }
+    });
+
+    // Handle Create Store submission
+    formCreateStore.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nameInput = document.querySelector<HTMLInputElement>("#new-store-name")!;
+      const codeInput = document.querySelector<HTMLInputElement>("#new-store-code")!;
+      const tzSelect = document.querySelector<HTMLSelectElement>("#new-store-tz")!;
+      const submitBtn = document.querySelector<HTMLButtonElement>("#btn-submit-store")!;
+
+      const name = nameInput.value.trim();
+      const code = codeInput.value.trim();
+      const timezone = tzSelect.value;
+      if (!name || !code) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "กำลังบันทึก…";
+
+      try {
+        const res = await gateway.hub.createStore({
+          organizationId: currentOrgId,
+          name,
+          code,
+          timezone
+        });
+        modalCreateStore.close();
+        showAlert(`สร้างสาขา "${res.store.name}" สำเร็จ`);
+        gateway.setStoreId(res.store.id);
+        sessionStorage.setItem("aevo.selectedStoreId", res.store.id);
+        currentStoreId = res.store.id;
+        await loadHub();
+      } catch (err) {
+        showAlert(friendlyErrorMessage(err, "ไม่สามารถสร้างสาขาได้"), true);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "บันทึกสาขา";
+      }
+    });
+
+    // Handle Billing Portal
+    async function openBillingPortal(): Promise<void> {
+      try {
+        showAlert("กำลังเชื่อมต่อ Stripe Billing Portal…");
+        const res = await gateway.hub.getBillingPortal(window.location.href);
+        if (res.url) {
+          window.location.assign(res.url);
+        }
+      } catch (err) {
+        showAlert(friendlyErrorMessage(err, "ไม่สามารถเปิด Stripe Billing Portal ได้ในขณะนี้ (ตรวจสอบการตั้งค่า Stripe)"), true);
+      }
+    }
+
+    document.querySelector("#btn-manage-billing")?.addEventListener("click", openBillingPortal);
+    document.querySelector("#btn-manage-billing-sec")?.addEventListener("click", openBillingPortal);
+
+    // Organization select change handler
+    orgSelect.addEventListener("change", async () => {
+      const selectedOrg = orgSelect.value;
+      if (selectedOrg && selectedOrg !== currentOrgId) {
+        currentOrgId = selectedOrg;
+        gateway.setOrganizationId(selectedOrg);
+        await loadHub();
+      }
+    });
+
+    // Store select change handler
+    storeSelect.addEventListener("change", async () => {
+      const selectedStore = storeSelect.value;
+      if (selectedStore && selectedStore !== currentStoreId) {
+        currentStoreId = selectedStore;
+        gateway.setStoreId(selectedStore);
+        sessionStorage.setItem("aevo.selectedStoreId", selectedStore);
+        await loadHub();
+      }
+    });
+
+    async function loadHub(): Promise<void> {
+      try {
+        const { user, stores } = await loadStaffContext();
+        initStaffShell({ user, stores, redirectOnStoreChange: false });
+
+        document.querySelector<HTMLElement>("#hub-welcome")!.textContent = `สวัสดี ${user.displayName || user.email}`;
+
+        // 1. Fetch organizations
+        try {
+          const orgRes = await gateway.hub.getOrganizations();
+          availableOrgs = orgRes.organizations;
+          orgSelect.replaceChildren();
+
+          if (availableOrgs.length > 0) {
+            currentOrgId = gateway.getOrganizationId() || availableOrgs[0].id;
+            gateway.setOrganizationId(currentOrgId);
+
+            for (const org of availableOrgs) {
+              const opt = document.createElement("option");
+              opt.value = org.id;
+              opt.textContent = org.name;
+              opt.selected = org.id === currentOrgId;
+              orgSelect.append(opt);
+            }
+          } else {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "ยังไม่มีองค์กร";
+            orgSelect.append(opt);
+          }
+        } catch {
+          // Fallback if orgs query fails
+        }
+
+        // 2. Fetch stores for the current organization
+        try {
+          const storeRes = await gateway.hub.getStores(currentOrgId);
+          availableStores = storeRes.stores;
+          storeSelect.replaceChildren();
+
+          if (availableStores.length > 0) {
+            const savedStoreId = sessionStorage.getItem("aevo.selectedStoreId") || gateway.getStoreId();
+            const matched = availableStores.find((s) => s.id === savedStoreId);
+            currentStoreId = matched ? matched.id : availableStores[0].id;
+            gateway.setStoreId(currentStoreId);
+            sessionStorage.setItem("aevo.selectedStoreId", currentStoreId);
+
+            for (const st of availableStores) {
+              const opt = document.createElement("option");
+              opt.value = st.id;
+              opt.textContent = `${st.name} (${st.code})`;
+              opt.selected = st.id === currentStoreId;
+              storeSelect.append(opt);
+            }
+          } else {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "ยังไม่มีสาขา";
+            storeSelect.append(opt);
+          }
+        } catch {
+          // Fallback
+        }
+
+        // 3. Fetch apps catalog, subscriptions, and platform stats in parallel via canonical Gateway
+        const [appsRes, subsRes, statsRes] = await Promise.all([
+          gateway.hub.getApps(),
+          gateway.hub.getSubscriptions(currentStoreId),
+          gateway.hub.getStats().catch(() => ({ stats: { totalApps: 7, activeApps: 0, totalStores: availableStores.length, totalMembers: 1 } }))
+        ]);
+
+        const apps = appsRes.apps;
+        const subs = subsRes.subscriptions;
+        const stats = statsRes.stats;
+
+        // Update statistics cards
+        const activeCount = subs.filter((s) => s.isEntitled).length;
+        document.querySelector<HTMLElement>("#stat-active-apps")!.textContent = `${activeCount}`;
+        document.querySelector<HTMLElement>("#stat-total-apps")!.textContent = `จากทั้งหมด ${apps.length} แอป`;
+        document.querySelector<HTMLElement>("#stat-total-stores")!.textContent = `${stats.totalStores || availableStores.length}`;
+        document.querySelector<HTMLElement>("#stat-total-members")!.textContent = `${stats.totalMembers || 1}`;
+
+        const trialSub = subs.find((s) => s.status === "TRIAL");
+        if (trialSub && trialSub.daysRemaining !== undefined) {
+          document.querySelector<HTMLElement>("#stat-trial-status")!.textContent = `${trialSub.daysRemaining} วัน`;
+          document.querySelector<HTMLElement>("#stat-trial-sub")!.textContent = `ทดลองใช้ ${trialSub.appId.toUpperCase()}`;
+        } else {
+          document.querySelector<HTMLElement>("#stat-trial-status")!.textContent = "14 วัน";
+          document.querySelector<HTMLElement>("#stat-trial-sub")!.textContent = "Free Trial ทุกแอป";
+        }
+
+        // Render Business Applications Grid
+        renderApps(apps, subs, currentStoreId);
+
+        // Render Subscriptions Table
+        renderSubscriptions(subs, apps);
+      } catch (cause) {
+        if (cause instanceof GatewayError && cause.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถโหลดข้อมูล Aevo Hub ได้"), true);
+      }
+    }
+
+    function renderApps(apps: AppCatalogItem[], subs: AppSubscriptionSummary[], storeId?: string): void {
+      appsGrid.replaceChildren();
+
+      for (const app of apps) {
+        const sub = subs.find((s) => s.appId === app.id);
+        const isEntitled = sub ? sub.isEntitled : false;
+        const isTrial = sub?.status === "TRIAL";
+        const daysLeft = sub?.daysRemaining;
+
+        const card = document.createElement("article");
+        card.className = `hub-app-card surface ${app.status === "COMING_SOON" ? "hub-app-coming-soon" : ""}`;
+
+        let statusBadge = "";
+        if (app.status === "COMING_SOON") {
+          statusBadge = `<span class="badge badge-muted">เร็วๆ นี้</span>`;
+        } else if (isEntitled) {
+          if (isTrial) {
+            statusBadge = `<span class="badge badge-warning">⚡ ทดลองใช้ (${daysLeft ?? 14} วัน)</span>`;
+          } else {
+            statusBadge = `<span class="badge badge-success">✓ พร้อมใช้งาน</span>`;
+          }
+        } else {
+          statusBadge = `<span class="badge badge-info">ยังไม่ได้เปิดใช้งาน</span>`;
+        }
+
+        const priceText = app.pricingModel === "FREE"
+          ? "ฟรีไม่มีค่าบริการ"
+          : `${(app.basePriceMonthlyMinor / 100).toLocaleString("th-TH")} บาท/เดือน`;
+
+        let actionBtnHtml = "";
+        if (app.status === "COMING_SOON") {
+          actionBtnHtml = `<button class="button secondary btn-block" type="button" disabled>เร็วๆ นี้</button>`;
+        } else if (isEntitled) {
+          if (app.id === "pos") {
+            const posUrl = storeId ? storeUrl("/staff/pos", storeId) : "/staff";
+            actionBtnHtml = `<a class="button primary btn-block" href="${posUrl}">เปิดใช้งาน POS →</a>`;
+          } else if (app.id === "kiosk") {
+            const kioskUrl = storeId ? storeUrl("/staff/devices", storeId) : "/staff";
+            actionBtnHtml = `<a class="button primary btn-block" href="${kioskUrl}">จัดการ Kiosk & อุปกรณ์ →</a>`;
+          } else if (app.id === "booking") {
+            const bookingUrl = storeId ? storeUrl("/staff/booking", storeId) : "/staff/booking";
+            actionBtnHtml = `<a class="button primary btn-block" href="${bookingUrl}">เปิดระบบ Booking →</a>`;
+          } else {
+            actionBtnHtml = `<button class="button secondary btn-block" type="button">จัดการแอป</button>`;
+          }
+        } else {
+          actionBtnHtml = `<button class="button start-trial-btn btn-block" data-app-id="${app.id}" type="button">เริ่มทดลองใช้ฟรี 14 วัน</button>`;
+        }
+
+        const featuresHtml = (app.features || []).map((f: string) => `<li><span class="check-mark">✓</span> ${f}</li>`).join("");
+
+        card.innerHTML = `
+          <div class="hub-app-header">
+            <div class="hub-app-icon-wrap icon-${app.id}">
+              <span class="hub-app-letter">${app.name.charAt(0)}</span>
+            </div>
+            <div class="hub-app-header-copy">
+              <div class="d-flex align-items-center justify-content-between">
+                <h3>${app.name}</h3>
+                ${statusBadge}
+              </div>
+              <span class="hub-app-pricing">${priceText}</span>
+            </div>
+          </div>
+          <p class="hub-app-desc">${app.description}</p>
+          <ul class="hub-app-features">
+            ${featuresHtml}
+          </ul>
+          <div class="hub-app-footer">
+            ${actionBtnHtml}
+          </div>
+        `;
+
+        // Event listener for Trial activation
+        const trialBtn = card.querySelector<HTMLButtonElement>(".start-trial-btn");
+        if (trialBtn) {
+          trialBtn.addEventListener("click", async () => {
+            trialBtn.disabled = true;
+            trialBtn.textContent = "กำลังเปิดใช้งาน…";
+            try {
+              await gateway.hub.startTrial(app.id, storeId);
+              showAlert(`เปิดใช้งานทดลองใช้ ${app.name} ฟรี 14 วันเรียบร้อยแล้ว!`);
+              void loadHub();
+            } catch (err) {
+              trialBtn.disabled = false;
+              trialBtn.textContent = "เริ่มทดลองใช้ฟรี 14 วัน";
+              showAlert(friendlyErrorMessage(err, "ไม่สามารถเริ่มทดลองใช้ได้ กรุณาลองใหม่อีกครั้ง"), true);
+            }
+          });
+        }
+
+        appsGrid.append(card);
+      }
+    }
+
+    function renderSubscriptions(subs: AppSubscriptionSummary[], apps: AppCatalogItem[]): void {
+      subsBody.replaceChildren();
+
+      if (!subs.length) {
+        subsBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีรายการแพ็กเกจที่สมัคร</td></tr>`;
+        return;
+      }
+
+      for (const sub of subs) {
+        const app = apps.find((a) => a.id === sub.appId);
+        const appName = app ? app.name : sub.appId.toUpperCase();
+        const row = document.createElement("tr");
+
+        const statusClass = sub.isEntitled ? (sub.status === "TRIAL" ? "badge-warning" : "badge-success") : "badge-danger";
+        const statusLabel = sub.status === "TRIAL" ? "ทดลองใช้ฟรี (Trial)" : (sub.status === "ACTIVE" ? "ใช้งานอยู่ (Active)" : sub.status);
+
+        const daysText = sub.daysRemaining !== undefined ? `${sub.daysRemaining} วัน` : "—";
+        const endDateStr = sub.currentPeriodEndsAt ? new Date(sub.currentPeriodEndsAt).toLocaleDateString("th-TH") : "—";
+
+        row.innerHTML = `
+          <td><strong>${appName}</strong></td>
+          <td><span class="badge badge-outline">${sub.planCode}</span></td>
+          <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+          <td><strong>${daysText}</strong></td>
+          <td>${endDateStr}</td>
+          <td><span class="text-muted text-sm">ต่ออายุอัตโนมัติ</span></td>
+        `;
+        subsBody.append(row);
+      }
+    }
+
+    void loadHub();
+  </script>
+
+  <style is:global>
+    .hub-page {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      padding-bottom: 60px;
+    }
+
+    /* Hub Context Control Bar */
+    .hub-context-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 24px;
+      border-radius: var(--radius-lg, 16px);
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+    }
+
+    .hub-context-selectors {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .context-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .context-label {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--muted, #64748b);
+      white-space: nowrap;
+    }
+
+    .context-select {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--foreground, #0f172a);
+      background: #f8fafc;
+      border: 1px solid var(--line, #cbd5e1);
+      border-radius: 8px;
+      padding: 6px 12px;
+      outline: none;
+      transition: border-color 0.15s ease;
+      cursor: pointer;
+    }
+
+    .context-select:focus {
+      border-color: #16a34a;
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      border-radius: 8px;
+    }
+
+    /* Hub Header */
+    .hub-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 28px;
+      padding: 32px;
+      border-radius: var(--radius-lg, 16px);
+      background: radial-gradient(circle at 10% 20%, #f4fbf7, #ffffff 80%);
+      border: 1px solid rgba(22, 163, 74, 0.15);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    }
+
+    .hub-header-main {
+      max-width: 580px;
+    }
+
+    .hub-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .hub-tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eaf7ee;
+      color: #16a34a;
+      font-size: 0.8125rem;
+      font-weight: 700;
+    }
+
+    .hub-plan-badge {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted, #64748b);
+      background: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    .hub-title {
+      font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px 0;
+      color: var(--foreground, #0f172a);
+    }
+
+    .hub-lede {
+      margin: 0;
+      color: var(--muted, #64748b);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .hub-quick-stats {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .hub-stat-card {
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+      padding: 16px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--line, #e2e8f0);
+      min-width: 135px;
+    }
+
+    .hub-stat-label {
+      font-size: 0.8125rem;
+      color: var(--muted, #64748b);
+      font-weight: 600;
+    }
+
+    .hub-stat-value {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--foreground, #0f172a);
+      margin: 4px 0 2px 0;
+    }
+
+    .hub-stat-sub {
+      font-size: 0.75rem;
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    /* Section Styles */
+    .hub-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .hub-section-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    .hub-section-header h2 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      margin: 4px 0 0 0;
+    }
+
+    .hub-section-desc {
+      color: var(--muted, #64748b);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+
+    /* Apps Grid */
+    .hub-apps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .hub-app-card {
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      border-radius: var(--radius-lg, 16px);
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .hub-app-card:hover {
+      transform: translateY(-2px);
+      border-color: #cbd5e1;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    }
+
+    .hub-app-coming-soon {
+      opacity: 0.75;
+      background: #fafafa;
+    }
+
+    .hub-app-header {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .hub-app-icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-pos {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-kiosk {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-booking {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-crm {
+      background: linear-gradient(135deg, #ec4899, #db2777);
+      box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-inventory {
+      background: linear-gradient(135deg, #64748b, #475569);
+      box-shadow: 0 4px 12px rgba(100, 116, 139, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-odoo_connector {
+      background: linear-gradient(135deg, #714b67, #4c2f45);
+      box-shadow: 0 4px 12px rgba(113, 75, 103, 0.25);
+    }
+
+    .hub-app-icon-wrap.icon-digital_sign {
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+    }
+
+    .hub-app-header-copy {
+      flex: 1;
+    }
+
+    .hub-app-header-copy h3 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .hub-app-pricing {
+      display: block;
+      font-size: 0.8125rem;
+      color: var(--muted, #64748b);
+      font-weight: 600;
+      margin-top: 3px;
+    }
+
+    .hub-app-desc {
+      font-size: 0.875rem;
+      color: var(--foreground, #334155);
+      line-height: 1.5;
+      margin: 0 0 16px 0;
+      flex: 1;
+    }
+
+    .hub-app-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 1px dashed var(--line, #e2e8f0);
+      padding-top: 14px;
+    }
+
+    .hub-app-features li {
+      font-size: 0.8125rem;
+      color: var(--muted, #475569);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .check-mark {
+      color: #16a34a;
+      font-weight: 900;
+      font-size: 0.875rem;
+    }
+
+    .btn-block {
+      width: 100%;
+      text-align: center;
+      justify-content: center;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .badge-success { background: #dcfce7; color: #15803d; }
+    .badge-warning { background: #fef3c7; color: #b45309; }
+    .badge-info { background: #e0f2fe; color: #0369a1; }
+    .badge-muted { background: #f1f5f9; color: #64748b; }
+    .badge-outline { border: 1px solid var(--line, #cbd5e1); color: #475569; }
+
+    /* Billing Section */
+    .hub-billing-container {
+      padding: 24px;
+      border-radius: var(--radius-lg, 16px);
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+    }
+
+    .hub-trial-notice {
+      display: flex;
+      gap: 16px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .hub-trial-notice-icon {
+      font-size: 1.5rem;
+    }
+
+    .hub-trial-notice-copy strong {
+      display: block;
+      color: #166534;
+      font-size: 0.9375rem;
+      margin-bottom: 4px;
+    }
+
+    .hub-trial-notice-copy p {
+      margin: 0;
+      font-size: 0.84rem;
+      color: #15803d;
+      line-height: 1.45;
+    }
+
+    .hub-subs-table-wrapper {
+      overflow-x: auto;
+    }
+
+    .hub-subs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    .hub-subs-table th {
+      text-align: left;
+      padding: 12px 16px;
+      font-size: 0.8125rem;
+      color: var(--muted, #64748b);
+      font-weight: 700;
+      border-bottom: 2px solid var(--line, #e2e8f0);
+    }
+
+    .hub-subs-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line, #f1f5f9);
+      vertical-align: middle;
+    }
+
+    /* Admin Grid */
+    .hub-admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .hub-admin-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.15s ease;
+    }
+
+    .hub-admin-card:hover {
+      border-color: #94a3b8;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      transform: translateY(-1px);
+    }
+
+    .hub-admin-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      color: #334155;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .hub-admin-icon.odoo-icon {
+      background: #714b67;
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 0.75rem;
+    }
+
+    .hub-admin-copy {
+      flex: 1;
+    }
+
+    .hub-admin-copy h3 {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      margin: 0 0 2px 0;
+    }
+
+    .hub-admin-copy p {
+      font-size: 0.78rem;
+      color: var(--muted, #64748b);
+      margin: 0;
+      line-height: 1.35;
+    }
+
+    .hub-admin-arrow {
+      color: var(--muted, #94a3b8);
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    /* Alerts */
+    .hub-alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      border-radius: 10px;
+      background: #e0f2fe;
+      color: #0369a1;
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .hub-alert-error {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    /* Dialog Modals */
+    .hub-modal {
+      border: none;
+      padding: 0;
+      background: transparent;
+      border-radius: 16px;
+      max-width: 480px;
+      width: 90vw;
+    }
+
+    .hub-modal::backdrop {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+    }
+
+    .hub-modal-box {
+      background: #ffffff;
+      border-radius: 16px;
+      border: 1px solid var(--line, #e2e8f0);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .hub-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hub-modal-header h3 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .hub-modal-close {
+      background: transparent;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--muted, #64748b);
+    }
+
+    .hub-modal-body {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .hub-modal-body .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .hub-modal-body label {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--foreground, #334155);
+    }
+
+    .hub-modal-body .input {
+      padding: 8px 12px;
+      border: 1px solid var(--line, #cbd5e1);
+      border-radius: 8px;
+      font-size: 0.875rem;
+      outline: none;
+    }
+
+    .hub-modal-body .input:focus {
+      border-color: #16a34a;
+    }
+
+    .hub-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      border-top: 1px solid var(--line, #e2e8f0);
+      padding-top: 16px;
+    }
+  </style>
+</StaffShell>
