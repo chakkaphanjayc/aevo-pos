@@ -14,7 +14,7 @@ export function calculateHourlySales(
   }));
 
   for (const o of orders) {
-    if (o.status === "CANCELLED" || o.status === "REFUNDED") continue;
+    if (["DRAFT", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED", "NO_SHOW"].includes(o.status)) continue;
     const date = new Date(o.createdAt);
     const h = date.getHours();
     if (h >= 0 && h < 24) {

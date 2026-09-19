@@ -33,7 +33,6 @@ CREATE TABLE IF NOT EXISTS public.queue_tickets (
   completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
   updated_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
-  UNIQUE (organization_id, store_id, queue_number, created_at::date),
   FOREIGN KEY (organization_id, order_id)
     REFERENCES public.orders(organization_id, id) ON DELETE CASCADE,
   FOREIGN KEY (organization_id, store_id)
@@ -45,6 +44,12 @@ CREATE INDEX IF NOT EXISTS queue_tickets_store_status_idx
 
 CREATE INDEX IF NOT EXISTS queue_tickets_order_idx
   ON public.queue_tickets (organization_id, order_id);
+
+-- Queue numbers reset by business day. PostgreSQL does not allow an
+-- expression such as created_at::date inside a table UNIQUE constraint, so
+-- enforce the daily uniqueness rule with a unique expression index instead.
+CREATE UNIQUE INDEX IF NOT EXISTS queue_tickets_daily_number_unique_idx
+  ON public.queue_tickets (organization_id, store_id, queue_number, ((created_at AT TIME ZONE 'UTC')::date));
 
 ALTER TABLE public.queue_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.queue_sequences ENABLE ROW LEVEL SECURITY;
@@ -66,4 +71,5 @@ CREATE POLICY "org_member_read_queue_tickets"
 
 CREATE POLICY "org_manage_queue_tickets"
   ON public.queue_tickets FOR ALL
-  USING (private.has_org_permission(organization_id, 'order.manage'));
+  USING (private.has_org_permission(organization_id, 'order.create'))
+  WITH CHECK (private.has_org_permission(organization_id, 'order.create'));

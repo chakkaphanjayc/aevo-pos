@@ -20,8 +20,11 @@ interface CachedStaffContext {
   context: StaffContext;
 }
 
-const STAFF_CONTEXT_CACHE_KEY = "aevo.staff.context.v1";
+// v2 invalidates contexts created before the role/permission and device
+// surfaces were added. Permissions must never remain stale after deployment.
+const STAFF_CONTEXT_CACHE_KEY = "aevo.staff.context.v2";
 const STAFF_CONTEXT_CACHE_TTL_MS = 30_000;
+let staffContextRequest: Promise<StaffContext> | null = null;
 
 const roleLabels: Record<SessionPrincipal["role"], string> = {
   OWNER: "เจ้าขององค์กร",
@@ -35,20 +38,22 @@ const roleLabels: Record<SessionPrincipal["role"], string> = {
 
 export async function loadStaffContext(): Promise<StaffContext> {
   const cached = readCachedStaffContext();
-  const request = fetchStaffContext();
-
   if (cached && Date.now() - cached.cachedAt < STAFF_CONTEXT_CACHE_TTL_MS) {
-    void request
-      .then((context) => writeCachedStaffContext(context))
-      .catch((cause: unknown) => {
-        if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
-      });
     return cached.context;
   }
 
-  return request.then((context) => {
-    writeCachedStaffContext(context);
-    return context;
+  if (!staffContextRequest) {
+    staffContextRequest = fetchStaffContext().then((context) => {
+      writeCachedStaffContext(context);
+      return context;
+    }).finally(() => {
+      staffContextRequest = null;
+    });
+  }
+
+  return staffContextRequest.catch((cause: unknown) => {
+    if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") window.location.assign("/login");
+    throw cause;
   });
 }
 
@@ -104,6 +109,7 @@ export function friendlyErrorMessage(cause: unknown, fallback: string): string {
       FORBIDDEN: "บัญชีนี้ไม่มีสิทธิ์ใช้งานข้อมูลของสาขานี้",
       STORE_NOT_FOUND: "ไม่พบสาขานี้หรือสาขาถูกปิดใช้งาน",
       CATALOG_CONFLICT: "ข้อมูลนี้มีอยู่แล้ว กรุณาตรวจสอบชื่อหรือรหัสอีกครั้ง",
+      SCHEMA_NOT_READY: "ระบบฐานข้อมูลยังติดตั้งไม่ครบ กรุณาแจ้งผู้ดูแลระบบให้รัน migration",
       NETWORK_ERROR: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่เมื่อสัญญาณพร้อม"
     };
     return messages[cause.code] ?? (cause.status >= 500 ? fallback : cause.message);

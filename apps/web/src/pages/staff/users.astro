@@ -100,6 +100,8 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     }
 
     document.querySelector<HTMLButtonElement>("#refresh-users")!.addEventListener("click", () => void load());
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void load(); });
+    window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 60_000);
     document.querySelector<HTMLFormElement>("#user-form")!.addEventListener("submit", async (event) => {
       if ((event.submitter as HTMLButtonElement | null)?.value !== "default" || !editing) return;
       event.preventDefault();

@@ -13,6 +13,26 @@ export const permissions = [
 
 export type Permission = (typeof permissions)[number];
 
+/**
+ * Baseline permission matrix for system roles. The database remains the
+ * source of truth for membership and custom role data, but these defaults keep
+ * existing Owner/Admin accounts compatible when a new permission is added by
+ * a later migration.
+ */
+export const rolePermissionDefaults: Readonly<Record<Role, readonly Permission[]>> = {
+  OWNER: permissions,
+  ADMIN: permissions,
+  BRANCH_MANAGER: [
+    "store.read", "catalog.read", "catalog.manage", "order.read", "order.create",
+    "payment.receive", "refund.create", "order.void", "price.override", "cash_drawer.open",
+    "audit.read", "devices.manage"
+  ],
+  CASHIER: ["store.read", "catalog.read", "order.read", "order.create", "payment.receive"],
+  KITCHEN: ["store.read", "order.read"],
+  STAFF: ["store.read", "catalog.read", "order.read", "order.create"],
+  VIEWER: ["store.read", "order.read"]
+};
+
 export const deviceModes = ["POS", "KIOSK", "KDS", "QUEUE_DISPLAY"] as const;
 export type DeviceMode = (typeof deviceModes)[number];
 
@@ -22,6 +42,9 @@ export type CatalogChannel = (typeof catalogChannels)[number];
 /** All ordering surfaces write to the same Order aggregate. */
 export const orderChannels = catalogChannels;
 export type OrderChannel = (typeof orderChannels)[number];
+
+export const orderTypes = ["POS", "KIOSK", "QR_ORDER", "BOOKING", "SERVICE"] as const;
+export type OrderType = (typeof orderTypes)[number];
 
 export const fulfillmentTypes = ["TAKEAWAY", "DINE_IN", "PICKUP"] as const;
 export type FulfillmentType = (typeof fulfillmentTypes)[number];
@@ -227,6 +250,7 @@ export interface CreateOrderItemInput {
 export interface CreateOrderInput {
   storeId: string;
   channel: OrderChannel;
+  orderType?: OrderType | undefined;
   fulfillmentType: FulfillmentType;
   currency?: string;
   customerName?: string;
@@ -269,6 +293,7 @@ export interface OrderSummary {
   storeId: string;
   orderNumber: string;
   channel: OrderChannel;
+  orderType: OrderType;
   fulfillmentType: FulfillmentType;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
@@ -297,6 +322,7 @@ export interface OrderListItem {
   storeId: string;
   orderNumber: string;
   channel: OrderChannel;
+  orderType: OrderType;
   fulfillmentType: FulfillmentType;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
@@ -324,6 +350,16 @@ export interface RecordPaymentInput {
   providerReference?: string;
 }
 
+export interface RefundResult {
+  refundId: string;
+  orderId: string;
+  amountMinor: number;
+  refundedAmountMinor: number;
+  orderStatus: OrderStatus;
+  paymentStatus: PaymentStatus;
+  idempotent: boolean;
+}
+
 export interface SessionPrincipal {
   userId: string;
   email: string;
@@ -333,6 +369,26 @@ export interface SessionPrincipal {
   membershipId: string;
   role: Role;
   permissions: Permission[];
+}
+
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role?: Role | undefined;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: string;
+}
+
+export interface CreateOrganizationInput {
+  name: string;
+  slug?: string | undefined;
+}
+
+export interface CreateStoreInput {
+  name: string;
+  code: string;
+  timezone?: string | undefined;
 }
 
 export interface StoreSummary {
@@ -606,6 +662,7 @@ export interface CashSessionDetail {
   cashSalesMinor?: number;
   cashRefundsMinor?: number;
 }
+export type CashSessionSummary = CashSessionDetail;
 
 // Store Core: Basic Sales Ledger & Daily Closing
 export interface SalesLedgerEntrySummary {
@@ -654,4 +711,280 @@ export interface IntegrationJobSummary {
   externalReference?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// Aevo Hub: Apps & Subscriptions
+export const appIds = ["pos", "kiosk", "booking", "crm", "inventory"] as const;
+export type AppId = (typeof appIds)[number];
+
+export const appPricingModels = ["PER_BRANCH", "PER_DEVICE", "PER_VENUE", "PER_ORG", "BUNDLE", "FREE"] as const;
+export type AppPricingModel = (typeof appPricingModels)[number];
+
+export const appStatuses = ["ACTIVE", "BETA", "COMING_SOON", "DEPRECATED"] as const;
+export type AppStatus = (typeof appStatuses)[number];
+
+export const subscriptionStatuses = ["TRIAL", "ACTIVE", "PAST_DUE", "CANCELLED", "EXPIRED"] as const;
+export type SubscriptionStatus = (typeof subscriptionStatuses)[number];
+
+export interface AppDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  pricingModel: AppPricingModel;
+  basePriceMonthlyMinor: number;
+  status: AppStatus;
+  features: string[];
+  createdAt: string;
+}
+export type AppCatalogItem = AppDefinition;
+
+export interface AppSubscriptionSummary {
+  id: string;
+  organizationId: string;
+  storeId?: string | null | undefined;
+  appId: string;
+  status: SubscriptionStatus;
+  planCode: string;
+  trialEndsAt?: string | null | undefined;
+  currentPeriodStartsAt: string;
+  currentPeriodEndsAt: string;
+  gracePeriodEndsAt?: string | null | undefined;
+  deviceLimit?: number | null | undefined;
+  resourceLimit?: number | null | undefined;
+  isEntitled: boolean;
+  daysRemaining?: number | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const trialStatuses = [
+  "TRIALING",
+  "ACTIVE",
+  "PAST_DUE",
+  "GRACE_PERIOD",
+  "EXPIRED",
+  "CANCELED",
+  "READ_ONLY"
+] as const;
+export type TrialStatus = (typeof trialStatuses)[number];
+
+export const featureEntitlements = [
+  "pos.use",
+  "kiosk.use",
+  "booking.use",
+  "booking.waitlist",
+  "reports.advanced",
+  "odoo.sync"
+] as const;
+export type FeatureEntitlement = (typeof featureEntitlements)[number];
+
+export interface AppEntitlement {
+  appId: string;
+  isEntitled: boolean;
+  status: SubscriptionStatus | "UNSUBSCRIBED";
+  trialEndsAt?: string | null | undefined;
+  currentPeriodEndsAt?: string | null | undefined;
+  daysRemaining?: number | undefined;
+  features?: FeatureEntitlement[] | undefined;
+}
+
+// Billing Provider & Pluggable Adapter Contracts
+export interface BillingCustomer {
+  id: string;
+  organizationId: string;
+  provider: "STRIPE" | "OPN" | "XENDIT" | "MANUAL";
+  providerCustomerId: string;
+  email: string;
+  createdAt: string;
+}
+
+export interface BillingSubscription {
+  id: string;
+  providerSubscriptionId: string;
+  customerId: string;
+  status: "ACTIVE" | "TRIALING" | "PAST_DUE" | "CANCELED";
+  planCode: string;
+  currentPeriodStartsAt: string;
+  currentPeriodEndsAt: string;
+}
+
+export interface CreateCustomerInput {
+  organizationId: string;
+  name: string;
+  email: string;
+  phone?: string | undefined;
+}
+
+export interface CreateSubscriptionInput {
+  organizationId: string;
+  customerId: string;
+  appId: string;
+  planCode: string;
+  paymentMethodId?: string | undefined;
+}
+
+export interface ChangePlanInput {
+  subscriptionId: string;
+  newPlanCode: string;
+}
+
+export interface BillingWebhookEvent {
+  id: string;
+  type: string;
+  provider: string;
+  data: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface BillingProvider {
+  createCustomer(input: CreateCustomerInput): Promise<BillingCustomer>;
+  createSubscription(input: CreateSubscriptionInput): Promise<BillingSubscription>;
+  cancelSubscription(subscriptionId: string): Promise<void>;
+  changePlan(input: ChangePlanInput): Promise<BillingSubscription>;
+  getPortalUrl(customerId: string, returnUrl: string): Promise<string>;
+  verifyWebhook(request: Request): Promise<BillingWebhookEvent>;
+}
+
+// CASL Application Authorization Policy
+export type PolicyAction = "manage" | "create" | "read" | "update" | "delete" | "void" | "export";
+export type PolicySubject = "all" | "Order" | "Catalog" | "Table" | "CashSession" | "Booking" | "Report" | "Device" | "User" | "Subscription";
+
+export interface PolicyRule {
+  action: PolicyAction | PolicyAction[];
+  subject: PolicySubject | PolicySubject[];
+  inverted?: boolean | undefined;
+  conditions?: Record<string, unknown> | undefined;
+  fields?: string[] | undefined;
+}
+
+// Aevo Booking Domain Contracts
+export const bookableResourceTypes = ["COURT", "ROOM", "STUDIO", "TABLE", "EQUIPMENT"] as const;
+export type BookableResourceType = (typeof bookableResourceTypes)[number];
+
+export const bookingStatuses = ["HELD", "CONFIRMED", "CHECKED_IN", "COMPLETED", "CANCELLED", "NO_SHOW"] as const;
+export type BookingStatus = (typeof bookingStatuses)[number];
+
+export interface VenueSummary {
+  id: string;
+  organizationId: string;
+  storeId?: string | null | undefined;
+  name: string;
+  slug: string;
+  description: string;
+  address: string;
+  timezone: string;
+  slotDurationMinutes: number;
+  status: "ACTIVE" | "INACTIVE";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookableResourceSummary {
+  id: string;
+  organizationId: string;
+  venueId: string;
+  name: string;
+  resourceType: BookableResourceType;
+  capacity: number;
+  basePriceMinor: number;
+  status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperatingHourSummary {
+  id: string;
+  venueId: string;
+  dayOfWeek: number;
+  openTime: string;
+  closeTime: string;
+  enabled: boolean;
+}
+
+export interface BookingPricingRuleSummary {
+  id: string;
+  venueId: string;
+  resourceId?: string | null | undefined;
+  dayOfWeek?: number | null | undefined;
+  startTime: string;
+  endTime: string;
+  priceMinor: number;
+  priority: number;
+}
+
+export interface ResourceBlockSummary {
+  id: string;
+  venueId: string;
+  resourceId: string;
+  startAt: string;
+  endAt: string;
+  reason: string;
+}
+
+export interface BookingSummary {
+  id: string;
+  organizationId: string;
+  venueId: string;
+  resourceId: string;
+  orderId?: string | null | undefined;
+  customerName: string;
+  customerPhone?: string | null | undefined;
+  customerEmail?: string | null | undefined;
+  startAt: string;
+  endAt: string;
+  status: BookingStatus;
+  amountMinor: number;
+  checkinCode?: string | null | undefined;
+  checkedInAt?: string | null | undefined;
+  notes?: string | null | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookingSlotSummary {
+  id: string;
+  venueId: string;
+  resourceId: string;
+  startAt: string;
+  endAt: string;
+  localStartTime: string;
+  localEndTime: string;
+  priceMinor: number;
+  available: boolean;
+  reason?: "PAST" | "BLOCKED" | "BOOKED" | undefined;
+}
+
+export interface VenueAvailabilitySummary {
+  venueId: string;
+  date: string;
+  timezone: string;
+  slotDurationMinutes: number;
+  slots: BookingSlotSummary[];
+}
+
+export type WaitlistStatus = "WAITING" | "NOTIFIED" | "SEATED" | "CANCELLED" | "EXPIRED";
+
+export interface BookingWaitlistSummary {
+  id: string;
+  organizationId: string;
+  venueId: string;
+  resourceId?: string | null | undefined;
+  customerName: string;
+  customerPhone?: string | null | undefined;
+  partySize: number;
+  status: WaitlistStatus;
+  position: number;
+  estimatedWaitMinutes?: number | null | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AddWaitlistInput {
+  venueId: string;
+  resourceId?: string | undefined;
+  customerName: string;
+  customerPhone?: string | undefined;
+  partySize: number;
+  estimatedWaitMinutes?: number | undefined;
 }

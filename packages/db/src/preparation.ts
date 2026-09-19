@@ -8,6 +8,7 @@ import type {
   StationRoutingRuleSummary
 } from "@aevo/contracts";
 import type { Database } from "./client";
+import { isMissingDatabaseObject, throwDatabaseError } from "./errors";
 
 export class PreparationError extends Error {
   constructor(readonly code: string, message: string) {
@@ -17,6 +18,16 @@ export class PreparationError extends Error {
 }
 
 type Row = Record<string, unknown>;
+
+function throwPreparationDatabaseError(
+  error: { message: string; code?: string } | null,
+  operation: string,
+  code: string
+): void {
+  if (!error) return;
+  if (isMissingDatabaseObject(error)) throwDatabaseError(error, operation);
+  throw new PreparationError(code, error.message);
+}
 
 function mapStationRow(row: Row): PreparationStationSummary {
   return {
@@ -53,9 +64,7 @@ export async function listPreparationStations(
     .order("display_order", { ascending: true })
     .order("name", { ascending: true });
 
-  if (error) {
-    throw new PreparationError("STATION_LIST_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation station list", "STATION_LIST_FAILED");
 
   return (data ?? []).map((row) => mapStationRow(row as Row));
 }
@@ -74,9 +83,7 @@ export async function getOrCreateDefaultStation(
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    throw new PreparationError("STATION_QUERY_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation station lookup", "STATION_QUERY_FAILED");
 
   if (data) {
     return mapStationRow(data as Row);
@@ -100,7 +107,7 @@ export async function getOrCreateDefaultStation(
 
   if (insertError) {
     // If concurrent insert occurred, fetch it
-    const { data: fallback } = await database.client
+    const fallbackResult = await database.client
       .from("preparation_stations")
       .select("id, organization_id, store_id, code, name, display_order, status")
       .eq("organization_id", organizationId)
@@ -108,8 +115,9 @@ export async function getOrCreateDefaultStation(
       .limit(1)
       .single();
 
-    if (fallback) return mapStationRow(fallback as Row);
-    throw new PreparationError("STATION_CREATE_FAILED", insertError.message);
+    throwPreparationDatabaseError(fallbackResult.error, "preparation station concurrent lookup", "STATION_CREATE_FAILED");
+    if (fallbackResult.data) return mapStationRow(fallbackResult.data as Row);
+    throwPreparationDatabaseError(insertError, "preparation station create", "STATION_CREATE_FAILED");
   }
 
   return mapStationRow(inserted as Row);
@@ -141,9 +149,7 @@ export async function createPreparationStation(
     .select("id, organization_id, store_id, code, name, display_order, status")
     .single();
 
-  if (error) {
-    throw new PreparationError("STATION_CREATE_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation station create", "STATION_CREATE_FAILED");
 
   return mapStationRow(data as Row);
 }
@@ -174,9 +180,7 @@ export async function createStationRoutingRule(
     .select("id, organization_id, store_id, station_id, match_type, match_id, priority")
     .single();
 
-  if (error) {
-    throw new PreparationError("ROUTING_RULE_CREATE_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation routing rule create", "ROUTING_RULE_CREATE_FAILED");
 
   return mapRuleRow(data as Row);
 }
@@ -191,9 +195,7 @@ export async function listStationRoutingRules(
     .eq("store_id", storeId)
     .order("priority", { ascending: false });
 
-  if (error) {
-    throw new PreparationError("ROUTING_RULES_LIST_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation routing rule list", "ROUTING_RULES_LIST_FAILED");
 
   return (data ?? []).map((row) => mapRuleRow(row as Row));
 }
@@ -209,12 +211,10 @@ export async function routeOrderToStations(
   // Check if tasks already exist for this order
   const existingTasks = await listPreparationTasks(database, {
     storeId: params.storeId,
+    orderId: params.orderId,
     status: ["PENDING", "IN_PROGRESS", "DONE", "CANCELLED"]
   });
-  const orderTasks = existingTasks.filter((t) => t.orderId === params.orderId);
-  if (orderTasks.length > 0) {
-    return orderTasks;
-  }
+  if (existingTasks.length > 0) return existingTasks;
 
   // Fetch order items with order and queue info
   const { data: orderItems, error: itemsError } = await database.client
@@ -223,9 +223,8 @@ export async function routeOrderToStations(
     .eq("organization_id", params.organizationId)
     .eq("order_id", params.orderId);
 
-  if (itemsError || !orderItems || orderItems.length === 0) {
-    return [];
-  }
+  throwPreparationDatabaseError(itemsError, "preparation order item lookup", "PREPARATION_ORDER_ITEMS_LOOKUP_FAILED");
+  if (!orderItems || orderItems.length === 0) return [];
 
   // Fetch routing rules and stations
   const rules = await listStationRoutingRules(database, params.storeId);
@@ -263,21 +262,21 @@ export async function routeOrderToStations(
       .from("preparation_tasks")
       .insert(tasksToInsert);
 
-    if (insertError) {
-      throw new PreparationError("PREPARATION_TASKS_INSERT_FAILED", insertError.message);
-    }
+    throwPreparationDatabaseError(insertError, "preparation task create", "PREPARATION_TASKS_INSERT_FAILED");
   }
 
   return listPreparationTasks(database, {
     storeId: params.storeId,
+    orderId: params.orderId,
     status: ["PENDING", "IN_PROGRESS"]
-  }).then((tasks) => tasks.filter((t) => t.orderId === params.orderId));
+  });
 }
 
 export async function listPreparationTasks(
   database: Database,
   params: {
     storeId: string;
+    orderId?: string;
     stationId?: string;
     status?: PreparationTaskStatus | PreparationTaskStatus[];
   }
@@ -312,6 +311,10 @@ export async function listPreparationTasks(
     query = query.eq("station_id", params.stationId);
   }
 
+  if (params.orderId) {
+    query = query.eq("order_id", params.orderId);
+  }
+
   if (params.status) {
     if (Array.isArray(params.status)) {
       query = query.in("status", params.status);
@@ -322,21 +325,20 @@ export async function listPreparationTasks(
 
   const { data, error } = await query;
 
-  if (error) {
-    throw new PreparationError("PREPARATION_TASKS_LIST_FAILED", error.message);
-  }
+  throwPreparationDatabaseError(error, "preparation task list", "PREPARATION_TASKS_LIST_FAILED");
 
   // Get queue tickets for these orders
   const orderIds = Array.from(new Set((data ?? []).map((row: Row) => String(row.order_id))));
   const queueMap = new Map<string, string>();
 
   if (orderIds.length > 0) {
-    const { data: queueRows } = await database.client
+    const queueResult = await database.client
       .from("queue_tickets")
       .select("order_id, queue_number")
       .in("order_id", orderIds);
+    throwPreparationDatabaseError(queueResult.error, "preparation queue lookup", "PREPARATION_QUEUE_LOOKUP_FAILED");
 
-    for (const q of queueRows ?? []) {
+    for (const q of queueResult.data ?? []) {
       queueMap.set(String(q.order_id), String(q.queue_number));
     }
   }
@@ -378,6 +380,8 @@ export async function completePreparationTask(
   database: Database,
   params: {
     taskId: string;
+    organizationId: string;
+    storeId: string;
     completedBy?: string;
   }
 ): Promise<PreparationTaskSummary> {
@@ -393,16 +397,18 @@ export async function completePreparationTask(
   const { data: updated, error } = await database.client
     .from("preparation_tasks")
     .update(updatePayload)
+    .eq("organization_id", params.organizationId)
+    .eq("store_id", params.storeId)
     .eq("id", params.taskId)
     .select("id, organization_id, store_id, order_id, order_item_id, station_id, status, started_at, completed_at, created_at")
     .single();
 
-  if (error || !updated) {
-    throw new PreparationError("TASK_COMPLETE_FAILED", error?.message ?? "Task not found");
-  }
+  throwPreparationDatabaseError(error, "preparation task complete", "TASK_COMPLETE_FAILED");
+  if (!updated) throw new PreparationError("TASK_COMPLETE_FAILED", "Task not found");
 
   const tasks = await listPreparationTasks(database, {
     storeId: updated.store_id,
+    orderId: String(updated.order_id),
     status: ["PENDING", "IN_PROGRESS", "DONE"]
   });
 
@@ -423,9 +429,8 @@ export async function checkOrderReadiness(
     .select("status")
     .eq("order_id", orderId);
 
-  if (error || !data || data.length === 0) {
-    return "STILL_PREPARING";
-  }
+  throwPreparationDatabaseError(error, "preparation readiness lookup", "PREPARATION_READINESS_LOOKUP_FAILED");
+  if (!data || data.length === 0) return "STILL_PREPARING";
 
   const allDone = data.every((row: Row) => row.status === "DONE" || row.status === "CANCELLED");
   if (allDone) {

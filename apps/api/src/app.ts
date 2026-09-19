@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { AuthenticationError, AuthService, hasPermission } from "@aevo/auth";
+import { AuthenticationError, AuthService, defineAbilityFor, hasPermission } from "@aevo/auth";
 import type { AppConfig } from "@aevo/config";
 import { deviceModes, roles } from "@aevo/contracts";
-import type { DeviceMode, Permission, Role, SessionPrincipal } from "@aevo/contracts";
+import type { BillingProvider, DeviceMode, Permission, Role, SessionPrincipal, WaitlistStatus } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import {
   canAccessStore,
@@ -48,6 +48,8 @@ import {
   reprintReceipt,
   voidReceipt,
   formatReceiptThermalText,
+  recordOrderRefund,
+  RefundError,
   getCurrentCashSession,
   openCashSession,
   recordCashMovement,
@@ -66,7 +68,33 @@ import {
   listMembers,
   updateMember,
   listAuditLogs,
-  writeAuditLog
+  writeAuditLog,
+  listApps,
+  listOrganizationSubscriptions,
+  getAppEntitlement,
+  startAppTrial,
+  listVenues,
+  createVenue,
+  listResources,
+  createResource,
+  listBookings,
+  createBooking,
+  checkinBooking,
+  getVenueAvailability,
+  listWaitlists,
+  addToWaitlist,
+  updateWaitlistStatus,
+  listUserOrganizations,
+  createOrganization,
+  listOrganizationStores,
+  createStore,
+  getOrganizationStats,
+  StripeBillingAdapter,
+  MockBillingAdapter,
+  recordBillingWebhookEvent,
+  getBillingCustomer,
+  DatabaseSchemaError,
+  throwDatabaseError
 } from "@aevo/db";
 import { InvalidOrderTransitionError } from "@aevo/ordering";
 import { createStoreRoomBroadcaster, type RealtimeEventName, type RealtimePayloadMap } from "@aevo/realtime";
@@ -81,11 +109,17 @@ export interface AppDependencies {
   config: AppConfig;
   database: Database;
   auth?: Pick<AuthService, "login" | "logout" | "resolve" | "refresh">;
+  billing?: BillingProvider;
 }
 
 export function createApp(dependencies: AppDependencies) {
   const { config, database } = dependencies;
   const auth = dependencies.auth ?? new AuthService(database);
+  const billing: BillingProvider = dependencies.billing ?? (
+    config.stripeSecretKey
+      ? new StripeBillingAdapter({ secretKey: config.stripeSecretKey, webhookSecret: config.stripeWebhookSecret })
+      : new MockBillingAdapter()
+  );
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const publicOrderLimiter = new FixedWindowRateLimiter(10, 60_000);
@@ -97,6 +131,15 @@ export function createApp(dependencies: AppDependencies) {
     t.Literal("POS"), t.Literal("QR"), t.Literal("KIOSK"),
     t.Literal("PICKUP"), t.Literal("STAFF"), t.Literal("API")
   ]);
+
+  async function authenticateDevice(request: Request) {
+    const rawToken = request.headers.get("x-device-token")?.trim();
+    if (!rawToken) throw unauthorized();
+    const device = await findDeviceByTokenHash(database, await hashSecret(rawToken));
+    if (!device) throw unauthorized();
+    await touchDevice(database, device.id);
+    return device;
+  }
 
   function assertAllowedOrigin(request: Request): void {
     const origin = request.headers.get("origin");
@@ -151,13 +194,28 @@ export function createApp(dependencies: AppDependencies) {
   }
 
   function rethrowQueueError(error: unknown): never {
+    if (error instanceof DatabaseSchemaError) throw error;
     if (error instanceof QueueError) throw new AppError(400, error.code, error.message);
     throw error;
   }
 
   function rethrowPreparationError(error: unknown): never {
+    if (error instanceof DatabaseSchemaError) throw error;
     if (error instanceof PreparationError) throw new AppError(400, error.code, error.message);
     throw error;
+  }
+
+  function rethrowRefundError(error: unknown): never {
+    if (error instanceof RefundError) {
+      const status = error.code === "REFUND_CONFLICT" ? 409 : error.code === "ORDER_NOT_FOUND" ? 404 : 422;
+      throw new AppError(status, error.code, error.message);
+    }
+    throw error;
+  }
+
+  function rethrowKnownOperationalError(error: unknown, status: number, code: string, fallback: string): never {
+    if (error instanceof DatabaseSchemaError) throw error;
+    throw new AppError(status, code, error instanceof Error ? error.message : fallback);
   }
 
   function idempotencyKey(request: Request): string {
@@ -188,6 +246,32 @@ export function createApp(dependencies: AppDependencies) {
       const broadcaster = createStoreRoomBroadcaster(database.client as never, storeId);
       await broadcaster.broadcast(event, payload);
     }
+  }
+
+  async function ensureOrderOperations(order: Awaited<ReturnType<typeof getOrder>>) {
+    const existingQueueTicket = await getQueueTicketByOrderId(database, order.id);
+    const queueTicket = existingQueueTicket ?? await createQueueTicket(database, {
+      organizationId: order.organizationId,
+      storeId: order.storeId,
+      orderId: order.id,
+      orderNumber: order.orderNumber
+    });
+
+    if (!existingQueueTicket) {
+      await broadcastStoreEvent(order.storeId, "queue.ticket", {
+        ticketId: queueTicket.id,
+        queueNumber: queueTicket.queueNumber,
+        status: queueTicket.status,
+        occurredAt: new Date().toISOString()
+      });
+    }
+
+    await routeOrderToStations(database, {
+      organizationId: order.organizationId,
+      storeId: order.storeId,
+      orderId: order.id
+    });
+    return queueTicket;
   }
 
   function publicOrderProjection(order: Awaited<ReturnType<typeof getPublicOrderByToken>>) {
@@ -235,13 +319,28 @@ export function createApp(dependencies: AppDependencies) {
       logger.info("http.request", { requestId, method: request.method, path: new URL(request.url).pathname, status: set.status });
     })
     .onError({ as: "global" }, ({ error, requestId, set, code }) => {
-      const known = error instanceof AppError || error instanceof AuthenticationError;
-      const status = error instanceof AppError ? error.status : error instanceof AuthenticationError ? 401 : code === "VALIDATION" ? 422 : 500;
-      const errorCode = error instanceof AppError ? error.code : error instanceof AuthenticationError ? error.code : code === "VALIDATION" ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
+      const known = error instanceof AppError || error instanceof AuthenticationError || error instanceof DatabaseSchemaError;
+      const status = error instanceof AppError
+        ? error.status
+        : error instanceof AuthenticationError
+          ? 401
+          : error instanceof DatabaseSchemaError
+            ? 503
+            : code === "VALIDATION" ? 422 : 500;
+      const errorCode = error instanceof AppError
+        ? error.code
+        : error instanceof AuthenticationError
+          ? error.code
+          : error instanceof DatabaseSchemaError
+            ? error.code
+            : code === "VALIDATION" ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
       set.status = status;
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger[status >= 500 ? "error" : "warn"]("http.error", { requestId, code: errorCode, status, message: errorMessage });
-      return { error: { code: errorCode, message: known || code === "VALIDATION" ? errorMessage : "An unexpected error occurred", requestId } };
+      const clientMessage = error instanceof DatabaseSchemaError
+        ? "ระบบฐานข้อมูลยังติดตั้งไม่ครบ กรุณาใช้คำสั่ง migration แล้วลองใหม่"
+        : known || code === "VALIDATION" ? errorMessage : "An unexpected error occurred";
+      return { error: { code: errorCode, message: clientMessage, requestId } };
     })
     .options("/*", ({ set }) => {
       set.status = 204;
@@ -324,6 +423,240 @@ export function createApp(dependencies: AppDependencies) {
       if (!hasPermission(principal, "store.read")) throw forbidden();
       return { stores: await listAuthorizedStores(database, principal) };
     })
+    // Aevo Hub: Apps Catalog & Subscription Endpoints
+    .get("/api/hub/apps", async () => {
+      return { apps: await listApps(database) };
+    })
+    .get("/api/hub/subscriptions", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { subscriptions: await listOrganizationSubscriptions(database, principal, query.storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .get("/api/hub/entitlements/:appId", async ({ request, params, query }) => {
+      const principal = await authenticate(request);
+      return { entitlement: await getAppEntitlement(database, principal, params.appId, query.storeId) };
+    }, {
+      params: t.Object({ appId: t.String({ minLength: 1, maxLength: 64 }) }),
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/hub/subscriptions/trial", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "organization.manage")) throw forbidden();
+      const subscription = await startAppTrial(database, principal, {
+        appId: body.appId,
+        ...(body.storeId ? { storeId: body.storeId } : {})
+      });
+      await writeAuditLog(database, {
+        organizationId: principal.organizationId,
+        userId: principal.userId,
+        action: "APP_TRIAL_STARTED",
+        resourceType: "app_subscription",
+        resourceId: subscription.id,
+        metadata: { appId: body.appId, storeId: body.storeId }
+      });
+      return { subscription };
+    }, {
+      body: t.Object({
+        appId: t.String({ minLength: 1, maxLength: 64 }),
+        storeId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+
+    // Aevo Booking Domain Endpoints
+    .get("/api/booking/venues", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { venues: await listVenues(database, principal, query.storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/booking/venues", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "store.manage")) throw forbidden();
+      try {
+        const venue = await createVenue(database, principal, {
+          name: body.name,
+          slug: body.slug,
+          ...(body.storeId ? { storeId: body.storeId } : {}),
+          ...(body.description ? { description: body.description } : {}),
+          ...(body.address ? { address: body.address } : {}),
+          ...(body.timezone ? { timezone: body.timezone } : {}),
+          ...(body.slotDurationMinutes ? { slotDurationMinutes: body.slotDurationMinutes } : {})
+        });
+        return { venue };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "VENUE_CREATE_FAILED", "Failed to create venue");
+      }
+    }, {
+      body: t.Object({
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        slug: t.String({ minLength: 1, maxLength: 64 }),
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        description: t.Optional(t.String({ maxLength: 1000 })),
+        address: t.Optional(t.String({ maxLength: 500 })),
+        timezone: t.Optional(t.String()),
+        slotDurationMinutes: t.Optional(t.Integer({ minimum: 15, maximum: 240 }))
+      })
+    })
+    .get("/api/booking/venues/:venueId/resources", async ({ request, params }) => {
+      const principal = await authenticate(request);
+      return { resources: await listResources(database, principal, params.venueId) };
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) })
+    })
+    .post("/api/booking/venues/:venueId/resources", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "catalog.manage")) throw forbidden();
+      try {
+        const resource = await createResource(database, principal, {
+          venueId: params.venueId,
+          name: body.name,
+          ...(body.resourceType ? { resourceType: body.resourceType as any } : {}),
+          ...(body.capacity ? { capacity: body.capacity } : {}),
+          basePriceMinor: body.basePriceMinor
+        });
+        return { resource };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "RESOURCE_CREATE_FAILED", "Failed to create resource");
+      }
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        resourceType: t.Optional(t.String()),
+        capacity: t.Optional(t.Integer({ minimum: 1 })),
+        basePriceMinor: t.Integer({ minimum: 0 })
+      })
+    })
+    .get("/api/booking/venues/:venueId/availability", async ({ request, params, query }) => {
+      const principal = await authenticate(request);
+      return { availability: await getVenueAvailability(database, principal, params.venueId, query.date) };
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) }),
+      query: t.Object({ date: t.String({ minLength: 10, maxLength: 10 }) })
+    })
+    .get("/api/booking/venues/:venueId/bookings", async ({ request, params, query }) => {
+      const principal = await authenticate(request);
+      return {
+        bookings: await listBookings(database, principal, params.venueId, {
+          ...(query.date ? { date: query.date } : {}),
+          ...(query.resourceId ? { resourceId: query.resourceId } : {})
+        })
+      };
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) }),
+      query: t.Object({
+        date: t.Optional(t.String({ minLength: 10, maxLength: 10 })),
+        resourceId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .post("/api/booking/bookings", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "order.create")) throw forbidden();
+      try {
+        const booking = await createBooking(database, principal, {
+          venueId: body.venueId,
+          resourceId: body.resourceId,
+          customerName: body.customerName,
+          ...(body.customerPhone ? { customerPhone: body.customerPhone } : {}),
+          ...(body.customerEmail ? { customerEmail: body.customerEmail } : {}),
+          startAt: body.startAt,
+          endAt: body.endAt,
+          amountMinor: body.amountMinor,
+          ...(body.notes ? { notes: body.notes } : {}),
+          ...(body.orderId ? { orderId: body.orderId } : {})
+        });
+        return { booking };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "BOOKING_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create booking");
+      }
+    }, {
+      body: t.Object({
+        venueId: t.String({ format: "uuid" }),
+        resourceId: t.String({ format: "uuid" }),
+        customerName: t.String({ minLength: 1, maxLength: 160 }),
+        customerPhone: t.Optional(t.String()),
+        customerEmail: t.Optional(t.String()),
+        startAt: t.String(),
+        endAt: t.String(),
+        amountMinor: t.Integer({ minimum: 0 }),
+        notes: t.Optional(t.String()),
+        orderId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .post("/api/booking/bookings/:bookingId/checkin", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "order.create")) throw forbidden();
+      try {
+        const booking = await checkinBooking(database, principal, params.bookingId, body.code);
+        return { booking };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "CHECKIN_FAILED", error instanceof Error ? error.message : "Failed to checkin booking");
+      }
+    }, {
+      params: t.Object({ bookingId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        code: t.Optional(t.String())
+      })
+    })
+    .get("/api/booking/venues/:venueId/waitlist", async ({ request, params, query }) => {
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "store.read")) throw forbidden();
+      const statusQuery = (query as Record<string, string> | undefined)?.status as WaitlistStatus | undefined;
+      const waitlist = await listWaitlists(database, principal, params.venueId, statusQuery ? { status: statusQuery } : {});
+      return { waitlist };
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) }),
+      query: t.Optional(t.Object({ status: t.Optional(t.String()) }))
+    })
+    .post("/api/booking/venues/:venueId/waitlist", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "order.create")) throw forbidden();
+      const entry = await addToWaitlist(database, principal, {
+        venueId: params.venueId,
+        resourceId: body.resourceId,
+        customerName: body.customerName,
+        customerPhone: body.customerPhone,
+        partySize: body.partySize,
+        estimatedWaitMinutes: body.estimatedWaitMinutes
+      });
+      return { entry };
+    }, {
+      params: t.Object({ venueId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        resourceId: t.Optional(t.String({ format: "uuid" })),
+        customerName: t.String({ minLength: 1, maxLength: 160 }),
+        customerPhone: t.Optional(t.String()),
+        partySize: t.Integer({ minimum: 1 }),
+        estimatedWaitMinutes: t.Optional(t.Integer({ minimum: 0 }))
+      })
+    })
+    .post("/api/booking/waitlist/:waitlistId/status", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "order.create")) throw forbidden();
+      const entry = await updateWaitlistStatus(database, principal, params.waitlistId, body.status as WaitlistStatus);
+      return { entry };
+    }, {
+      params: t.Object({ waitlistId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        status: t.Union([
+          t.Literal("WAITING"),
+          t.Literal("NOTIFIED"),
+          t.Literal("SEATED"),
+          t.Literal("CANCELLED"),
+          t.Literal("EXPIRED")
+        ])
+      })
+    })
+
+
     .get("/api/devices", async ({ request, query }) => {
       const principal = await authenticateStore(request, query.storeId, "devices.manage");
       return { devices: await listDevices(database, principal, query.storeId) };
@@ -347,7 +680,7 @@ export function createApp(dependencies: AppDependencies) {
         await writeAuditLog(database, { organizationId: principal.organizationId, userId: principal.userId, action: "DEVICE_CREATED", resourceType: "device", resourceId: device.id, metadata: { storeId: body.storeId, mode: body.mode } });
         return { device, pairingCode, pairingExpiresAt };
       } catch (error) {
-        throw new AppError(400, "DEVICE_CREATE_FAILED", error instanceof Error ? error.message : "Failed to create device");
+        return rethrowKnownOperationalError(error, 400, "DEVICE_CREATE_FAILED", "Failed to create device");
       }
     }, {
       body: t.Object({
@@ -366,6 +699,7 @@ export function createApp(dependencies: AppDependencies) {
       const paired = await pairDevice(database, device.id, await hashSecret(deviceToken));
       if (!paired) throw new AppError(409, "DEVICE_PAIRING_FAILED", "ไม่สามารถจับคู่อุปกรณ์ได้ กรุณาสร้างรหัสใหม่");
       const storeResult = await database.client.from("stores").select("code").eq("id", paired.storeId).maybeSingle();
+      throwDatabaseError(storeResult.error, "paired device store lookup");
       return { device: paired, deviceToken, storeCode: storeResult.data?.code ? String(storeResult.data.code) : "" };
     }, {
       body: t.Object({ pairingCode: t.String({ minLength: 6, maxLength: 32 }) })
@@ -458,26 +792,9 @@ export function createApp(dependencies: AppDependencies) {
       try {
         const order = await createOrder(database, principal, body, idempotencyKey(request));
         await broadcastStoreEvent(body.storeId, "order.created", { order });
-        const queueTicket = await createQueueTicket(database, {
-          organizationId: order.organizationId,
-          storeId: order.storeId,
-          orderId: order.id,
-          orderNumber: order.orderNumber
-        }).catch(() => null);
-        if (queueTicket) {
-          await broadcastStoreEvent(order.storeId, "queue.ticket", {
-            ticketId: queueTicket.id,
-            queueNumber: queueTicket.queueNumber,
-            status: queueTicket.status,
-            occurredAt: new Date().toISOString()
-          });
-        }
-        await routeOrderToStations(database, {
-          organizationId: order.organizationId,
-          storeId: order.storeId,
-          orderId: order.id
-        }).catch(() => null);
-        return { order, queueTicket };
+        // Queue/KDS work is created after payment and confirmation. A held
+        // draft must not occupy a queue or kitchen station.
+        return { order };
       } catch (error) {
         return rethrowOrderError(error);
       }
@@ -516,7 +833,7 @@ export function createApp(dependencies: AppDependencies) {
         });
 
         // Synchronize queue ticket status with order lifecycle
-        const qTicket = await getQueueTicketByOrderId(database, order.id).catch(() => null);
+        const qTicket = await getQueueTicketByOrderId(database, order.id);
         if (qTicket) {
           let targetQueueStatus: "WAITING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED" | null = null;
           if (order.status === "READY" && qTicket.status !== "READY" && qTicket.status !== "COMPLETED") {
@@ -530,24 +847,18 @@ export function createApp(dependencies: AppDependencies) {
           }
 
           if (targetQueueStatus) {
-            const updated = await transitionQueueTicket(database, qTicket.id, targetQueueStatus).catch(() => null);
-            if (updated) {
-              await broadcastStoreEvent(order.storeId, "queue.ticket", {
-                ticketId: updated.id,
-                queueNumber: updated.queueNumber,
-                status: updated.status,
-                occurredAt: new Date().toISOString()
-              });
-            }
+            const updated = await transitionQueueTicket(database, qTicket.id, targetQueueStatus);
+            await broadcastStoreEvent(order.storeId, "queue.ticket", {
+              ticketId: updated.id,
+              queueNumber: updated.queueNumber,
+              status: updated.status,
+              occurredAt: new Date().toISOString()
+            });
           }
         }
 
-        if (order.status === "CONFIRMED" || order.status === "ACCEPTED" || order.status === "PREPARING") {
-          await routeOrderToStations(database, {
-            organizationId: order.organizationId,
-            storeId: order.storeId,
-            orderId: order.id
-          }).catch(() => null);
+        if (["CONFIRMED", "ACCEPTED", "PREPARING"].includes(order.status)) {
+          await ensureOrderOperations(order);
         }
 
         return { order };
@@ -598,6 +909,36 @@ export function createApp(dependencies: AppDependencies) {
         providerReference: t.Optional(t.String({ maxLength: 200 }))
       })
     })
+    .post("/api/orders/:orderId/refunds", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "refund.create");
+      try {
+        const refund = await recordOrderRefund(database, principal, {
+          orderId: params.orderId,
+          storeId: body.storeId,
+          amountMinor: body.amountMinor,
+          reason: body.reason
+        }, idempotencyKey(request));
+        const order = await getOrder(database, principal, body.storeId, params.orderId);
+        await broadcastStoreEvent(body.storeId, "order.status", {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          fromStatus: "COMPLETED",
+          toStatus: order.status,
+          occurredAt: new Date().toISOString()
+        });
+        return { refund, order };
+      } catch (error) {
+        return rethrowRefundError(error);
+      }
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        amountMinor: t.Integer({ minimum: 1, maximum: 2147483647 }),
+        reason: t.String({ minLength: 1, maxLength: 500 })
+      })
+    })
     .get("/api/catalog", async ({ request, query }) => {
       const principal = await authenticateStore(request, query.storeId, "catalog.read");
       return await listCatalog(database, principal, query.storeId);
@@ -622,29 +963,14 @@ export function createApp(dependencies: AppDependencies) {
       try {
         const order = await createPublicOrder(database, body, idempotencyKey(request));
         await broadcastStoreEvent(order.storeId, "order.created", { order });
-        const queueTicket = await createQueueTicket(database, {
-          organizationId: order.organizationId,
-          storeId: order.storeId,
-          orderId: order.id,
-          orderNumber: order.orderNumber
-        }).catch(() => null);
-        if (queueTicket) {
-          await broadcastStoreEvent(order.storeId, "queue.ticket", {
-            ticketId: queueTicket.id,
-            queueNumber: queueTicket.queueNumber,
-            status: queueTicket.status,
-            occurredAt: new Date().toISOString()
-          });
-        }
-        await routeOrderToStations(database, {
-          organizationId: order.organizationId,
-          storeId: order.storeId,
-          orderId: order.id
-        }).catch(() => null);
-        return { order: publicOrderProjection(order), queueTicket: queueTicket ? {
+        // Public QR/Kiosk orders use the counter-payment flow for now, so the
+        // customer receives a queue number immediately and staff can collect
+        // payment from the same order in Orders/POS.
+        const queueTicket = await ensureOrderOperations(order);
+        return { order: publicOrderProjection(order), queueTicket: {
           queueNumber: queueTicket.queueNumber,
           status: queueTicket.status
-        } : null };
+        } };
       } catch (error) {
         return rethrowOrderError(error);
       }
@@ -672,7 +998,7 @@ export function createApp(dependencies: AppDependencies) {
       if (!publicReadLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many tracking requests. Please wait a moment.");
       const order = await getPublicOrderByToken(database, query.storeCode, params.token);
       if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order tracking link is invalid or expired");
-      const queueTicket = await getQueueTicketByOrderId(database, order.id).catch(() => null);
+      const queueTicket = await getQueueTicketByOrderId(database, order.id);
       return {
         storeCode: query.storeCode,
         order: publicOrderProjection(order),
@@ -795,13 +1121,14 @@ export function createApp(dependencies: AppDependencies) {
         status: t.Optional(t.String())
       })
     })
-    .post("/api/preparation/tasks/:taskId/complete", async ({ request, params }) => {
+    .post("/api/preparation/tasks/:taskId/complete", async ({ request, params, body }) => {
       assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "order.create")) throw forbidden();
+      const principal = await authenticateStore(request, body.storeId, "order.create");
       try {
         const completedTask = await completePreparationTask(database, {
           taskId: params.taskId,
+          organizationId: principal.organizationId,
+          storeId: body.storeId,
           completedBy: principal.userId
         });
         await broadcastStoreEvent(completedTask.storeId, "preparation.task", {
@@ -815,17 +1142,15 @@ export function createApp(dependencies: AppDependencies) {
         // Check readiness of order
         const readiness = await checkOrderReadiness(database, completedTask.orderId);
         if (readiness === "READY") {
-          const qTicket = await getQueueTicketByOrderId(database, completedTask.orderId).catch(() => null);
+          const qTicket = await getQueueTicketByOrderId(database, completedTask.orderId);
           if (qTicket && qTicket.status !== "READY" && qTicket.status !== "COMPLETED") {
-            const updatedQT = await transitionQueueTicket(database, qTicket.id, "READY").catch(() => null);
-            if (updatedQT) {
-              await broadcastStoreEvent(completedTask.storeId, "queue.ticket", {
-                ticketId: updatedQT.id,
-                queueNumber: updatedQT.queueNumber,
-                status: updatedQT.status,
-                occurredAt: new Date().toISOString()
-              });
-            }
+            const updatedQT = await transitionQueueTicket(database, qTicket.id, "READY");
+            await broadcastStoreEvent(completedTask.storeId, "queue.ticket", {
+              ticketId: updatedQT.id,
+              queueNumber: updatedQT.queueNumber,
+              status: updatedQT.status,
+              occurredAt: new Date().toISOString()
+            });
           }
         }
 
@@ -834,15 +1159,18 @@ export function createApp(dependencies: AppDependencies) {
         return rethrowPreparationError(error);
       }
     }, {
-      params: t.Object({ taskId: t.String({ format: "uuid" }) })
+      params: t.Object({ taskId: t.String({ format: "uuid" }) }),
+      body: t.Object({ storeId: t.String({ format: "uuid" }) })
     })
     .post("/api/push/subscribe", async ({ request, body }) => {
       assertAllowedOrigin(request);
-      const { data: store } = await database.client
+      const storeResult = await database.client
         .from("stores")
         .select("organization_id")
         .eq("id", body.storeId)
         .single();
+      throwDatabaseError(storeResult.error, "push subscription store lookup");
+      const store = storeResult.data;
       if (!store) throw new AppError(404, "STORE_NOT_FOUND", "Store not found");
 
       const subRecord = {
@@ -859,7 +1187,8 @@ export function createApp(dependencies: AppDependencies) {
         } : null
       };
 
-      await database.client.from("push_subscriptions").insert(subRecord);
+      const subscriptionResult = await database.client.from("push_subscriptions").insert(subRecord);
+      throwDatabaseError(subscriptionResult.error, "push subscription create");
       return { ok: true };
     }, {
       body: t.Object({
@@ -895,16 +1224,19 @@ export function createApp(dependencies: AppDependencies) {
           .select("method, amount_minor")
           .eq("organization_id", principal.organizationId)
           .eq("store_id", query.storeId)
+          .eq("status", "PAID")
           .gte("created_at", startOfDay)
           .lte("created_at", endOfDay)
       ]);
+      throwDatabaseError(ordersRes.error, "daily report orders");
+      throwDatabaseError(paymentsRes.error, "daily report payments");
 
-      const orders = (ordersRes.data ?? []).map((r: any) => ({
+      const orders = (ordersRes.data ?? []).map((r) => ({
         totalMinor: Number(r.total_minor || 0),
         status: String(r.status || "")
       }));
 
-      const payments = (paymentsRes.data ?? []).map((r: any) => ({
+      const payments = (paymentsRes.data ?? []).map((r) => ({
         method: String(r.method || ""),
         amountMinor: Number(r.amount_minor || 0)
       }));
@@ -922,7 +1254,7 @@ export function createApp(dependencies: AppDependencies) {
       const from = query.from || new Date(Date.now() - 30 * 86400000).toISOString();
       const to = query.to || new Date().toISOString();
 
-      const { data } = await database.client
+      const productMixResult = await database.client
         .from("order_items")
         .select("product_id, product_name, quantity, subtotal_minor, orders!inner(store_id, created_at, status)")
         .eq("orders.organization_id", principal.organizationId)
@@ -930,8 +1262,9 @@ export function createApp(dependencies: AppDependencies) {
         .neq("orders.status", "CANCELLED")
         .gte("orders.created_at", from)
         .lte("orders.created_at", to);
+      throwDatabaseError(productMixResult.error, "product mix report");
 
-      const items = (data ?? []).map((r: any) => ({
+      const items = (productMixResult.data ?? []).map((r) => ({
         productId: String(r.product_id),
         productName: String(r.product_name || "Unknown"),
         quantity: Number(r.quantity || 1),
@@ -953,15 +1286,16 @@ export function createApp(dependencies: AppDependencies) {
       const startOfDay = `${targetDate}T00:00:00Z`;
       const endOfDay = `${targetDate}T23:59:59Z`;
 
-      const { data } = await database.client
+      const hourlyResult = await database.client
         .from("orders")
         .select("created_at, total_minor, status")
         .eq("organization_id", principal.organizationId)
         .eq("store_id", query.storeId)
         .gte("created_at", startOfDay)
         .lte("created_at", endOfDay);
+      throwDatabaseError(hourlyResult.error, "hourly report");
 
-      const orders = (data ?? []).map((r: any) => ({
+      const orders = (hourlyResult.data ?? []).map((r) => ({
         createdAt: String(r.created_at),
         totalMinor: Number(r.total_minor || 0),
         status: String(r.status || "")
@@ -989,6 +1323,8 @@ export function createApp(dependencies: AppDependencies) {
           .eq("store_id", query.storeId)
           .order("table_number", { ascending: true })
       ]);
+      throwDatabaseError(floorsRes.error, "floor list");
+      throwDatabaseError(tablesRes.error, "table list");
       return {
         floors: floorsRes.data ?? [],
         tables: tablesRes.data ?? []
@@ -998,7 +1334,7 @@ export function createApp(dependencies: AppDependencies) {
     })
     .patch("/api/tables/:tableId/status", async ({ request, params, body }) => {
       assertAllowedOrigin(request);
-      await authenticateStore(request, body.storeId, "order.create");
+      const principal = await authenticateStore(request, body.storeId, "order.create");
       const updatePayload: Record<string, unknown> = {
         status: body.status,
         current_order_id: body.currentOrderId ?? null
@@ -1006,16 +1342,22 @@ export function createApp(dependencies: AppDependencies) {
       const { data, error } = await database.client
         .from("tables")
         .update(updatePayload)
+        .eq("organization_id", principal.organizationId)
+        .eq("store_id", body.storeId)
         .eq("id", params.tableId)
         .select()
         .single();
-      if (error || !data) throw new AppError(400, "TABLE_UPDATE_FAILED", error?.message || "Failed to update table");
+      throwDatabaseError(error, "table status update");
+      if (!data) throw new AppError(404, "TABLE_NOT_FOUND", "ไม่พบโต๊ะในสาขานี้");
       return { table: data };
     }, {
       params: t.Object({ tableId: t.String({ format: "uuid" }) }),
       body: t.Object({
         storeId: t.String({ format: "uuid" }),
-        status: t.String(),
+        status: t.Union([
+          t.Literal("AVAILABLE"), t.Literal("OCCUPIED"), t.Literal("RESERVED"),
+          t.Literal("CLEANING"), t.Literal("UNAVAILABLE")
+        ]),
         currentOrderId: t.Optional(t.Nullable(t.String({ format: "uuid" })))
       })
     })
@@ -1198,7 +1540,7 @@ export function createApp(dependencies: AppDependencies) {
         });
         return { receipt };
       } catch (error) {
-        throw new AppError(400, "RECEIPT_CREATION_FAILED", error instanceof Error ? error.message : "Failed to create receipt");
+        return rethrowKnownOperationalError(error, 400, "RECEIPT_CREATION_FAILED", "Failed to create receipt");
       }
     }, {
       body: t.Object({
@@ -1245,7 +1587,7 @@ export function createApp(dependencies: AppDependencies) {
         const receipt = await reprintReceipt(database, principal, params.id, body.storeId);
         return { receipt, thermalText: formatReceiptThermalText(receipt, 80) };
       } catch (error) {
-        throw new AppError(400, "REPRINT_FAILED", error instanceof Error ? error.message : "Failed to reprint receipt");
+        return rethrowKnownOperationalError(error, 400, "REPRINT_FAILED", "Failed to reprint receipt");
       }
     }, {
       params: t.Object({ id: t.String({ format: "uuid" }) }),
@@ -1258,7 +1600,7 @@ export function createApp(dependencies: AppDependencies) {
         const receipt = await voidReceipt(database, principal, params.id, body.reason, body.storeId);
         return { receipt };
       } catch (error) {
-        throw new AppError(400, "VOID_FAILED", error instanceof Error ? error.message : "Failed to void receipt");
+        return rethrowKnownOperationalError(error, 400, "VOID_FAILED", "Failed to void receipt");
       }
     }, {
       params: t.Object({ id: t.String({ format: "uuid" }) }),
@@ -1286,7 +1628,7 @@ export function createApp(dependencies: AppDependencies) {
         });
         return { session };
       } catch (error) {
-        throw new AppError(400, "CASH_SESSION_OPEN_FAILED", error instanceof Error ? error.message : "Failed to open cash session");
+        return rethrowKnownOperationalError(error, 400, "CASH_SESSION_OPEN_FAILED", "Failed to open cash session");
       }
     }, {
       body: t.Object({
@@ -1308,7 +1650,7 @@ export function createApp(dependencies: AppDependencies) {
         });
         return { movement };
       } catch (error) {
-        throw new AppError(400, "CASH_MOVEMENT_FAILED", error instanceof Error ? error.message : "Failed to record cash movement");
+        return rethrowKnownOperationalError(error, 400, "CASH_MOVEMENT_FAILED", "Failed to record cash movement");
       }
     }, {
       body: t.Object({
@@ -1331,7 +1673,7 @@ export function createApp(dependencies: AppDependencies) {
         });
         return { session };
       } catch (error) {
-        throw new AppError(400, "CASH_SESSION_CLOSE_FAILED", error instanceof Error ? error.message : "Failed to close cash session");
+        return rethrowKnownOperationalError(error, 400, "CASH_SESSION_CLOSE_FAILED", "Failed to close cash session");
       }
     }, {
       body: t.Object({
@@ -1362,7 +1704,7 @@ export function createApp(dependencies: AppDependencies) {
         });
         return { closing };
       } catch (error) {
-        throw new AppError(400, "DAILY_CLOSING_FAILED", error instanceof Error ? error.message : "Failed to generate daily closing");
+        return rethrowKnownOperationalError(error, 400, "DAILY_CLOSING_FAILED", "Failed to generate daily closing");
       }
     }, {
       body: t.Object({
@@ -1389,5 +1731,894 @@ export function createApp(dependencies: AppDependencies) {
         storeId: t.String({ format: "uuid" }),
         limit: t.Optional(t.String())
       })
+    })
+
+    // ==========================================
+    // CANONICAL SURFACE 1: /api/v1/hub/*
+    // ==========================================
+    .get("/api/v1/hub/me", async ({ request }) => {
+      const principal = await authenticate(request);
+      return { principal };
+    })
+    .get("/api/v1/hub/organizations", async ({ request }) => {
+      const principal = await authenticate(request);
+      const organizations = await listUserOrganizations(database, principal.userId);
+      return { organizations };
+    })
+    .post("/api/v1/hub/organizations", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      const organization = await createOrganization(database, principal.userId, body);
+      return { organization };
+    }, {
+      body: t.Object({
+        name: t.String({ minLength: 2, maxLength: 100 }),
+        slug: t.Optional(t.String({ minLength: 2, maxLength: 64 }))
+      })
+    })
+    .get("/api/v1/hub/stores", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      const orgId = query.organizationId || principal.organizationId;
+      const stores = await listOrganizationStores(database, orgId);
+      return { stores };
+    }, {
+      query: t.Object({
+        organizationId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .post("/api/v1/hub/stores", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "organization.manage") && !hasPermission(principal, "store.manage")) throw forbidden();
+      const orgId = body.organizationId || principal.organizationId;
+      const store = await createStore(database, orgId, body);
+      return { store };
+    }, {
+      body: t.Object({
+        organizationId: t.Optional(t.String({ format: "uuid" })),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        code: t.String({ minLength: 1, maxLength: 32 }),
+        timezone: t.Optional(t.String({ minLength: 1, maxLength: 64 }))
+      })
+    })
+    .get("/api/v1/hub/apps", async () => {
+      return { apps: await listApps(database) };
+    })
+    .get("/api/v1/hub/subscriptions", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { subscriptions: await listOrganizationSubscriptions(database, principal, query.storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .get("/api/v1/hub/entitlements/:appId", async ({ request, params, query }) => {
+      const principal = await authenticate(request);
+      return { entitlement: await getAppEntitlement(database, principal, params.appId, query.storeId) };
+    }, {
+      params: t.Object({ appId: t.String({ minLength: 1, maxLength: 64 }) }),
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/v1/hub/subscriptions/trial", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "organization.manage")) throw forbidden();
+      const subscription = await startAppTrial(database, principal, {
+        appId: body.appId,
+        ...(body.storeId ? { storeId: body.storeId } : {})
+      });
+      await writeAuditLog(database, {
+        organizationId: principal.organizationId,
+        userId: principal.userId,
+        action: "APP_TRIAL_STARTED",
+        resourceType: "app_subscription",
+        resourceId: subscription.id,
+        metadata: { appId: body.appId, storeId: body.storeId }
+      });
+      return { subscription };
+    }, {
+      body: t.Object({
+        appId: t.String({ minLength: 1, maxLength: 64 }),
+        storeId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .get("/api/v1/hub/members", async ({ request }) => {
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "member.manage")) throw forbidden();
+      return { members: await listMembers(database, principal) };
+    })
+    .patch("/api/v1/hub/members/:membershipId", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "member.manage")) throw forbidden();
+      const member = await updateMember(database, principal, params.membershipId, body as never);
+      return { member };
+    }, {
+      params: t.Object({ membershipId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        role: t.Optional(t.Union([
+          t.Literal("OWNER"), t.Literal("MANAGER"), t.Literal("CASHIER"),
+          t.Literal("KITCHEN"), t.Literal("RUNNER")
+        ])),
+        customPermissions: t.Optional(t.Array(t.String()))
+      })
+    })
+    .get("/api/v1/hub/audit-logs", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "audit.read")) throw forbidden();
+      const logs = await listAuditLogs(database, principal, query.limit ? Number(query.limit) : 50);
+      return { logs };
+    }, {
+      query: t.Object({
+        limit: t.Optional(t.String()),
+        action: t.Optional(t.String()),
+        resourceType: t.Optional(t.String())
+      })
+    })
+    .get("/api/v1/hub/stats", async ({ request }) => {
+      const principal = await authenticate(request);
+      return { stats: await getOrganizationStats(database, principal.organizationId) };
+    })
+    .post("/api/v1/hub/billing/portal", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "organization.manage")) throw forbidden();
+      let customer = await getBillingCustomer(database, principal.organizationId);
+      if (!customer) {
+        customer = await billing.createCustomer({
+          organizationId: principal.organizationId,
+          email: principal.email,
+          name: principal.displayName || "Owner"
+        });
+      }
+      const returnUrl = body.returnUrl || `${config.webOrigin}/staff/hub`;
+      const url = await billing.getPortalUrl(customer.providerCustomerId, returnUrl);
+      return { url };
+    }, {
+      body: t.Object({
+        returnUrl: t.Optional(t.String())
+      })
+    })
+    .post("/api/v1/hub/billing/webhook", async ({ request }) => {
+      const event = await billing.verifyWebhook(request);
+      const record = await recordBillingWebhookEvent(database, {
+        id: event.id,
+        provider: "STRIPE",
+        eventType: event.type,
+        payload: event.data
+      });
+      return { received: true, processed: record.processed, duplicate: record.duplicate };
+    })
+
+    // ==========================================
+    // CANONICAL SURFACE 2: /api/v1/staff/*
+    // ==========================================
+    .get("/api/v1/staff/context", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      const stores = await listAuthorizedStores(database, principal);
+      const storeId = query.storeId ?? request.headers.get("x-store-id") ?? stores[0]?.id;
+      const currentStore = stores.find((s) => s.id === storeId) ?? null;
+      let activeCashSession = null;
+      if (currentStore) {
+        try {
+          activeCashSession = await getCurrentCashSession(database, principal, currentStore.id);
+        } catch {
+          activeCashSession = null;
+        }
+      }
+      return { principal, stores, currentStore, activeCashSession };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .get("/api/v1/staff/catalog", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "catalog.read");
+      return await listCatalog(database, principal, storeId);
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        channel: t.Optional(catalogChannelSchema)
+      })
+    })
+    .post("/api/v1/staff/orders", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "order.create");
+      try {
+        const order = await createOrder(database, principal, body, idempotencyKey(request));
+        const queueTicket = await ensureOrderOperations(order);
+        return { order, queueTicket };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        channel: t.Union([t.Literal("POS"), t.Literal("QR"), t.Literal("KIOSK"), t.Literal("PICKUP"), t.Literal("STAFF"), t.Literal("API")]),
+        fulfillmentType: t.Union([t.Literal("TAKEAWAY"), t.Literal("DINE_IN"), t.Literal("PICKUP")]),
+        orderType: t.Optional(t.Union([t.Literal("POS"), t.Literal("KIOSK"), t.Literal("QR_ORDER"), t.Literal("BOOKING"), t.Literal("SERVICE")])),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        customerName: t.Optional(t.String({ maxLength: 120 })),
+        customerPhone: t.Optional(t.String({ maxLength: 32 })),
+        customerEmail: t.Optional(t.String({ maxLength: 255 })),
+        notes: t.Optional(t.String({ maxLength: 500 })),
+        scheduledPickupAt: t.Optional(t.String()),
+        items: t.Array(t.Object({
+          productId: t.String({ format: "uuid" }),
+          variantId: t.Optional(t.String({ format: "uuid" })),
+          menuItemId: t.Optional(t.String({ format: "uuid" })),
+          modifierIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+          quantity: t.Integer({ minimum: 1, maximum: 99 }),
+          note: t.Optional(t.String({ maxLength: 200 }))
+        }), { minItems: 1 })
+      })
+    })
+    .get("/api/v1/staff/orders", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "order.read");
+      const orders = await listOrders(database, principal, storeId, {
+        status: query.status as never,
+        limit: query.limit ? Number(query.limit) : 20
+      });
+      return { orders };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        status: t.Optional(t.String()),
+        limit: t.Optional(t.String())
+      })
+    })
+    .get("/api/v1/staff/orders/:orderId", async ({ request, params, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "order.read");
+      const order = await getOrder(database, principal, storeId, params.orderId);
+      if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+      return { order };
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/v1/staff/orders/:orderId/pay", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "payment.receive");
+      const order = await recordOrderPayment(database, principal, params.orderId, body, idempotencyKey(request));
+      await broadcastStoreEvent(body.storeId, "order.payment", {
+        orderId: order.id,
+        paymentMethod: body.method,
+        amountMinor: body.amountMinor,
+        occurredAt: new Date().toISOString()
+      });
+      const queueTicket = await ensureOrderOperations(order);
+      const receipt = await createReceiptFromOrder(database, principal, {
+        orderId: order.id,
+        storeId: body.storeId
+      });
+      return { order, queueTicket, receipt };
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        method: t.Union([t.Literal("CASH"), t.Literal("PROMPTPAY"), t.Literal("EXTERNAL_CARD"), t.Literal("MANUAL")]),
+        amountMinor: t.Integer({ minimum: 1, maximum: 2147483647 }),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        providerReference: t.Optional(t.String({ maxLength: 200 }))
+      })
+    })
+    .post("/api/v1/staff/orders/:orderId/refund", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "refund.create");
+      try {
+        const refund = await recordOrderRefund(database, principal, {
+          orderId: params.orderId,
+          storeId: body.storeId,
+          amountMinor: body.amountMinor,
+          reason: body.reason
+        }, idempotencyKey(request));
+        return { refund };
+      } catch (error) {
+        return rethrowRefundError(error);
+      }
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        amountMinor: t.Integer({ minimum: 1 }),
+        reason: t.String({ minLength: 1, maxLength: 255 })
+      })
+    })
+    .post("/api/v1/staff/orders/:orderId/transition", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, orderActionPermission(body.toStatus));
+      const order = await transitionOrder(database, principal, params.orderId, body, idempotencyKey(request));
+      return { order };
+    }, {
+      params: t.Object({ orderId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        toStatus: t.Union([
+          t.Literal("PENDING_PAYMENT"), t.Literal("PAID"), t.Literal("CONFIRMED"), t.Literal("QUEUED"),
+          t.Literal("ACCEPTED"), t.Literal("PREPARING"), t.Literal("PARTIALLY_READY"), t.Literal("READY"),
+          t.Literal("SERVED"), t.Literal("PICKED_UP"), t.Literal("COMPLETED"), t.Literal("CANCELLED"),
+          t.Literal("REFUNDED"), t.Literal("PARTIALLY_REFUNDED"), t.Literal("NO_SHOW")
+        ]),
+        expectedStatus: t.Optional(t.Union([
+          t.Literal("DRAFT"), t.Literal("PENDING_PAYMENT"), t.Literal("PAID"), t.Literal("CONFIRMED"),
+          t.Literal("QUEUED"), t.Literal("ACCEPTED"), t.Literal("PREPARING"), t.Literal("PARTIALLY_READY"),
+          t.Literal("READY"), t.Literal("SERVED"), t.Literal("PICKED_UP"), t.Literal("COMPLETED"),
+          t.Literal("CANCELLED"), t.Literal("REFUNDED"), t.Literal("PARTIALLY_REFUNDED"), t.Literal("NO_SHOW")
+        ])),
+        reason: t.Optional(t.String({ maxLength: 500 }))
+      })
+    })
+    .get("/api/v1/staff/cash-sessions/current", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "store.read");
+      const session = await getCurrentCashSession(database, principal, storeId);
+      return { session };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/v1/staff/cash-sessions/open", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "cash_drawer.open");
+      try {
+        const session = await openCashSession(database, principal, {
+          storeId: body.storeId,
+          openingAmountMinor: body.openingAmountMinor,
+          ...(body.notes ? { notes: body.notes } : {})
+        });
+        return { session };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "CASH_SESSION_OPEN_FAILED", "Failed to open cash session");
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        openingAmountMinor: t.Integer({ minimum: 0 }),
+        notes: t.Optional(t.String({ maxLength: 500 }))
+      })
+    })
+    .post("/api/v1/staff/cash-sessions/movement", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "cash_drawer.open");
+      try {
+        const movement = await recordCashMovement(database, principal, {
+          cashSessionId: body.cashSessionId,
+          storeId: body.storeId,
+          movementType: body.movementType,
+          amountMinor: body.amountMinor,
+          reason: body.reason
+        });
+        return { movement };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "CASH_MOVEMENT_FAILED", "Failed to record cash movement");
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        cashSessionId: t.String({ format: "uuid" }),
+        movementType: t.Union([t.Literal("IN"), t.Literal("OUT"), t.Literal("PAID_IN"), t.Literal("PAID_OUT")]),
+        amountMinor: t.Integer({ minimum: 1 }),
+        reason: t.String({ minLength: 1, maxLength: 255 })
+      })
+    })
+    .post("/api/v1/staff/cash-sessions/close", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "cash_drawer.open");
+      try {
+        const session = await closeCashSession(database, principal, body);
+        return { session };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "CASH_SESSION_CLOSE_FAILED", "Failed to close cash session");
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        cashSessionId: t.String({ format: "uuid" }),
+        countedAmountMinor: t.Integer({ minimum: 0 }),
+        notes: t.Optional(t.String({ maxLength: 500 }))
+      })
+    })
+    .get("/api/v1/staff/cash-sessions/history", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "store.read");
+      const sessions = await listCashSessions(database, principal, storeId, query.limit ? Number(query.limit) : 20);
+      return { sessions };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        limit: t.Optional(t.String())
+      })
+    })
+    .post("/api/v1/staff/reports/closing/daily", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "store.manage");
+      try {
+        const closing = await createDailyClosing(database, principal, body);
+        return { closing };
+      } catch (error) {
+        return rethrowKnownOperationalError(error, 400, "DAILY_CLOSING_FAILED", "Failed to generate daily closing");
+      }
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        closingDate: t.String({ minLength: 10, maxLength: 10 })
+      })
+    })
+    .get("/api/v1/staff/reports/closing/daily", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "store.read");
+      const closing = await getDailyClosing(database, principal, storeId, query.date);
+      return { closing };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        date: t.String({ minLength: 10, maxLength: 10 })
+      })
+    })
+    .get("/api/v1/staff/reports/closing/history", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "store.read");
+      const closings = await listDailyClosings(database, principal, storeId, query.limit ? Number(query.limit) : 30);
+      return { closings };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        limit: t.Optional(t.String())
+      })
+    })
+    .get("/api/v1/staff/reports/summary", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "store.read");
+      const targetDate = query.date || new Date().toISOString().slice(0, 10);
+      const [ordersRes, paymentsRes] = await Promise.all([
+        database.client
+          .from("orders")
+          .select("total_minor, status")
+          .eq("organization_id", principal.organizationId)
+          .eq("store_id", storeId)
+          .gte("created_at", `${targetDate}T00:00:00.000Z`)
+          .lte("created_at", `${targetDate}T23:59:59.999Z`),
+        database.client
+          .from("payments")
+          .select("method, amount_minor")
+          .eq("organization_id", principal.organizationId)
+          .eq("store_id", storeId)
+          .gte("created_at", `${targetDate}T00:00:00.000Z`)
+          .lte("created_at", `${targetDate}T23:59:59.999Z`)
+      ]);
+      throwDatabaseError(ordersRes.error, "summary report orders");
+      throwDatabaseError(paymentsRes.error, "summary report payments");
+      const orders = (ordersRes.data ?? []).map((r) => ({
+        totalMinor: Number(r.total_minor || 0),
+        status: String(r.status || "")
+      }));
+      const payments = (paymentsRes.data ?? []).map((r) => ({
+        method: String(r.method || ""),
+        amountMinor: Number(r.amount_minor || 0)
+      }));
+      const summary = calculateDailySummary(targetDate, orders, payments);
+      return { summary };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        date: t.Optional(t.String({ minLength: 10, maxLength: 10 }))
+      })
+    })
+    .get("/api/v1/staff/booking/venues", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { venues: await listVenues(database, principal, query.storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/v1/staff/booking/venues", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "store.manage")) throw forbidden();
+      return { venue: await createVenue(database, principal, body) };
+    }, {
+      body: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        slug: t.String({ minLength: 1, maxLength: 64 }),
+        description: t.Optional(t.String({ maxLength: 1000 })),
+        address: t.Optional(t.String({ maxLength: 500 })),
+        timezone: t.Optional(t.String({ minLength: 1, maxLength: 64 })),
+        slotDurationMinutes: t.Optional(t.Integer({ minimum: 15, maximum: 480 }))
+      })
+    })
+    .get("/api/v1/staff/booking/resources", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { resources: await listResources(database, principal, query.venueId) };
+    }, {
+      query: t.Object({ venueId: t.String({ format: "uuid" }) })
+    })
+    .post("/api/v1/staff/booking/resources", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      if (!hasPermission(principal, "store.manage")) throw forbidden();
+      return { resource: await createResource(database, principal, body as never) };
+    }, {
+      body: t.Object({
+        venueId: t.String({ format: "uuid" }),
+        name: t.String({ minLength: 1, maxLength: 160 }),
+        type: t.Union([t.Literal("COURT"), t.Literal("ROOM"), t.Literal("STUDIO"), t.Literal("TABLE"), t.Literal("EQUIPMENT")]),
+        capacity: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
+        basePriceMinor: t.Optional(t.Integer({ minimum: 0 }))
+      })
+    })
+    .get("/api/v1/staff/booking/bookings", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return {
+        bookings: await listBookings(database, principal, query.venueId, {
+          ...(query.date ? { date: query.date } : {}),
+          ...(query.resourceId ? { resourceId: query.resourceId } : {})
+        })
+      };
+    }, {
+      query: t.Object({
+        venueId: t.String({ format: "uuid" }),
+        resourceId: t.Optional(t.String({ format: "uuid" })),
+        date: t.Optional(t.String({ minLength: 10, maxLength: 10 }))
+      })
+    })
+    .post("/api/v1/staff/booking/bookings", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      return {
+        booking: await createBooking(database, principal, {
+          venueId: body.venueId,
+          resourceId: body.resourceId,
+          customerName: body.customerName,
+          ...(body.customerPhone ? { customerPhone: body.customerPhone } : {}),
+          ...(body.customerEmail ? { customerEmail: body.customerEmail } : {}),
+          startAt: body.startAt,
+          endAt: body.endAt,
+          amountMinor: body.amountMinor,
+          ...(body.notes ? { notes: body.notes } : {}),
+          ...(body.orderId ? { orderId: body.orderId } : {})
+        })
+      };
+    }, {
+      body: t.Object({
+        venueId: t.String({ format: "uuid" }),
+        resourceId: t.String({ format: "uuid" }),
+        customerName: t.String({ minLength: 1, maxLength: 160 }),
+        customerPhone: t.Optional(t.String()),
+        customerEmail: t.Optional(t.String()),
+        startAt: t.String(),
+        endAt: t.String(),
+        amountMinor: t.Integer({ minimum: 0 }),
+        notes: t.Optional(t.String()),
+        orderId: t.Optional(t.String({ format: "uuid" }))
+      })
+    })
+    .post("/api/v1/staff/booking/bookings/:bookingId/checkin", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      return { booking: await checkinBooking(database, principal, params.bookingId, body.code) };
+    }, {
+      params: t.Object({ bookingId: t.String({ format: "uuid" }) }),
+      body: t.Object({ code: t.Optional(t.String()) })
+    })
+    .get("/api/v1/staff/booking/waitlists", async ({ request, query }) => {
+      const principal = await authenticate(request);
+      return { waitlists: await listWaitlists(database, principal, query.venueId) };
+    }, {
+      query: t.Object({ venueId: t.String({ format: "uuid" }) })
+    })
+    .post("/api/v1/staff/booking/waitlists", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      return { waitlist: await addToWaitlist(database, principal, body) };
+    }, {
+      body: t.Object({
+        venueId: t.String({ format: "uuid" }),
+        resourceId: t.Optional(t.String({ format: "uuid" })),
+        customerName: t.String({ minLength: 1, maxLength: 160 }),
+        customerPhone: t.String({ minLength: 6, maxLength: 32 }),
+        customerEmail: t.Optional(t.String({ maxLength: 255 })),
+        partySize: t.Integer({ minimum: 1, maximum: 100 }),
+        requestedSlot: t.String(),
+        notes: t.Optional(t.String({ maxLength: 500 }))
+      })
+    })
+    .patch("/api/v1/staff/booking/waitlists/:waitlistId/status", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      return { waitlist: await updateWaitlistStatus(database, principal, params.waitlistId, body.status as WaitlistStatus) };
+    }, {
+      params: t.Object({ waitlistId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        status: t.Union([t.Literal("WAITING"), t.Literal("NOTIFIED"), t.Literal("SEATED"), t.Literal("CANCELLED"), t.Literal("EXPIRED")])
+      })
+    })
+    .get("/api/v1/staff/queue/tickets", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      await authenticateStore(request, storeId, "store.read");
+      return {
+        tickets: await listQueueTickets(database, {
+          storeId,
+          ...(query.status ? { statuses: [query.status as never] } : {})
+        })
+      };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        status: t.Optional(t.String())
+      })
+    })
+    .post("/api/v1/staff/queue/tickets/:ticketId/transition", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      const existing = await getQueueTicketById(database, params.ticketId);
+      if (!existing) throw new AppError(404, "QUEUE_TICKET_NOT_FOUND", "Queue ticket not found");
+      if (!await canAccessStore(database, principal, existing.storeId)) throw forbidden();
+      return { ticket: await transitionQueueTicket(database, params.ticketId, body.status as never) };
+    }, {
+      params: t.Object({ ticketId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        status: t.Union([t.Literal("WAITING"), t.Literal("CALLING"), t.Literal("SERVED"), t.Literal("CANCELLED")])
+      })
+    })
+    .get("/api/v1/staff/preparation/stations", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      await authenticateStore(request, storeId, "order.read");
+      return { stations: await listPreparationStations(database, storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .get("/api/v1/staff/preparation/tasks", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      await authenticateStore(request, storeId, "order.read");
+      return {
+        tasks: await listPreparationTasks(database, {
+          storeId,
+          ...(query.stationId ? { stationId: query.stationId } : {}),
+          ...(query.status ? { status: query.status as never } : {})
+        })
+      };
+    }, {
+      query: t.Object({
+        storeId: t.Optional(t.String({ format: "uuid" })),
+        stationId: t.Optional(t.String({ format: "uuid" })),
+        status: t.Optional(t.String())
+      })
+    })
+    .post("/api/v1/staff/preparation/tasks/:taskId/complete", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticate(request);
+      const task = await completePreparationTask(database, {
+        taskId: params.taskId,
+        organizationId: principal.organizationId,
+        storeId: body.storeId,
+        completedBy: principal.userId
+      });
+      return { task };
+    }, {
+      params: t.Object({ taskId: t.String({ format: "uuid" }) }),
+      body: t.Object({ storeId: t.String({ format: "uuid" }) })
+    })
+    .get("/api/v1/staff/devices", async ({ request, query }) => {
+      const storeId = query.storeId ?? request.headers.get("x-store-id");
+      if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
+      const principal = await authenticateStore(request, storeId, "devices.manage");
+      return { devices: await listDevices(database, principal, storeId) };
+    }, {
+      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
+    })
+    .post("/api/v1/staff/devices", async ({ request, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "devices.manage");
+      const pairingCode = newPairingCode();
+      const pairingExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+      const device = await createDevice(database, principal, {
+        storeId: body.storeId,
+        name: body.name,
+        mode: body.mode,
+        pairingCodeHash: await hashSecret(pairingCode),
+        pairingExpiresAt
+      });
+      return { device, pairingCode, pairingExpiresAt };
+    }, {
+      body: t.Object({
+        storeId: t.String({ format: "uuid" }),
+        name: t.String({ minLength: 1, maxLength: 64 }),
+        mode: t.Union(deviceModes.map((mode) => t.Literal(mode)) as [any, ...any[]])
+      })
+    })
+    .post("/api/v1/staff/devices/:deviceId/revoke", async ({ request, params, body }) => {
+      assertAllowedOrigin(request);
+      const principal = await authenticateStore(request, body.storeId, "devices.manage");
+      const revoked = await revokeDevice(database, principal, body.storeId, params.deviceId);
+      if (!revoked) throw new AppError(404, "DEVICE_NOT_FOUND", "Device not found");
+      return { ok: true };
+    }, {
+      params: t.Object({ deviceId: t.String({ format: "uuid" }) }),
+      body: t.Object({ storeId: t.String({ format: "uuid" }) })
+    })
+
+    // ==========================================
+    // CANONICAL SURFACE 3: /api/v1/public/*
+    // ==========================================
+    .get("/api/v1/public/stores/:storeCode/menu", async ({ request, params }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicReadLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many requests");
+      return await getPublicCatalog(database, params.storeCode);
+    }, {
+      params: t.Object({ storeCode: t.String({ minLength: 1, maxLength: 32 }) })
+    })
+    .post("/api/v1/public/stores/:storeCode/orders", async ({ request, params, body }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicOrderLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many orders. Please wait a moment.");
+      try {
+        const order = await createPublicOrder(database, { ...body, storeCode: params.storeCode }, idempotencyKey(request));
+        await ensureOrderOperations(order as never);
+        return { order: publicOrderProjection(order as never), trackingToken: order.publicTrackingToken };
+      } catch (error) {
+        return rethrowOrderError(error);
+      }
+    }, {
+      params: t.Object({ storeCode: t.String({ minLength: 1, maxLength: 32 }) }),
+      body: t.Object({
+        channel: t.Union([t.Literal("QR"), t.Literal("KIOSK")]),
+        fulfillmentType: t.Union([t.Literal("DINE_IN"), t.Literal("TAKEAWAY")]),
+        customerName: t.Optional(t.String({ maxLength: 120 })),
+        customerPhone: t.Optional(t.String({ maxLength: 32 })),
+        notes: t.Optional(t.String({ maxLength: 500 })),
+        items: t.Array(t.Object({
+          productId: t.String({ format: "uuid" }),
+          variantId: t.Optional(t.String({ format: "uuid" })),
+          modifierIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+          quantity: t.Integer({ minimum: 1, maximum: 99 }),
+          note: t.Optional(t.String({ maxLength: 200 }))
+        }), { minItems: 1 })
+      })
+    })
+    .get("/api/v1/public/orders/track/:token", async ({ request, params, query }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicReadLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many requests");
+      const order = await getPublicOrderByToken(database, query.storeCode, params.token);
+      if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+      return { order: publicOrderProjection(order) };
+    }, {
+      params: t.Object({ token: t.String({ minLength: 10, maxLength: 128 }) }),
+      query: t.Object({ storeCode: t.String({ minLength: 1, maxLength: 32 }) })
+    })
+    .get("/api/v1/public/venues/:venueSlug/availability", async ({ request, params, query }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicReadLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many requests");
+      const venueRes = await database.client.from("venues").select("id, organization_id").eq("slug", params.venueSlug).single();
+      if (venueRes.error || !venueRes.data) throw new AppError(404, "VENUE_NOT_FOUND", "Venue not found");
+      const anonPrincipal: SessionPrincipal = {
+        userId: "",
+        email: "anon@customer",
+        organizationId: String(venueRes.data.organization_id),
+        membershipId: "",
+        role: "VIEWER",
+        permissions: []
+      };
+      const slots = await getVenueAvailability(database, anonPrincipal, String(venueRes.data.id), query.date);
+      return { date: query.date, slots };
+    }, {
+      params: t.Object({ venueSlug: t.String({ minLength: 1, maxLength: 64 }) }),
+      query: t.Object({ date: t.String({ minLength: 10, maxLength: 10 }) })
+    })
+    .post("/api/v1/public/venues/:venueSlug/bookings", async ({ request, params, body }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicOrderLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many booking requests");
+      const venueRes = await database.client.from("venues").select("id, organization_id").eq("slug", params.venueSlug).single();
+      if (venueRes.error || !venueRes.data) throw new AppError(404, "VENUE_NOT_FOUND", "Venue not found");
+      const anonPrincipal: SessionPrincipal = {
+        userId: "",
+        email: "anon@customer",
+        organizationId: String(venueRes.data.organization_id),
+        membershipId: "",
+        role: "VIEWER",
+        permissions: []
+      };
+      const booking = await createBooking(database, anonPrincipal, {
+        venueId: String(venueRes.data.id),
+        resourceId: body.resourceId,
+        customerName: body.customerName,
+        ...(body.customerPhone ? { customerPhone: body.customerPhone } : {}),
+        ...(body.customerEmail ? { customerEmail: body.customerEmail } : {}),
+        startAt: body.startsAt,
+        endAt: body.endsAt,
+        amountMinor: body.totalAmountMinor ?? 0
+      });
+      return { booking };
+    }, {
+      params: t.Object({ venueSlug: t.String({ minLength: 1, maxLength: 64 }) }),
+      body: t.Object({
+        resourceId: t.String({ format: "uuid" }),
+        customerName: t.String({ minLength: 1, maxLength: 160 }),
+        customerPhone: t.Optional(t.String()),
+        customerEmail: t.Optional(t.String()),
+        startsAt: t.String(),
+        endsAt: t.String(),
+        totalAmountMinor: t.Optional(t.Integer({ minimum: 0 }))
+      })
+    })
+    .get("/api/v1/public/queue/:storeCode/snapshot", async ({ request, params }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!publicReadLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many requests");
+      return { snapshot: await getQueueDisplaySnapshot(database, params.storeCode) };
+    }, {
+      params: t.Object({ storeCode: t.String({ minLength: 1, maxLength: 32 }) })
+    })
+
+    // ==========================================
+    // CANONICAL SURFACE 4: /api/v1/device/*
+    // ==========================================
+    .post("/api/v1/device/pair", async ({ request, body }) => {
+      const ip = clientIp(request) || "127.0.0.1";
+      if (!devicePairLimiter.consume(ip)) throw new AppError(429, "RATE_LIMITED", "Too many pairing attempts");
+      const device = await findPairingDevice(database, await hashSecret(body.pairingCode.trim().toUpperCase()));
+      if (!device) throw new AppError(401, "PAIRING_CODE_INVALID", "รหัสจับคู่อุปกรณ์ไม่ถูกต้องหรือหมดอายุ");
+      const deviceToken = randomUUID() + randomUUID().replaceAll("-", "");
+      const paired = await pairDevice(database, device.id, await hashSecret(deviceToken));
+      if (!paired) throw new AppError(409, "DEVICE_PAIRING_FAILED", "ไม่สามารถจับคู่อุปกรณ์ได้");
+      const storeRes = await database.client.from("stores").select("code, name").eq("id", paired.storeId).maybeSingle();
+      return {
+        device: paired,
+        deviceToken,
+        storeCode: storeRes.data?.code ? String(storeRes.data.code) : "",
+        storeName: storeRes.data?.name ? String(storeRes.data.name) : ""
+      };
+    }, {
+      body: t.Object({ pairingCode: t.String({ minLength: 6, maxLength: 32 }) })
+    })
+    .get("/api/v1/device/context", async ({ request }) => {
+      const device = await authenticateDevice(request);
+      const storeRes = await database.client.from("stores").select("id, organization_id, name, code, timezone").eq("id", device.storeId).single();
+      return { device, store: storeRes.data };
+    })
+    .get("/api/v1/device/catalog", async ({ request }) => {
+      const device = await authenticateDevice(request);
+      const storeRes = await database.client.from("stores").select("code").eq("id", device.storeId).single();
+      if (!storeRes.data?.code) throw new AppError(404, "STORE_NOT_FOUND", "Store not found");
+      return await getPublicCatalog(database, String(storeRes.data.code));
+    })
+    .post("/api/v1/device/orders", async ({ request, body }) => {
+      const device = await authenticateDevice(request);
+      const storeRes = await database.client.from("stores").select("code").eq("id", device.storeId).single();
+      if (!storeRes.data?.code) throw new AppError(404, "STORE_NOT_FOUND", "Store not found");
+      const channel = "KIOSK";
+      const order = await createPublicOrder(database, { ...body, storeCode: String(storeRes.data.code), channel }, idempotencyKey(request));
+      await ensureOrderOperations(order as never);
+      return { order: publicOrderProjection(order as never), trackingToken: order.publicTrackingToken };
+    }, {
+      body: t.Object({
+        fulfillmentType: t.Union([t.Literal("DINE_IN"), t.Literal("TAKEAWAY")]),
+        customerName: t.Optional(t.String({ maxLength: 120 })),
+        customerPhone: t.Optional(t.String({ maxLength: 32 })),
+        notes: t.Optional(t.String({ maxLength: 500 })),
+        items: t.Array(t.Object({
+          productId: t.String({ format: "uuid" }),
+          variantId: t.Optional(t.String({ format: "uuid" })),
+          modifierIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
+          quantity: t.Integer({ minimum: 1, maximum: 99 }),
+          note: t.Optional(t.String({ maxLength: 200 }))
+        }), { minItems: 1 })
+      })
+    })
+    .get("/api/v1/device/preparation", async ({ request }) => {
+      const device = await authenticateDevice(request);
+      const [stationRes, tasksRes] = await Promise.all([
+        database.client.from("preparation_stations").select("id, name, code").eq("store_id", device.storeId),
+        database.client.from("preparation_tasks").select("id, order_id, item_id, station_id, status, created_at").eq("store_id", device.storeId).neq("status", "COMPLETED").order("created_at", { ascending: true })
+      ]);
+      return { stations: stationRes.data ?? [], tasks: tasksRes.data ?? [] };
     });
 }

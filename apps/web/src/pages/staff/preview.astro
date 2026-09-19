@@ -1,0 +1,755 @@
+---
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import StaffShell from "../../components/staff/StaffShell.astro";
+---
+
+<StaffShell title="ระบบพรีวิวโหมด (Mode Preview Studio)" active="preview">
+  <div class="staff-page preview-studio-page">
+    <div class="staff-page-header">
+      <div class="staff-page-heading">
+        <p class="staff-eyebrow">Mode Isolation & Preview Studio</p>
+        <h1 class="staff-page-title">ระบบพรีวิวแต่ละโหมดการทำงาน</h1>
+        <p class="staff-page-lede">
+          ตรวจสอบและจำลองมุมมองของลูกค้า (Client), ตู้สั่งอัตโนมัติ (Kiosk), จอคิวทีวี (Queue TV) และแคชเชียร์ (POS) โดยไม่ต้องออกจากหน้าระบบ Staff
+        </p>
+      </div>
+      <div class="preview-header-actions">
+        <button class="button secondary" id="studio-reload-btn" type="button">
+          <StaffIcon name="refresh" size={16} />
+          <span>รีเฟรชหน้าจำลอง</span>
+        </button>
+        <a class="button primary" id="studio-popout-link" href="#" target="_blank" rel="noopener">
+          <span>เปิดแท็บใหม่</span>
+          <StaffIcon name="chevron-right" size={16} />
+        </a>
+      </div>
+    </div>
+
+    <!-- Mode Selector Cards -->
+    <section class="mode-cards-grid" aria-label="เลือกโหมดที่ต้องการพรีวิว">
+      <div class="mode-card is-active" data-studio-mode="client" tabindex="0" role="button">
+        <div class="mode-card-header">
+          <span class="mode-card-badge client">📱 ลูกค้าสั่ง</span>
+          <span class="mode-card-indicator">กำลังแสดง</span>
+        </div>
+        <h2 class="mode-card-title">Client QR Order</h2>
+        <p class="mode-card-desc">
+          หน้าจอลูกค้าสแกนสั่งอาหารผ่านสมาร์ทโฟน ไม่ต้องลงแอป รองรับเลือกโต๊ะ เพิ่มตัวเลือกสินค้า และติดตามสถานะออเดอร์
+        </p>
+        <div class="mode-card-footer">
+          <code>/order/:store</code>
+          <span class="mode-card-role">โหมดลูกค้า (ภายนอก)</span>
+        </div>
+      </div>
+
+      <div class="mode-card" data-studio-mode="kiosk" tabindex="0" role="button">
+        <div class="mode-card-header">
+          <span class="mode-card-badge kiosk">🖥️ ตู้สั่งเอง</span>
+          <span class="mode-card-indicator">เลือกเพื่อดู</span>
+        </div>
+        <h2 class="mode-card-title">Self-Service Kiosk</h2>
+        <p class="mode-card-desc">
+          ตู้สั่งอาหารอัตโนมัติหน้าจอสัมผัสขนาดใหญ่ มีหน้าพักหน้าจอ (Attract screen), ตัวเลือกทานที่ร้าน/กลับบ้าน และปุ่มสัมผัสขนาดใหญ่
+        </p>
+        <div class="mode-card-footer">
+          <code>/kiosk/:store</code>
+          <span class="mode-card-role">โหมดตู้สัมผัส (หน้าร้าน)</span>
+        </div>
+      </div>
+
+      <div class="mode-card" data-studio-mode="queue" tabindex="0" role="button">
+        <div class="mode-card-header">
+          <span class="mode-card-badge queue">📺 จอทีวีคิว</span>
+          <span class="mode-card-indicator">เลือกเพื่อดู</span>
+        </div>
+        <h2 class="mode-card-title">Queue TV Board</h2>
+        <p class="mode-card-desc">
+          จอแสดงผลคิวสำหรับติดตั้งบนทีวีหน้าร้าน แบ่ง 2 ช่อง: กำลังเตรียม และ พร้อมรับสินค้า พร้อมระบบเสียงแจ้งเตือนอัตโนมัติเมื่อเรียกคิว
+        </p>
+        <div class="mode-card-footer">
+          <code>/queue/:store</code>
+          <span class="mode-card-role">โหมดจอหน้าร้าน (TV)</span>
+        </div>
+      </div>
+
+      <div class="mode-card" data-studio-mode="pos" tabindex="0" role="button">
+        <div class="mode-card-header">
+          <span class="mode-card-badge pos">💻 แคชเชียร์</span>
+          <span class="mode-card-indicator">เลือกเพื่อดู</span>
+        </div>
+        <h2 class="mode-card-title">Staff POS Station</h2>
+        <p class="mode-card-desc">
+          จุดชำระเงินและบันทึกรายการสำหรับพนักงานแคชเชียร์ พร้อมการจัดการกะเงินสด, พักออเดอร์, ค้นหาสินค้าเร็ว และพิมพ์ใบเสร็จ
+        </p>
+        <div class="mode-card-footer">
+          <code>/staff/pos</code>
+          <span class="mode-card-role">โหมดพนักงาน (เคาน์เตอร์)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Studio Interactive Simulator Workspace -->
+    <section class="studio-simulator-section surface" aria-label="ห้องทดลองจำลองหน้าจอ">
+      <div class="studio-controls-bar">
+        <div class="studio-viewport-switch">
+          <span class="studio-control-label">ขนาดจำลอง:</span>
+          <button class="viewport-btn is-active" data-viewport="mobile" type="button" title="หน้าจอมือถือ (390px)">
+            <span>📱</span> <span>มือถือ (390px)</span>
+          </button>
+          <button class="viewport-btn" data-viewport="tablet" type="button" title="หน้าจอ Kiosk / แท็บเล็ต (600px)">
+            <span>📟</span> <span>Kiosk (600px)</span>
+          </button>
+          <button class="viewport-btn" data-viewport="desktop" type="button" title="เต็มจอเดสก์ท็อป / TV">
+            <span>🖥️</span> <span>เต็มจอ (Desktop/TV)</span>
+          </button>
+        </div>
+
+        <div class="studio-url-bar">
+          <span class="url-badge">URL:</span>
+          <input type="text" id="studio-url-input" class="studio-url-field" readonly value="" />
+          <button class="button icon-btn" id="studio-copy-btn" type="button" title="คัดลอกลิงก์">
+            <StaffIcon name="clipboard" size={15} />
+            <span>คัดลอก</span>
+          </button>
+          <button class="button icon-btn" id="studio-qr-btn" type="button" title="สแกนด้วยโทรศัพท์จริง">
+            <span>📷 QR มือถือ</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Real Phone QR Flyout -->
+      <div class="studio-qr-card" id="studio-qr-card" hidden>
+        <div class="studio-qr-inner">
+          <div class="studio-qr-header">
+            <strong>ทดสอบบนสมาร์ทโฟนเครื่องจริง</strong>
+            <button class="studio-qr-close" id="studio-qr-close" type="button">&times;</button>
+          </div>
+          <p>เปิดแอปกล้องบนมือถือแล้วสแกนเพื่อทดสอบการสั่งอาหารทันที:</p>
+          <div class="studio-qr-frame">
+            <img id="studio-qr-img" src="" alt="QR Code" width="160" height="160" />
+          </div>
+          <small id="studio-qr-caption" class="studio-qr-caption"></small>
+        </div>
+      </div>
+
+      <!-- Stage Screen Area -->
+      <div class="studio-screen-stage">
+        <div class="studio-frame-container viewport-mobile" id="studio-frame-container">
+          <div class="studio-notch"></div>
+          <iframe id="studio-iframe" class="studio-iframe" title="Aevo Studio Preview" src="about:blank"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- Isolation Specs Guide -->
+    <section class="isolation-specs surface" aria-label="ข้อกำหนดและการแยกส่วนแต่ละโหมด">
+      <h3 class="specs-title">ข้อกำหนดการแยกโหมดการทำงาน (Mode Separation Architecture)</h3>
+      <div class="specs-grid">
+        <div class="spec-col">
+          <h4>📱 1. Client Mode (ลูกค้า)</h4>
+          <ul>
+            <li><strong>เข้าถึง:</strong> ผู้ใช้งานทั่วไปผ่านการสแกน QR</li>
+            <li><strong>การแยกระบบ:</strong> ไม่แสดงปุ่มหรือลิงก์เข้าสู่หลังบ้าน Staff โดยเด็ดขาด</li>
+            <li><strong>สิทธิ์:</strong> อ่านแค็ตตาล็อกสาธารณะ และสร้างออเดอร์ตามโต๊ะที่ระบุ</li>
+            <li><strong>ความปลอดภัย:</strong> ไม่มีการส่ง Token ฝั่งพนักงาน และไม่เชื่อมต่อกับข้อมูลยอดขายหลังบ้าน</li>
+          </ul>
+        </div>
+        <div class="spec-col">
+          <h4>🖥️ 2. Kiosk Mode (ตู้สั่งหน้าร้าน)</h4>
+          <ul>
+            <li><strong>เข้าถึง:</strong> ลูกค้าที่เดินมาสั่งที่ตู้หน้าสาขา</li>
+            <li><strong>การแยกระบบ:</strong> Fullscreen Mode พร้อม Attract Screen เมื่อไม่มีการใช้งานเกิน 60 วินาที</li>
+            <li><strong>สิทธิ์:</strong> สั่งอาหารแบบ Dine-In หรือ Takeaway โดยไม่ต้องกรอกรหัสพนักงาน</li>
+            <li><strong>ความปลอดภัย:</strong> ป้องกันการเปิดเบราว์เซอร์ไปหน้าอื่น และรีเซ็ตตะกร้าอัตโนมัติเมื่อหมดเวลา</li>
+          </ul>
+        </div>
+        <div class="spec-col">
+          <h4>📺 3. Queue TV Mode (จอคิว)</h4>
+          <ul>
+            <li><strong>เข้าถึง:</strong> จอโทรทัศน์หรือมอนิเตอร์เหนือเคาน์เตอร์รับอาหาร</li>
+            <li><strong>การแยกระบบ:</strong> แสดงเฉพาะหมายเลขคิว ไม่มีเมนูสินค้าและไม่มีการสั่งซื้อ</li>
+            <li><strong>สิทธิ์:</strong> อ่านสถานะคิวสาธารณะแบบ Real-time (WebSockets + Polling fallback)</li>
+            <li><strong>ความพิเศษ:</strong> รองรับ Fullscreen และระบบเสียงเรียกคิวภาษาไทย</li>
+          </ul>
+        </div>
+        <div class="spec-col">
+          <h4>💻 4. Staff POS & Workspace</h4>
+          <ul>
+            <li><strong>เข้าถึง:</strong> พนักงานและผู้จัดการร้านที่ผ่านการ Login เท่านั้น</li>
+            <li><strong>การแยกระบบ:</strong> ครอบคลุมการคิดเงิน, กะเงินสด, รายงาน, สต็อก และผังโต๊ะ</li>
+            <li><strong>สิทธิ์:</strong> ควบคุมตาม Permission RBAC อย่างเคร่งครัด</li>
+            <li><strong>Preview System:</strong> สลับจำลองดู 3 โหมดแรกได้ทันทีโดยไม่ต้อง Log in เป็นลูกค้า</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</StaffShell>
+
+<script>
+  import { loadStaffContext, findSelectedStore, getSelectedStoreId } from "../../lib/staff-ui";
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    let currentMode: "client" | "kiosk" | "queue" | "pos" = "client";
+    let currentViewport: "mobile" | "tablet" | "desktop" = "mobile";
+    let activeStoreCode = "";
+
+    try {
+      const context = await loadStaffContext();
+      const currentStore = findSelectedStore(context.stores, getSelectedStoreId());
+      activeStoreCode = currentStore?.code || (context.stores[0]?.code ?? "demo");
+    } catch {
+      activeStoreCode = "demo";
+    }
+
+    const modeCards = document.querySelectorAll<HTMLElement>(".mode-card");
+    const viewportBtns = document.querySelectorAll<HTMLButtonElement>(".viewport-btn");
+    const frameContainer = document.getElementById("studio-frame-container") as HTMLElement;
+    const iframe = document.getElementById("studio-iframe") as HTMLIFrameElement;
+    const urlInput = document.getElementById("studio-url-input") as HTMLInputElement;
+    const popoutLink = document.getElementById("studio-popout-link") as HTMLAnchorElement;
+    const reloadBtn = document.getElementById("studio-reload-btn") as HTMLButtonElement;
+    const copyBtn = document.getElementById("studio-copy-btn") as HTMLButtonElement;
+    const qrBtn = document.getElementById("studio-qr-btn") as HTMLButtonElement;
+    const qrCard = document.getElementById("studio-qr-card") as HTMLElement;
+    const qrImg = document.getElementById("studio-qr-img") as HTMLImageElement;
+    const qrCaption = document.getElementById("studio-qr-caption") as HTMLElement;
+    const qrClose = document.getElementById("studio-qr-close") as HTMLButtonElement;
+
+    function buildModeUrl(mode: string, store: string): string {
+      const origin = window.location.origin;
+      const targetStore = store || "demo";
+      switch (mode) {
+        case "client":
+          return `${origin}/order/${encodeURIComponent(targetStore)}`;
+        case "kiosk":
+          return `${origin}/kiosk/${encodeURIComponent(targetStore)}`;
+        case "queue":
+          return `${origin}/queue/${encodeURIComponent(targetStore)}`;
+        case "pos":
+          return `${origin}/staff/pos?preview=1`;
+        default:
+          return `${origin}/order/${encodeURIComponent(targetStore)}`;
+      }
+    }
+
+    function updateStudio() {
+      const url = buildModeUrl(currentMode, activeStoreCode);
+      if (urlInput) urlInput.value = url;
+      if (popoutLink) popoutLink.href = url;
+
+      if (iframe && iframe.src !== url) {
+        iframe.src = url;
+      }
+
+      // Update card states
+      modeCards.forEach((card) => {
+        const mode = card.dataset.studioMode;
+        if (mode === currentMode) {
+          card.classList.add("is-active");
+          const ind = card.querySelector(".mode-card-indicator");
+          if (ind) ind.textContent = "กำลังแสดง";
+        } else {
+          card.classList.remove("is-active");
+          const ind = card.querySelector(".mode-card-indicator");
+          if (ind) ind.textContent = "เลือกเพื่อดู";
+        }
+      });
+
+      // Update QR preview
+      if (qrImg) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}`;
+      }
+      if (qrCaption) {
+        qrCaption.textContent = url;
+      }
+    }
+
+    function setViewport(viewport: "mobile" | "tablet" | "desktop") {
+      currentViewport = viewport;
+      if (frameContainer) {
+        frameContainer.className = `studio-frame-container viewport-${viewport}`;
+      }
+      viewportBtns.forEach((btn) => {
+        btn.classList.toggle("is-active", btn.dataset.viewport === viewport);
+      });
+    }
+
+    // Event listeners
+    modeCards.forEach((card) => {
+      card.addEventListener("click", () => {
+        const mode = card.dataset.studioMode as typeof currentMode;
+        if (mode) {
+          currentMode = mode;
+          // Set appropriate viewport default for the selected mode
+          if (mode === "client") setViewport("mobile");
+          else if (mode === "kiosk") setViewport("tablet");
+          else if (mode === "queue" || mode === "pos") setViewport("desktop");
+          updateStudio();
+        }
+      });
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          card.click();
+        }
+      });
+    });
+
+    viewportBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const vp = btn.dataset.viewport as typeof currentViewport;
+        if (vp) setViewport(vp);
+      });
+    });
+
+    if (reloadBtn && iframe) {
+      reloadBtn.addEventListener("click", () => {
+        iframe.src = buildModeUrl(currentMode, activeStoreCode);
+      });
+    }
+
+    if (copyBtn && urlInput) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(urlInput.value);
+          const originalText = copyBtn.innerHTML;
+          copyBtn.innerHTML = `<span>✓ คัดลอกแล้ว</span>`;
+          setTimeout(() => {
+            copyBtn.innerHTML = originalText;
+          }, 2000);
+        } catch {
+          urlInput.select();
+        }
+      });
+    }
+
+    if (qrBtn && qrCard) {
+      qrBtn.addEventListener("click", () => {
+        qrCard.hidden = !qrCard.hidden;
+      });
+    }
+
+    if (qrClose && qrCard) {
+      qrClose.addEventListener("click", () => {
+        qrCard.hidden = true;
+      });
+    }
+
+    // Listen to store changes in staff header
+    window.addEventListener("aevo:store-changed", ((e: CustomEvent<{ storeCode: string }>) => {
+      if (e.detail?.storeCode) {
+        activeStoreCode = e.detail.storeCode;
+        updateStudio();
+      }
+    }) as EventListener);
+
+    // Initial load
+    updateStudio();
+  });
+</script>
+
+<style>
+  .preview-studio-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .preview-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* Mode Cards */
+  .mode-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .mode-card {
+    display: flex;
+    flex-direction: column;
+    padding: 18px 18px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all var(--duration-fast);
+    outline: none;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .mode-card:hover {
+    border-color: var(--line-strong);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .mode-card.is-active {
+    border-color: var(--brand);
+    background: #fdfefd;
+    box-shadow: 0 0 0 2px rgba(23, 99, 72, 0.18), var(--shadow-sm);
+  }
+
+  .mode-card:focus-visible {
+    box-shadow: 0 0 0 3px rgba(23, 99, 72, 0.35);
+  }
+
+  .mode-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .mode-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 750;
+  }
+
+  .mode-card-badge.client { background: #e0f2fe; color: #0369a1; }
+  .mode-card-badge.kiosk { background: #fef3c7; color: #92400e; }
+  .mode-card-badge.queue { background: #dcfce7; color: #15803d; }
+  .mode-card-badge.pos { background: #ede9fe; color: #6b21a8; }
+
+  .mode-card-indicator {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .mode-card.is-active .mode-card-indicator {
+    color: var(--brand);
+    font-weight: 750;
+  }
+
+  .mode-card-title {
+    margin: 0 0 6px;
+    font-size: 1.02rem;
+    font-weight: 750;
+    color: var(--ink);
+  }
+
+  .mode-card-desc {
+    margin: 0 0 14px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--muted);
+    flex: 1;
+  }
+
+  .mode-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+    font-size: 0.72rem;
+  }
+
+  .mode-card-footer code {
+    font-family: var(--font-mono);
+    color: var(--brand);
+    background: var(--brand-quiet);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .mode-card-role {
+    color: var(--subtle);
+    font-weight: 600;
+  }
+
+  /* Studio Workspace */
+  .studio-simulator-section {
+    position: relative;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .studio-controls-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .studio-viewport-switch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .studio-control-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+
+  .viewport-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--canvas);
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition: all var(--duration-fast);
+  }
+
+  .viewport-btn:hover {
+    border-color: var(--line-strong);
+    background: #fff;
+  }
+
+  .viewport-btn.is-active {
+    border-color: var(--brand);
+    background: var(--brand);
+    color: #fff;
+  }
+
+  .studio-url-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    max-width: 600px;
+    min-width: 260px;
+  }
+
+  .url-badge {
+    font-size: 0.72rem;
+    font-weight: 750;
+    color: var(--subtle);
+  }
+
+  .studio-url-field {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--canvas);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--ink);
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 36px;
+    padding: 0 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  /* Stage & Screen Frame */
+  .studio-screen-stage {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 680px;
+    padding: 24px;
+    border-radius: var(--radius-md);
+    background: #e8e3d9;
+    overflow: auto;
+  }
+
+  .studio-frame-container {
+    background: #111;
+    border-radius: 28px;
+    padding: 12px;
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: width 0.25s ease, height 0.25s ease;
+  }
+
+  .studio-notch {
+    width: 90px;
+    height: 5px;
+    border-radius: 99px;
+    background: #333;
+    margin-bottom: 8px;
+  }
+
+  .studio-iframe {
+    border: none;
+    border-radius: 18px;
+    background: #fff;
+    width: 100%;
+    height: 100%;
+  }
+
+  .viewport-mobile {
+    width: 390px;
+    height: 740px;
+  }
+
+  .viewport-tablet {
+    width: 600px;
+    height: 780px;
+  }
+
+  .viewport-desktop {
+    width: 100%;
+    max-width: 1100px;
+    height: 740px;
+    border-radius: 16px;
+    padding: 8px;
+  }
+
+  .viewport-desktop .studio-notch {
+    display: none;
+  }
+
+  .viewport-desktop .studio-iframe {
+    border-radius: 10px;
+  }
+
+  /* QR Card */
+  .studio-qr-card {
+    position: absolute;
+    top: 70px;
+    right: 24px;
+    z-index: 20;
+    width: 260px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 16px;
+  }
+
+  .studio-qr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 0.84rem;
+  }
+
+  .studio-qr-close {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+  }
+
+  .studio-qr-inner p {
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .studio-qr-frame {
+    display: flex;
+    justify-content: center;
+    padding: 8px;
+    background: #f9f9f9;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .studio-qr-caption {
+    display: block;
+    font-size: 0.68rem;
+    font-family: var(--font-mono);
+    word-break: break-all;
+    color: var(--subtle);
+    text-align: center;
+  }
+
+  /* Specs Grid */
+  .isolation-specs {
+    padding: 20px 24px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+  }
+
+  .specs-title {
+    margin: 0 0 16px;
+    font-size: 0.95rem;
+    font-weight: 750;
+    color: var(--ink);
+  }
+
+  .specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+
+  .spec-col h4 {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    font-weight: 750;
+    color: var(--ink);
+  }
+
+  .spec-col ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .spec-col li {
+    margin-bottom: 6px;
+  }
+
+  .spec-col li strong {
+    color: var(--ink);
+  }
+
+  @media (max-width: 768px) {
+    .preview-studio-page {
+      padding: 16px;
+    }
+    .studio-screen-stage {
+      padding: 12px;
+    }
+    .viewport-tablet,
+    .viewport-desktop {
+      width: 100%;
+      height: 600px;
+    }
+  }
+</style>

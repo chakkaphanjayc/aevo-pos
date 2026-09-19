@@ -150,8 +150,10 @@ describe("Preparation / KDS API endpoints", () => {
         method: "POST",
         headers: {
           cookie: cookieHeader(),
-          origin: "http://localhost:4321"
-        }
+          origin: "http://localhost:4321",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ storeId })
       })
     );
     expect(res.status).toBe(200);

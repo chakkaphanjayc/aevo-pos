@@ -33,16 +33,16 @@ import StaffShell from "../../components/staff/StaffShell.astro";
           <div class="workspace-card-copy"><span class="workspace-card-kicker">Orders</span><h3>ดูออเดอร์ล่าสุด</h3><p>ตรวจสถานะและยอดรวมของออเดอร์ในสาขา</p></div>
           <div class="workspace-card-foot"><strong id="order-stat">กำลังโหลด…</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
         </a>
-        <article class="workspace-card surface workspace-card-disabled">
-          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="prep" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div>
+        <a class="workspace-card surface" id="prep-card" href="#">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-brand"><StaffIcon name="prep" size={19} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div>
           <div class="workspace-card-copy"><span class="workspace-card-kicker">Preparation</span><h3>งานเตรียมสินค้า</h3><p>รวมงานจากทุกช่องทางไว้ให้ทีมเตรียมสินค้า</p></div>
-          <div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div>
-        </article>
-        <article class="workspace-card surface workspace-card-disabled">
-          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="queue" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div>
+          <div class="workspace-card-foot"><strong>เปิดงานเตรียมสินค้า</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
+        </a>
+        <a class="workspace-card surface" id="queue-card" href="#">
+          <div class="workspace-card-top"><span class="workspace-icon workspace-icon-soft"><StaffIcon name="queue" size={19} /></span><span class="workspace-status status-live"><i></i>อัปเดตสด</span></div>
           <div class="workspace-card-copy"><span class="workspace-card-kicker">Queue</span><h3>คิวรับสินค้า</h3><p>จัดการคิวและแสดงสถานะให้ลูกค้าเห็นชัดเจน</p></div>
-          <div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div>
-        </article>
+          <div class="workspace-card-foot"><strong>เปิดคิวรับสินค้า</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
+        </a>
       </div>
     </section>
 
@@ -54,9 +54,9 @@ import StaffShell from "../../components/staff/StaffShell.astro";
           <div class="workspace-card-copy"><span class="workspace-card-kicker">Catalog</span><h3>จัดการสินค้าและเมนู</h3><p>ค้นหา แก้ไขราคา ตั้งหมวดหมู่ และเปิด/ปิดการขาย</p></div>
           <div class="workspace-card-foot"><strong id="product-stat">กำลังโหลด…</strong><span class="workspace-arrow" aria-hidden="true">→</span></div>
         </a>
-        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="layers" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Menus</span><h3>โครงสร้างเมนู</h3><p>จัดลำดับเมนูและกำหนดช่องทางการขาย</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
-        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="sliders" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Modifiers</span><h3>ตัวเลือกสินค้า</h3><p>กำหนดขนาด รสชาติ และตัวเลือกเพิ่มเติม</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
-        <article class="workspace-card surface workspace-card-disabled"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-muted"><StaffIcon name="settings" size={19} /></span><span class="workspace-status status-soon">กำลังพัฒนา</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Settings</span><h3>ตั้งค่าสาขา</h3><p>จัดการข้อมูลสาขา สมาชิก และการเชื่อมต่อ</p></div><div class="workspace-card-foot"><span>เร็ว ๆ นี้</span><span class="workspace-arrow" aria-hidden="true">↗</span></div></article>
+        <a class="workspace-card surface" id="menus-card" href="#"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-soft"><StaffIcon name="layers" size={19} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Menus</span><h3>โครงสร้างเมนู</h3><p>จัดลำดับเมนูและกำหนดช่องทางการขาย</p></div><div class="workspace-card-foot"><strong>จัดการเมนู</strong><span class="workspace-arrow" aria-hidden="true">→</span></div></a>
+        <a class="workspace-card surface" id="modifiers-card" href="#"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-soft"><StaffIcon name="sliders" size={19} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Modifiers</span><h3>ตัวเลือกสินค้า</h3><p>กำหนดขนาด รสชาติ และตัวเลือกเพิ่มเติม</p></div><div class="workspace-card-foot"><strong>จัดการตัวเลือก</strong><span class="workspace-arrow" aria-hidden="true">→</span></div></a>
+        <a class="workspace-card surface" id="devices-card" href="#"><div class="workspace-card-top"><span class="workspace-icon workspace-icon-brand"><StaffIcon name="settings" size={19} /></span><span class="workspace-status status-ready"><i></i>พร้อมใช้งาน</span></div><div class="workspace-card-copy"><span class="workspace-card-kicker">Devices</span><h3>อุปกรณ์และโหมดใช้งาน</h3><p>จัดการ POS, Kiosk, KDS และจอแสดงคิว</p></div><div class="workspace-card-foot"><strong>จัดการอุปกรณ์</strong><span class="workspace-arrow" aria-hidden="true">→</span></div></a>
       </div>
     </section>
   </div>
@@ -75,13 +75,23 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     const links = {
       pos: document.querySelectorAll<HTMLAnchorElement>("#pos-link, #pos-card"),
       catalog: document.querySelectorAll<HTMLAnchorElement>("#catalog-link, #catalog-card"),
-      orders: document.querySelectorAll<HTMLAnchorElement>("#orders-link")
+      orders: document.querySelectorAll<HTMLAnchorElement>("#orders-link"),
+      prep: document.querySelectorAll<HTMLAnchorElement>("#prep-card"),
+      queue: document.querySelectorAll<HTMLAnchorElement>("#queue-card"),
+      menus: document.querySelectorAll<HTMLAnchorElement>("#menus-card"),
+      modifiers: document.querySelectorAll<HTMLAnchorElement>("#modifiers-card"),
+      devices: document.querySelectorAll<HTMLAnchorElement>("#devices-card")
     };
 
     function updateLinks(): void {
       for (const link of links.pos) link.href = storeUrl("/staff/pos", selectedStoreId);
       for (const link of links.catalog) link.href = storeUrl("/staff/catalog", selectedStoreId, { tab: "products" });
       for (const link of links.orders) link.href = storeUrl("/staff/orders", selectedStoreId);
+      for (const link of links.prep) link.href = storeUrl("/staff/preparation", selectedStoreId);
+      for (const link of links.queue) link.href = storeUrl("/staff/queue", selectedStoreId);
+      for (const link of links.menus) link.href = storeUrl("/staff/catalog", selectedStoreId, { tab: "menus" });
+      for (const link of links.modifiers) link.href = storeUrl("/staff/catalog", selectedStoreId, { tab: "modifiers" });
+      for (const link of links.devices) link.href = storeUrl("/staff/devices", selectedStoreId);
     }
 
     async function loadStoreData(store: StoreSummary): Promise<void> {
@@ -143,6 +153,11 @@ import StaffShell from "../../components/staff/StaffShell.astro";
         error.hidden = false;
       }
     }
+    window.setInterval(() => {
+      if (document.visibilityState !== "visible" || !selectedStoreId) return;
+      const store = stores.find((item) => item.id === selectedStoreId);
+      if (store) void loadStoreData(store);
+    }, 30_000);
   </script>
 
   <style is:global>

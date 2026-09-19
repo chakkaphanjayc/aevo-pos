@@ -1137,17 +1137,21 @@ import StaffIcon from "../../components/staff/StaffIcon.astro";
 
     /* Dialog Modals */
     .hub-modal {
+      position: fixed;
+      inset: 0;
+      margin: auto;
       border: none;
       padding: 0;
       background: transparent;
       border-radius: 16px;
-      max-width: 480px;
-      width: 90vw;
+      width: min(480px, calc(100vw - 32px));
+      max-height: calc(100dvh - 48px);
+      overflow-y: auto;
     }
 
     .hub-modal::backdrop {
       background: rgba(15, 23, 42, 0.45);
-      backdrop-filter: blur(4px);
+      backdrop-filter: blur(8px);
     }
 
     .hub-modal-box {

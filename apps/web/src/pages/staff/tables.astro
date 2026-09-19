@@ -315,32 +315,22 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     const refreshBtn = document.querySelector<HTMLButtonElement>("#refresh-tables")!;
     const errorEl = document.querySelector<HTMLElement>("#tables-error")!;
 
+    type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING" | "UNAVAILABLE";
+    interface TableRecord { id: string; table_number: string; label?: string; status: TableStatus; seats: number; }
     let storeId = "";
-    let tables: any[] = [];
+    let tables: TableRecord[] = [];
 
-    async function loadTables() {
+    async function loadTables(): Promise<void> {
       if (!storeId) return;
+      errorEl.hidden = true;
       try {
-        const res = await api.get<{ floors: any[]; tables: any[] }>(`/api/tables?storeId=${storeId}`);
+        const res = await api.get<{ floors: Array<Record<string, unknown>>; tables: TableRecord[] }>(`/api/tables?storeId=${encodeURIComponent(storeId)}`);
         tables = res.tables ?? [];
-
-        // Fallback default tables if no tables in db yet
-        if (tables.length === 0) {
-          tables = [
-            { id: "mock-t1", table_number: "T-01", label: "โต๊ะ 1", status: "AVAILABLE", seats: 4 },
-            { id: "mock-t2", table_number: "T-02", label: "โต๊ะ 2", status: "OCCUPIED", seats: 2 },
-            { id: "mock-t3", table_number: "T-03", label: "โต๊ะ 3", status: "AVAILABLE", seats: 4 },
-            { id: "mock-t4", table_number: "T-04", label: "โต๊ะ 4", status: "RESERVED", seats: 6 },
-            { id: "mock-t5", table_number: "T-05", label: "โต๊ะ 5", status: "AVAILABLE", seats: 4 },
-            { id: "mock-t6", table_number: "T-06", label: "โต๊ะ 6", status: "OCCUPIED", seats: 2 }
-          ];
-        }
-
         updateStats();
         renderGrid();
-      } catch (err: any) {
+      } catch (err) {
         if (errorEl) {
-          errorEl.textContent = err.message || "เกิดข้อผิดพลาดในการโหลดผังโต๊ะ";
+          errorEl.textContent = friendlyErrorMessage(err, "เกิดข้อผิดพลาดในการโหลดผังโต๊ะ");
           errorEl.hidden = false;
         }
       }
@@ -366,8 +356,13 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       tablesGrid.innerHTML = tables
         .map((t) => {
           const statusLower = (t.status || "AVAILABLE").toLowerCase();
-          const statusThai =
-            t.status === "OCCUPIED" ? "มีลูกค้า" : t.status === "RESERVED" ? "จองแล้ว" : "ว่าง";
+          const statusThai: Record<TableStatus, string> = {
+            AVAILABLE: "ว่าง",
+            OCCUPIED: "มีลูกค้า",
+            RESERVED: "จองแล้ว",
+            CLEANING: "กำลังทำความสะอาด",
+            UNAVAILABLE: "ปิดใช้งาน"
+          };
 
           return `
             <div class="table-card ${statusLower}" data-table-id="${t.id}">
@@ -375,9 +370,9 @@ import StaffShell from "../../components/staff/StaffShell.astro";
                 <span class="table-number-label">${escapeHtml(t.table_number || "T")}</span>
                 <span class="table-seats-badge">👥 ${t.seats || 4} ที่นั่ง</span>
               </div>
-              <span class="table-status-pill ${statusLower}">${statusThai}</span>
+              <span class="table-status-pill ${statusLower}">${statusThai[t.status] ?? "ไม่ทราบสถานะ"}</span>
               <div class="table-actions">
-                <button class="table-btn toggle" data-action="toggle-status" data-table-id="${t.id}" type="button">
+                <button class="table-btn toggle" data-action="toggle-status" data-table-id="${t.id}" type="button" ${["RESERVED", "CLEANING", "UNAVAILABLE"].includes(t.status) ? "disabled" : ""}>
                   ${t.status === "OCCUPIED" ? "เคลียร์โต๊ะ" : "เปิดโต๊ะ"}
                 </button>
               </div>
@@ -396,17 +391,12 @@ import StaffShell from "../../components/staff/StaffShell.astro";
           table.status = nextStatus;
 
           try {
-            if (!tableId.startsWith("mock-")) {
-              await api.patch(`/api/tables/${tableId}/status`, {
-                storeId,
-                status: nextStatus
-              });
-            }
+            await api.patch(`/api/tables/${encodeURIComponent(tableId)}/status`, { storeId, status: nextStatus });
             updateStats();
             renderGrid();
-          } catch (err: any) {
-            alert(err.message || "อัปเดตสถานะโต๊ะไม่สำเร็จ");
-            loadTables();
+          } catch (err) {
+            alert(friendlyErrorMessage(err, "อัปเดตสถานะโต๊ะไม่สำเร็จ"));
+            await loadTables();
           }
         });
       });
@@ -418,7 +408,7 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       return div.innerHTML;
     }
 
-    async function init() {
+    async function init(): Promise<void> {
       try {
         const { user, stores } = await loadStaffContext();
         const store = findSelectedStore(stores, getSelectedStoreId());
@@ -443,7 +433,7 @@ import StaffShell from "../../components/staff/StaffShell.astro";
         });
 
         await loadTables();
-      } catch (err: any) {
+      } catch (err) {
         if (errorEl) {
           errorEl.textContent = friendlyErrorMessage(err, "ไม่สามารถโหลดข้อมูลผังโต๊ะได้ กรุณาลองใหม่");
           errorEl.hidden = false;
@@ -452,6 +442,8 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     }
 
     refreshBtn.addEventListener("click", loadTables);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void loadTables(); });
+    window.setInterval(() => { if (document.visibilityState === "visible") void loadTables(); }, 15_000);
     init();
   </script>
 </StaffShell>

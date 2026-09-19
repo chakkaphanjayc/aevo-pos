@@ -1,0 +1,1360 @@
+---
+import StaffShell from "../../components/staff/StaffShell.astro";
+import StaffIcon from "../../components/staff/StaffIcon.astro";
+import AppEntitlementGuard from "../../components/gates/AppEntitlementGuard.astro";
+import FeatureGate from "../../components/gates/FeatureGate.astro";
+import PermissionGate from "../../components/gates/PermissionGate.astro";
+---
+
+<StaffShell title="Aevo Booking" active="booking">
+  <AppEntitlementGuard app="booking" appName="Aevo Booking">
+    <div class="staff-page booking-page">
+      <div class="booking-header surface">
+        <div class="booking-header-main">
+          <div class="booking-badge-row">
+            <span class="booking-tag-badge">
+              <StaffIcon name="calendar" size={14} />
+              <span>Aevo Booking Engine</span>
+            </span>
+            <span class="booking-status-badge" id="booking-entitlement-badge">Active Module</span>
+          </div>
+          <h1 class="booking-title">ระบบจองสนามและทรัพยากร</h1>
+          <p class="booking-lede">จัดการตารางเวลา สนามกีฬา ห้องประชุม และทรัพยากรที่เปิดให้จอง ตรวจสอบความพร้อม และเช็คอินผู้ใช้บริการ</p>
+        </div>
+
+        <div class="booking-header-controls">
+          <div class="control-group">
+            <label for="venue-select" class="control-label">สถานที่ (Venue)</label>
+            <select id="venue-select" class="select-input">
+              <option value="" disabled selected>กำลังโหลดสถานที่…</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="booking-date" class="control-label">วันที่ (Date)</label>
+            <input type="date" id="booking-date" class="date-input" />
+          </div>
+
+          <div class="control-actions">
+            <PermissionGate permission="order.create">
+              <button class="button primary" id="btn-open-booking-modal" type="button">
+                <StaffIcon name="plus" size={16} />
+                <span>สร้างรายการจอง</span>
+              </button>
+            </PermissionGate>
+            <PermissionGate permission="order.create">
+              <button class="button secondary" id="btn-open-checkin-modal" type="button">
+                <StaffIcon name="check" size={16} />
+                <span>เช็คอินด้วยรหัส</span>
+              </button>
+            </PermissionGate>
+            <button class="button icon-button secondary" id="btn-refresh" type="button" aria-label="รีเฟรชข้อมูล">
+              <StaffIcon name="refresh" size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+    <!-- Alert / Toast Banner -->
+    <div class="booking-alert" id="booking-alert" role="alert" hidden>
+      <span class="booking-alert-icon">ℹ</span>
+      <span id="booking-alert-text"></span>
+    </div>
+
+    <!-- Summary Metrics -->
+    <div class="booking-metrics-row">
+      <div class="metric-card surface">
+        <span class="metric-label">ทรัพยากร/คอร์ท</span>
+        <strong class="metric-value" id="stat-total-resources">0</strong>
+        <span class="metric-sub">พร้อมให้บริการ</span>
+      </div>
+      <div class="metric-card surface">
+        <span class="metric-label">การจองในวันนี้</span>
+        <strong class="metric-value" id="stat-total-bookings">0</strong>
+        <span class="metric-sub" id="stat-confirmed-count">0 รอเช็คอิน</span>
+      </div>
+      <div class="metric-card surface stat-accent-green">
+        <span class="metric-label">เช็คอินแล้ว</span>
+        <strong class="metric-value" id="stat-checkedin-bookings">0</strong>
+        <span class="metric-sub">เข้าใช้บริการแล้ว</span>
+      </div>
+      <div class="metric-card surface stat-accent-blue">
+        <span class="metric-label">อัตราการใช้งาน (Utilization)</span>
+        <strong class="metric-value" id="stat-utilization-rate">0%</strong>
+        <span class="metric-sub">ของสล็อตเวลาทั้งหมด</span>
+      </div>
+    </div>
+
+    <!-- Main Booking View Tabs -->
+    <div class="booking-tabs-nav">
+      <button class="tab-btn active" id="tab-timeline-btn" type="button">ตารางเวลาสนาม (Timeline)</button>
+      <button class="tab-btn" id="tab-list-btn" type="button">รายการจองทั้งหมด (Bookings List)</button>
+      <button class="tab-btn" id="tab-waitlist-btn" type="button">รายการรอคิว (Waitlist)</button>
+    </div>
+
+    <!-- Section 1: Timeline Grid -->
+    <section class="booking-section surface" id="timeline-section">
+      <div class="section-title-row">
+        <div>
+          <h2>ผังตารางเวลาการใช้งาน</h2>
+          <p class="section-hint">คลิกที่ช่วงเวลาว่างเพื่อจองด่วน หรือคลิกที่รายการจองเพื่อดูรายละเอียด</p>
+        </div>
+        <div class="timeline-legend">
+          <span class="legend-item"><span class="legend-box status-available"></span> ว่าง</span>
+          <span class="legend-item"><span class="legend-box status-confirmed"></span> จองแล้ว</span>
+          <span class="legend-item"><span class="legend-box status-checkedin"></span> เช็คอินแล้ว</span>
+          <span class="legend-item"><span class="legend-box status-blocked"></span> ปิดปรับปรุง</span>
+        </div>
+      </div>
+
+      <div class="timeline-container" id="timeline-container">
+        <div class="timeline-loading">กำลังโหลดผังเวลา…</div>
+      </div>
+    </section>
+
+    <!-- Section 2: Bookings List Table -->
+    <section class="booking-section surface" id="list-section" hidden>
+      <div class="section-title-row">
+        <div>
+          <h2>รายการจองประจำวัน</h2>
+          <p class="section-hint">ตรวจสอบสถานะการชำระเงินและกดเช็คอินลูกค้า</p>
+        </div>
+        <div class="list-filters">
+          <button class="filter-chip active" data-filter="ALL" type="button">ทั้งหมด</button>
+          <button class="filter-chip" data-filter="CONFIRMED" type="button">รอเช็คอิน</button>
+          <button class="filter-chip" data-filter="CHECKED_IN" type="button">เช็คอินแล้ว</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="booking-table">
+          <thead>
+            <tr>
+              <th>รหัสการจอง</th>
+              <th>ทรัพยากร / สนาม</th>
+              <th>เวลาใช้งาน</th>
+              <th>ชื่อผู้จอง</th>
+              <th>เบอร์โทร</th>
+              <th>สถานะ</th>
+              <th>ยอดเงิน</th>
+              <th class="th-actions">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="bookings-table-body">
+            <tr>
+              <td colspan="8" class="empty-cell">กำลังโหลดรายการจอง…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Section 3: Waitlist -->
+    <section class="booking-section surface" id="waitlist-section" hidden>
+      <FeatureGate feature="booking.waitlist" fallbackTitle="ระบบ Waitlist คิวจองสนามต้องใช้แพ็กเกจ Business ขึ้นไป">
+        <div class="section-title-row">
+          <div>
+            <h2>รายการรอคิวจองสนาม (Waitlist)</h2>
+            <p class="section-hint">ลูกค้าที่ลงชื่อรอรับการแจ้งเตือนเมื่อมีคอร์ทว่าง</p>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="booking-table">
+            <thead>
+              <tr>
+                <th>ลำดับ</th>
+                <th>ชื่อลูกค้า</th>
+                <th>เบอร์โทร</th>
+                <th>ช่วงเวลาที่ต้องการ</th>
+                <th>จำนวนคน</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody id="waitlist-table-body">
+              <tr>
+                <td colspan="6" class="empty-cell">ยังไม่มีรายการรอคิวในระบบ</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </FeatureGate>
+    </section>
+
+    <!-- Modal: New Booking -->
+    <div class="modal-backdrop" id="new-booking-modal" hidden>
+      <div class="modal-card surface" role="dialog" aria-modal="true" aria-labelledby="modal-booking-title">
+        <div class="modal-header">
+          <h3 id="modal-booking-title">สร้างรายการจองใหม่</h3>
+          <button class="modal-close-btn" id="btn-close-booking-modal" type="button" aria-label="ปิด">&times;</button>
+        </div>
+        <form class="modal-form" id="new-booking-form">
+          <div class="form-row">
+            <div class="form-field">
+              <label for="modal-resource-select">ทรัพยากร / สนาม *</label>
+              <select id="modal-resource-select" class="select-input" required>
+                <option value="" disabled selected>เลือกทรัพยากร</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row form-grid-3">
+            <div class="form-field">
+              <label for="modal-booking-date">วันที่ *</label>
+              <input type="date" id="modal-booking-date" class="date-input" required />
+            </div>
+            <div class="form-field">
+              <label for="modal-start-time">เวลาเริ่ม *</label>
+              <input type="time" id="modal-start-time" class="text-input" value="10:00" required />
+            </div>
+            <div class="form-field">
+              <label for="modal-end-time">เวลาสิ้นสุด *</label>
+              <input type="time" id="modal-end-time" class="text-input" value="11:00" required />
+            </div>
+          </div>
+
+          <div class="form-row form-grid-2">
+            <div class="form-field">
+              <label for="modal-customer-name">ชื่อลูกค้า *</label>
+              <input type="text" id="modal-customer-name" class="text-input" placeholder="เช่น คุณสมชาย" required />
+            </div>
+            <div class="form-field">
+              <label for="modal-customer-phone">เบอร์โทรศัพท์</label>
+              <input type="tel" id="modal-customer-phone" class="text-input" placeholder="0812345678" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="modal-total-price">ค่าบริการ (บาท) *</label>
+              <input type="number" id="modal-total-price" class="text-input" min="0" step="50" value="300" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="modal-notes">หมายเหตุเพิ่มเติม</label>
+              <textarea id="modal-notes" class="text-area" rows="2" placeholder="เช่น ขออุปกรณ์เสริม, ลูกค้าประจำ"></textarea>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="button secondary" id="btn-cancel-booking-modal" type="button">ยกเลิก</button>
+            <button class="button primary" id="btn-submit-booking" type="submit">ยืนยันการจอง</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Quick Check-in -->
+    <div class="modal-backdrop" id="checkin-modal" hidden>
+      <div class="modal-card surface modal-sm" role="dialog" aria-modal="true" aria-labelledby="modal-checkin-title">
+        <div class="modal-header">
+          <h3 id="modal-checkin-title">เช็คอินผู้ใช้บริการ (Check-in)</h3>
+          <button class="modal-close-btn" id="btn-close-checkin-modal" type="button" aria-label="ปิด">&times;</button>
+        </div>
+        <form class="modal-form" id="checkin-form">
+          <p class="modal-desc">กรอกรหัสเช็คอิน 6 หลักที่ลูกค้าได้รับจาก SMS / LINE หรือสแกน QR Code</p>
+          <div class="form-field">
+            <label for="checkin-code-input">รหัสเช็คอิน (Check-in Code)</label>
+            <input
+              type="text"
+              id="checkin-code-input"
+              class="text-input checkin-code-input"
+              maxlength="10"
+              placeholder="e.g. 748291"
+              autocomplete="off"
+              required
+            />
+          </div>
+
+          <div class="modal-actions">
+            <button class="button secondary" id="btn-cancel-checkin-modal" type="button">ปิด</button>
+            <button class="button primary" id="btn-submit-checkin" type="submit">ยืนยันเช็คอิน</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+  </AppEntitlementGuard>
+
+  <script>
+    import { api, ApiError } from "../../lib/api";
+    import { friendlyErrorMessage, initStaffShell, loadStaffContext } from "../../lib/staff-ui";
+    import type { VenueSummary, BookableResourceSummary, BookingSummary, VenueAvailabilitySummary } from "@aevo/contracts";
+
+    // DOM Elements
+    const alertBox = document.querySelector<HTMLElement>("#booking-alert")!;
+    const alertText = document.querySelector<HTMLElement>("#booking-alert-text")!;
+    const venueSelect = document.querySelector<HTMLSelectElement>("#venue-select")!;
+    const dateInput = document.querySelector<HTMLInputElement>("#booking-date")!;
+    const refreshBtn = document.querySelector<HTMLButtonElement>("#btn-refresh")!;
+
+    // Modals
+    const newBookingModal = document.querySelector<HTMLElement>("#new-booking-modal")!;
+    const checkinModal = document.querySelector<HTMLElement>("#checkin-modal")!;
+    const btnOpenBookingModal = document.querySelector<HTMLButtonElement>("#btn-open-booking-modal")!;
+    const btnOpenCheckinModal = document.querySelector<HTMLButtonElement>("#btn-open-checkin-modal")!;
+    const btnCloseBookingModal = document.querySelector<HTMLButtonElement>("#btn-close-booking-modal")!;
+    const btnCancelBookingModal = document.querySelector<HTMLButtonElement>("#btn-cancel-booking-modal")!;
+    const btnCloseCheckinModal = document.querySelector<HTMLButtonElement>("#btn-close-checkin-modal")!;
+    const btnCancelCheckinModal = document.querySelector<HTMLButtonElement>("#btn-cancel-checkin-modal")!;
+    const newBookingForm = document.querySelector<HTMLFormElement>("#new-booking-form")!;
+    const checkinForm = document.querySelector<HTMLFormElement>("#checkin-form")!;
+    const modalResourceSelect = document.querySelector<HTMLSelectElement>("#modal-resource-select")!;
+    const modalBookingDate = document.querySelector<HTMLInputElement>("#modal-booking-date")!;
+    const checkinCodeInput = document.querySelector<HTMLInputElement>("#checkin-code-input")!;
+
+    // Tabs
+    const tabTimelineBtn = document.querySelector<HTMLButtonElement>("#tab-timeline-btn")!;
+    const tabListBtn = document.querySelector<HTMLButtonElement>("#tab-list-btn")!;
+    const tabWaitlistBtn = document.querySelector<HTMLButtonElement>("#tab-waitlist-btn");
+    const timelineSection = document.querySelector<HTMLElement>("#timeline-section")!;
+    const listSection = document.querySelector<HTMLElement>("#list-section")!;
+    const waitlistSection = document.querySelector<HTMLElement>("#waitlist-section");
+    const timelineContainer = document.querySelector<HTMLElement>("#timeline-container")!;
+    const bookingsTableBody = document.querySelector<HTMLElement>("#bookings-table-body")!;
+    const waitlistTableBody = document.querySelector<HTMLElement>("#waitlist-table-body");
+
+    // Metrics Elements
+    const statTotalResources = document.querySelector<HTMLElement>("#stat-total-resources")!;
+    const statTotalBookings = document.querySelector<HTMLElement>("#stat-total-bookings")!;
+    const statConfirmedCount = document.querySelector<HTMLElement>("#stat-confirmed-count")!;
+    const statCheckedinBookings = document.querySelector<HTMLElement>("#stat-checkedin-bookings")!;
+    const statUtilizationRate = document.querySelector<HTMLElement>("#stat-utilization-rate")!;
+
+    // State
+    let currentVenues: VenueSummary[] = [];
+    let currentResources: BookableResourceSummary[] = [];
+    let currentBookings: BookingSummary[] = [];
+    let currentAvailability: VenueAvailabilitySummary | null = null;
+    let selectedFilter = "ALL";
+
+    function showAlert(message: string, isError = false): void {
+      alertText.textContent = message;
+      alertBox.classList.toggle("booking-alert-error", isError);
+      alertBox.hidden = false;
+      setTimeout(() => { alertBox.hidden = true; }, 5000);
+    }
+
+    // Set today's date in local YYYY-MM-DD
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    dateInput.value = todayStr;
+    modalBookingDate.value = todayStr;
+
+    async function initPage(): Promise<void> {
+      try {
+        const { user, stores } = await loadStaffContext();
+        initStaffShell({ user, stores, redirectOnStoreChange: true });
+
+        // Load venues
+        await loadVenues();
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === "UNAUTHORIZED") {
+          window.location.assign("/login");
+          return;
+        }
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถโหลดข้อมูลระบบจองได้"), true);
+      }
+    }
+
+    async function loadVenues(): Promise<void> {
+      try {
+        const res = await api<{ venues: VenueSummary[] }>("/api/booking/venues");
+        currentVenues = res.venues;
+
+        venueSelect.innerHTML = "";
+        if (currentVenues.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "ยังไม่มีสถานที่ (สร้างสถานที่ในระบบ)";
+          venueSelect.appendChild(opt);
+          return;
+        }
+
+        for (const venue of currentVenues) {
+          const opt = document.createElement("option");
+          opt.value = venue.id;
+          opt.textContent = venue.name;
+          venueSelect.appendChild(opt);
+        }
+
+        venueSelect.value = currentVenues[0].id;
+        await loadVenueData(currentVenues[0].id);
+      } catch (cause) {
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถโหลดรายชื่อสถานที่ได้"), true);
+      }
+    }
+
+    async function loadVenueData(venueId: string): Promise<void> {
+      const date = dateInput.value || todayStr;
+      try {
+        timelineContainer.innerHTML = '<div class="timeline-loading">กำลังโหลดผังเวลา…</div>';
+        bookingsTableBody.innerHTML = '<tr><td colspan="8" class="empty-cell">กำลังโหลดรายการจอง…</td></tr>';
+
+        const [resResources, resBookings, resAvail] = await Promise.all([
+          api<{ resources: BookableResourceSummary[] }>(`/api/booking/venues/${venueId}/resources`),
+          api<{ bookings: BookingSummary[] }>(`/api/booking/venues/${venueId}/bookings?date=${date}`),
+          api<{ availability: VenueAvailabilitySummary }>(`/api/booking/venues/${venueId}/availability?date=${date}`)
+        ]);
+
+        currentResources = resResources.resources;
+        currentBookings = resBookings.bookings;
+        currentAvailability = resAvail.availability;
+
+        // Update Resource Modal dropdown
+        modalResourceSelect.innerHTML = '<option value="" disabled selected>เลือกทรัพยากร</option>';
+        for (const r of currentResources) {
+          const opt = document.createElement("option");
+          opt.value = r.id;
+          opt.textContent = `${r.name} (${(r.basePriceMinor / 100).toLocaleString()} บาท/ชม.)`;
+          modalResourceSelect.appendChild(opt);
+        }
+
+        // Render everything
+        updateMetrics();
+        renderTimeline();
+        renderBookingsList();
+      } catch (cause) {
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถโหลดข้อมูลการจองของสถานที่นี้ได้"), true);
+      }
+    }
+
+    function updateMetrics(): void {
+      const totalR = currentResources.length;
+      const totalB = currentBookings.length;
+      const checkedInB = currentBookings.filter((b) => b.status === "CHECKED_IN").length;
+      const confirmedB = currentBookings.filter((b) => b.status === "CONFIRMED").length;
+
+      statTotalResources.textContent = String(totalR);
+      statTotalBookings.textContent = String(totalB);
+      statConfirmedCount.textContent = `${confirmedB} รอเช็คอิน`;
+      statCheckedinBookings.textContent = String(checkedInB);
+
+      if (currentAvailability) {
+        const totalSlots = currentAvailability.slots.length;
+        const availableSlots = currentAvailability.slots.filter((s) => s.available).length;
+        const bookedSlots = totalSlots - availableSlots;
+        const rate = totalSlots > 0 ? Math.round((bookedSlots / totalSlots) * 100) : 0;
+        statUtilizationRate.textContent = `${rate}%`;
+      }
+    }
+
+    function renderTimeline(): void {
+      if (!currentAvailability || currentResources.length === 0) {
+        timelineContainer.innerHTML = '<div class="timeline-empty">ไม่พบข้อมูลทรัพยากรหรือเวลาเปิดทำการ</div>';
+        return;
+      }
+
+      // Build 1-hour time rows from 08:00 to 22:00
+      const hours = [
+        "08:00", "09:00", "10:00", "11:00", "12:00",
+        "13:00", "14:00", "15:00", "16:00", "17:00",
+        "18:00", "19:00", "20:00", "21:00"
+      ];
+
+      const table = document.createElement("table");
+      table.className = "timeline-grid-table";
+
+      // Header row
+      const thead = document.createElement("thead");
+      const hRow = document.createElement("tr");
+      const timeTh = document.createElement("th");
+      timeTh.className = "time-col-header";
+      timeTh.textContent = "เวลา (Time)";
+      hRow.appendChild(timeTh);
+
+      for (const res of currentResources) {
+        const th = document.createElement("th");
+        th.className = "resource-col-header";
+        th.innerHTML = `<strong>${res.name}</strong><span class="resource-capacity">${res.capacity} ท่าน</span>`;
+        hRow.appendChild(th);
+      }
+      thead.appendChild(hRow);
+      table.appendChild(thead);
+
+      // Body rows
+      const tbody = document.createElement("tbody");
+      for (const hour of hours) {
+        const row = document.createElement("tr");
+        const timeTd = document.createElement("td");
+        timeTd.className = "time-cell";
+        timeTd.textContent = hour;
+        row.appendChild(timeTd);
+
+        for (const res of currentResources) {
+          const slotTd = document.createElement("td");
+          slotTd.className = "slot-cell";
+
+          // Find if there's an existing booking covering this hour
+          const dateStr = dateInput.value || todayStr;
+          const slotStart = new Date(`${dateStr}T${hour}:00Z`).getTime();
+          const slotEnd = slotStart + 3600000;
+
+          const matchBooking = currentBookings.find((b) => {
+            if (b.resourceId !== res.id) return false;
+            if (b.status === "CANCELLED") return false;
+            const bStart = new Date(b.startAt).getTime();
+            const bEnd = new Date(b.endAt).getTime();
+            return (bStart < slotEnd && bEnd > slotStart);
+          });
+
+          if (matchBooking) {
+            slotTd.classList.add(matchBooking.status === "CHECKED_IN" ? "slot-checkedin" : "slot-confirmed");
+            slotTd.innerHTML = `
+              <div class="slot-booking-pill">
+                <span class="pill-name">${matchBooking.customerName}</span>
+                <span class="pill-badge">${matchBooking.status === "CHECKED_IN" ? "เช็คอินแล้ว" : "จองแล้ว"}</span>
+              </div>
+            `;
+            const codeDisplay = matchBooking.checkinCode || matchBooking.id.slice(0, 8).toUpperCase();
+            slotTd.title = `รหัสจอง: ${codeDisplay}\nผู้จอง: ${matchBooking.customerName}\nโทร: ${matchBooking.customerPhone || "-"}`;
+          } else {
+            slotTd.classList.add("slot-available");
+            slotTd.innerHTML = `<span class="slot-available-label">+ จอง</span>`;
+            slotTd.addEventListener("click", () => {
+              openNewBookingForSlot(res.id, hour);
+            });
+          }
+
+          row.appendChild(slotTd);
+        }
+        tbody.appendChild(row);
+      }
+      table.appendChild(tbody);
+
+      timelineContainer.innerHTML = "";
+      timelineContainer.appendChild(table);
+    }
+
+    function openNewBookingForSlot(resourceId: string, hourStr: string): void {
+      modalResourceSelect.value = resourceId;
+      modalBookingDate.value = dateInput.value || todayStr;
+      (document.querySelector("#modal-start-time") as HTMLInputElement).value = hourStr;
+      
+      const hourNum = parseInt(hourStr.split(":")[0], 10);
+      const nextHourStr = `${String(hourNum + 1).padStart(2, "0")}:00`;
+      (document.querySelector("#modal-end-time") as HTMLInputElement).value = nextHourStr;
+
+      newBookingModal.hidden = false;
+    }
+
+    function renderBookingsList(): void {
+      const filtered = currentBookings.filter((b) => {
+        if (selectedFilter === "ALL") return true;
+        return b.status === selectedFilter;
+      });
+
+      bookingsTableBody.innerHTML = "";
+      if (filtered.length === 0) {
+        bookingsTableBody.innerHTML = '<tr><td colspan="8" class="empty-cell">ไม่มีรายการจองตรงกับเงื่อนไข</td></tr>';
+        return;
+      }
+
+      for (const b of filtered) {
+        const tr = document.createElement("tr");
+
+        const startLocal = new Date(b.startAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        const endLocal = new Date(b.endAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+        const resourceName = currentResources.find((r) => r.id === b.resourceId)?.name ?? "ทรัพยากร";
+        const codeDisplay = b.checkinCode || b.id.slice(0, 8).toUpperCase();
+
+        let badgeClass = "badge-info";
+        let badgeLabel = "รอการยืนยัน";
+        if (b.status === "CONFIRMED") {
+          badgeClass = "badge-warning";
+          badgeLabel = "รอเช็คอิน";
+        } else if (b.status === "CHECKED_IN") {
+          badgeClass = "badge-success";
+          badgeLabel = "เช็คอินแล้ว";
+        } else if (b.status === "COMPLETED") {
+          badgeClass = "badge-muted";
+          badgeLabel = "เสร็จสิ้น";
+        } else if (b.status === "CANCELLED") {
+          badgeClass = "badge-danger";
+          badgeLabel = "ยกเลิกแล้ว";
+        }
+
+        const canCheckin = b.status === "CONFIRMED";
+        const actionBtn = canCheckin
+          ? `<button class="button small primary btn-table-checkin" data-id="${b.id}" type="button">เช็คอิน</button>`
+          : `<span class="text-muted text-sm">—</span>`;
+
+        tr.innerHTML = `
+          <td><code class="code-badge">${codeDisplay}</code></td>
+          <td><strong>${resourceName}</strong></td>
+          <td>${startLocal} - ${endLocal}</td>
+          <td>${b.customerName}</td>
+          <td>${b.customerPhone || "—"}</td>
+          <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+          <td>${(b.amountMinor / 100).toLocaleString("th-TH")} บาท</td>
+          <td class="td-actions">${actionBtn}</td>
+        `;
+
+        const checkinBtn = tr.querySelector<HTMLButtonElement>(".btn-table-checkin");
+        if (checkinBtn) {
+          checkinBtn.addEventListener("click", () => {
+            doDirectCheckin(b.id, b.checkinCode ?? undefined);
+          });
+        }
+
+        bookingsTableBody.appendChild(tr);
+      }
+    }
+
+    async function doDirectCheckin(bookingId: string, checkinCode?: string): Promise<void> {
+      try {
+        await api(`/api/booking/bookings/${bookingId}/checkin`, {
+          method: "POST",
+          body: JSON.stringify({ checkinCode })
+        });
+        showAlert("เช็คอินสำเร็จเรียบร้อยแล้ว!");
+        if (venueSelect.value) {
+          await loadVenueData(venueSelect.value);
+        }
+      } catch (cause) {
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถดำเนินการเช็คอินได้"), true);
+      }
+    }
+
+    // Event Listeners
+    venueSelect.addEventListener("change", () => {
+      if (venueSelect.value) {
+        loadVenueData(venueSelect.value);
+      }
+    });
+
+    dateInput.addEventListener("change", () => {
+      if (venueSelect.value) {
+        loadVenueData(venueSelect.value);
+      }
+    });
+
+    refreshBtn.addEventListener("click", () => {
+      if (venueSelect.value) {
+        loadVenueData(venueSelect.value);
+      }
+    });
+
+    // Tab switching
+    tabTimelineBtn.addEventListener("click", () => {
+      tabTimelineBtn.classList.add("active");
+      tabListBtn.classList.remove("active");
+      tabWaitlistBtn?.classList.remove("active");
+      timelineSection.hidden = false;
+      listSection.hidden = true;
+      if (waitlistSection) waitlistSection.hidden = true;
+    });
+
+    tabListBtn.addEventListener("click", () => {
+      tabListBtn.classList.add("active");
+      tabTimelineBtn.classList.remove("active");
+      tabWaitlistBtn?.classList.remove("active");
+      timelineSection.hidden = true;
+      listSection.hidden = false;
+      if (waitlistSection) waitlistSection.hidden = true;
+    });
+
+    tabWaitlistBtn?.addEventListener("click", async () => {
+      tabWaitlistBtn.classList.add("active");
+      tabTimelineBtn.classList.remove("active");
+      tabListBtn.classList.remove("active");
+      timelineSection.hidden = true;
+      listSection.hidden = true;
+      if (waitlistSection) waitlistSection.hidden = false;
+      if (venueSelect.value) {
+        await loadWaitlistData(venueSelect.value);
+      }
+    });
+
+    async function loadWaitlistData(venueId: string): Promise<void> {
+      if (!waitlistTableBody) return;
+      try {
+        const res = await api<{ waitlists: Array<{ id: string; customerName: string; customerPhone?: string; partySize: number; status: string; preferredTimeStart?: string; preferredTimeEnd?: string }> }>(`/api/booking/venues/${venueId}/waitlist`);
+        const items = res.waitlists || [];
+        if (items.length === 0) {
+          waitlistTableBody.innerHTML = `<tr><td colspan="6" class="empty-cell">ยังไม่มีรายการรอคิวในระบบ</td></tr>`;
+          return;
+        }
+        waitlistTableBody.innerHTML = items.map((w, idx) => `
+          <tr>
+            <td><strong>#${idx + 1}</strong></td>
+            <td>${w.customerName}</td>
+            <td>${w.customerPhone || "-"}</td>
+            <td>${w.preferredTimeStart ? `${w.preferredTimeStart} - ${w.preferredTimeEnd || ""}` : "ตามเวลาที่ว่าง"}</td>
+            <td>${w.partySize} ท่าน</td>
+            <td><span class="status-chip ${w.status === "WAITING" ? "status-confirmed" : "status-checkedin"}">${w.status}</span></td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        waitlistTableBody.innerHTML = `<tr><td colspan="6" class="empty-cell">ไม่สามารถดึงข้อมูล waitlist ได้ (${err instanceof Error ? err.message : "Error"})</td></tr>`;
+      }
+    }
+
+    // Filter chips
+    document.querySelectorAll<HTMLButtonElement>(".filter-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        selectedFilter = chip.dataset.filter || "ALL";
+        renderBookingsList();
+      });
+    });
+
+    // Modal triggers
+    btnOpenBookingModal.addEventListener("click", () => {
+      newBookingModal.hidden = false;
+    });
+    btnCloseBookingModal.addEventListener("click", () => { newBookingModal.hidden = true; });
+    btnCancelBookingModal.addEventListener("click", () => { newBookingModal.hidden = true; });
+
+    btnOpenCheckinModal.addEventListener("click", () => {
+      checkinModal.hidden = false;
+      checkinCodeInput.focus();
+    });
+    btnCloseCheckinModal.addEventListener("click", () => { checkinModal.hidden = true; });
+    btnCancelCheckinModal.addEventListener("click", () => { checkinModal.hidden = true; });
+
+    // New Booking Form Submit
+    newBookingForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const venueId = venueSelect.value;
+      const resourceId = modalResourceSelect.value;
+      const date = modalBookingDate.value;
+      const startTime = (document.querySelector("#modal-start-time") as HTMLInputElement).value;
+      const endTime = (document.querySelector("#modal-end-time") as HTMLInputElement).value;
+      const customerName = (document.querySelector("#modal-customer-name") as HTMLInputElement).value.trim();
+      const customerPhone = (document.querySelector("#modal-customer-phone") as HTMLInputElement).value.trim();
+      const totalPriceVal = parseFloat((document.querySelector("#modal-total-price") as HTMLInputElement).value) || 0;
+      const notes = (document.querySelector("#modal-notes") as HTMLTextAreaElement).value.trim();
+
+      if (!venueId || !resourceId || !date || !startTime || !endTime || !customerName) {
+        showAlert("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน", true);
+        return;
+      }
+
+      const startAt = new Date(`${date}T${startTime}:00`).toISOString();
+      const endAt = new Date(`${date}T${endTime}:00`).toISOString();
+
+      try {
+        await api("/api/booking/bookings", {
+          method: "POST",
+          body: JSON.stringify({
+            venueId,
+            resourceId,
+            startAt,
+            endAt,
+            customerName,
+            customerPhone: customerPhone || undefined,
+            amountMinor: Math.round(totalPriceVal * 100),
+            notes: notes || undefined
+          })
+        });
+
+        showAlert("สร้างรายการจองสำเร็จเรียบร้อย!");
+        newBookingModal.hidden = true;
+        newBookingForm.reset();
+        await loadVenueData(venueId);
+      } catch (cause) {
+        showAlert(friendlyErrorMessage(cause, "ไม่สามารถสร้างรายการจองได้"), true);
+      }
+    });
+
+    // Checkin Form Submit
+    checkinForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const code = checkinCodeInput.value.trim().toUpperCase();
+      if (!code) return;
+
+      const target = currentBookings.find((b) => b.checkinCode?.toUpperCase() === code || b.id.slice(0, 8).toUpperCase() === code);
+      if (!target) {
+        showAlert("ไม่พบรายการจองที่มีรหัสเช็คอินนี้สำหรับวันนี้", true);
+        return;
+      }
+
+      try {
+        await api(`/api/booking/bookings/${target.id}/checkin`, {
+          method: "POST",
+          body: JSON.stringify({ checkinCode: code })
+        });
+
+        showAlert(`เช็คอินสำเร็จ! ยินดีต้อนรับคุณ ${target.customerName}`);
+        checkinModal.hidden = true;
+        checkinForm.reset();
+        if (venueSelect.value) {
+          await loadVenueData(venueSelect.value);
+        }
+      } catch (cause) {
+        showAlert(friendlyErrorMessage(cause, "รหัสเช็คอินไม่ถูกต้องหรือการจองไม่อยู่ในสถานะที่เช็คอินได้"), true);
+      }
+    });
+
+    initPage();
+  </script>
+
+  <style>
+    .booking-page {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding-bottom: 40px;
+    }
+
+    .booking-header {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 24px 28px;
+      border-radius: 16px;
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+    }
+
+    @media (min-width: 1024px) {
+      .booking-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+    }
+
+    .booking-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .booking-tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #0284c7;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    .booking-status-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #16a34a;
+      background: #dcfce7;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    .booking-title {
+      font-size: clamp(1.5rem, 2.2vw, 2rem);
+      font-weight: 800;
+      margin: 0 0 6px 0;
+      color: var(--foreground, #0f172a);
+    }
+
+    .booking-lede {
+      margin: 0;
+      color: var(--muted, #64748b);
+      font-size: 0.9375rem;
+      max-width: 620px;
+      line-height: 1.5;
+    }
+
+    .booking-header-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .control-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted, #64748b);
+    }
+
+    .select-input, .date-input, .text-input, .text-area {
+      padding: 8px 12px;
+      font-size: 0.875rem;
+      border: 1px solid var(--line, #cbd5e1);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--foreground, #0f172a);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .select-input:focus, .date-input:focus, .text-input:focus, .text-area:focus {
+      border-color: #0284c7;
+    }
+
+    .control-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .booking-alert {
+      padding: 12px 18px;
+      border-radius: 10px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .booking-alert-error {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    /* Metrics */
+    .booking-metrics-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+
+    .metric-card {
+      display: flex;
+      flex-direction: column;
+      padding: 18px 20px;
+      border-radius: 14px;
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+    }
+
+    .metric-label {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted, #64748b);
+    }
+
+    .metric-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--foreground, #0f172a);
+      margin: 4px 0 2px 0;
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--muted, #64748b);
+    }
+
+    .stat-accent-green .metric-value { color: #16a34a; }
+    .stat-accent-blue .metric-value { color: #0284c7; }
+
+    /* Tabs */
+    .booking-tabs-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--line, #e2e8f0);
+      padding-bottom: 2px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      background: none;
+      color: var(--muted, #64748b);
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      color: #0284c7;
+      border-bottom: 2px solid #0284c7;
+      font-weight: 700;
+    }
+
+    /* Sections */
+    .booking-section {
+      padding: 24px;
+      border-radius: 16px;
+      border: 1px solid var(--line, #e2e8f0);
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .section-title-row h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--foreground, #0f172a);
+    }
+
+    .section-hint {
+      margin: 2px 0 0 0;
+      font-size: 0.8125rem;
+      color: var(--muted, #64748b);
+    }
+
+    .timeline-legend {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.8125rem;
+      color: var(--muted, #64748b);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .status-available { background: #dcfce7; border: 1px solid #86efac; }
+    .status-confirmed { background: #e0f2fe; border: 1px solid #7dd3fc; }
+    .status-checkedin { background: #ede9fe; border: 1px solid #c4b5fd; }
+    .status-blocked { background: #f1f5f9; border: 1px solid #cbd5e1; }
+
+    /* Timeline Table */
+    .timeline-container {
+      overflow-x: auto;
+      border: 1px solid var(--line, #e2e8f0);
+      border-radius: 12px;
+    }
+
+    .timeline-grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .time-col-header {
+      width: 90px;
+      padding: 12px 14px;
+      background: #f8fafc;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--muted, #64748b);
+      border-bottom: 1px solid var(--line, #e2e8f0);
+      border-right: 1px solid var(--line, #e2e8f0);
+    }
+
+    .resource-col-header {
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--line, #e2e8f0);
+      border-right: 1px solid var(--line, #e2e8f0);
+      min-width: 160px;
+    }
+
+    .resource-col-header strong {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--foreground, #0f172a);
+    }
+
+    .resource-capacity {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--muted, #64748b);
+    }
+
+    .time-cell {
+      padding: 10px 14px;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted, #64748b);
+      background: #f8fafc;
+      border-bottom: 1px solid var(--line, #f1f5f9);
+      border-right: 1px solid var(--line, #e2e8f0);
+      white-space: nowrap;
+    }
+
+    .slot-cell {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--line, #f1f5f9);
+      border-right: 1px solid var(--line, #e2e8f0);
+      height: 48px;
+      vertical-align: middle;
+      transition: background 0.15s ease;
+    }
+
+    .slot-available {
+      background: #fcfdfd;
+      cursor: pointer;
+    }
+
+    .slot-available:hover {
+      background: #dcfce7;
+    }
+
+    .slot-available-label {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: none;
+    }
+
+    .slot-available:hover .slot-available-label {
+      display: inline-block;
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .slot-confirmed {
+      background: #f0f9ff;
+    }
+
+    .slot-checkedin {
+      background: #f5f3ff;
+    }
+
+    .slot-booking-pill {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #ffffff;
+      border: 1px solid #bae6fd;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    .slot-checkedin .slot-booking-pill {
+      border-color: #ddd6fe;
+    }
+
+    .pill-name {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--foreground, #0f172a);
+    }
+
+    .pill-badge {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      color: #0284c7;
+    }
+
+    .slot-checkedin .pill-badge {
+      color: #7c3aed;
+    }
+
+    .timeline-loading, .timeline-empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--muted, #64748b);
+      font-size: 0.9375rem;
+    }
+
+    /* Table styles */
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    .booking-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .booking-table th {
+      padding: 12px 14px;
+      background: #f8fafc;
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--muted, #64748b);
+      border-bottom: 1px solid var(--line, #e2e8f0);
+    }
+
+    .booking-table td {
+      padding: 12px 14px;
+      font-size: 0.875rem;
+      border-bottom: 1px solid var(--line, #f1f5f9);
+      color: var(--foreground, #0f172a);
+    }
+
+    .empty-cell {
+      text-align: center;
+      padding: 36px 0;
+      color: var(--muted, #64748b);
+    }
+
+    .code-badge {
+      font-family: monospace;
+      font-size: 0.8125rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      background: #f1f5f9;
+      border-radius: 4px;
+      color: #0f172a;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .badge-success { background: #dcfce7; color: #15803d; }
+    .badge-warning { background: #fef3c7; color: #b45309; }
+    .badge-info { background: #e0f2fe; color: #0369a1; }
+    .badge-danger { background: #fee2e2; color: #b91c1c; }
+    .badge-muted { background: #f1f5f9; color: #64748b; }
+
+    .filter-chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line, #cbd5e1);
+      background: #ffffff;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted, #64748b);
+      cursor: pointer;
+    }
+
+    .filter-chip.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 560px;
+      background: #ffffff;
+      border-radius: 16px;
+      border: 1px solid var(--line, #e2e8f0);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      padding: 24px;
+    }
+
+    .modal-sm {
+      max-width: 420px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--foreground, #0f172a);
+    }
+
+    .modal-close-btn {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      color: var(--muted, #64748b);
+      cursor: pointer;
+    }
+
+    .modal-desc {
+      font-size: 0.875rem;
+      color: var(--muted, #64748b);
+      margin: 0 0 16px 0;
+    }
+
+    .modal-form {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-field label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--foreground, #0f172a);
+    }
+
+    .checkin-code-input {
+      font-size: 1.5rem;
+      letter-spacing: 0.2em;
+      text-align: center;
+      text-transform: uppercase;
+      font-weight: 800;
+      padding: 12px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 8px;
+    }
+  </style>
+</StaffShell>

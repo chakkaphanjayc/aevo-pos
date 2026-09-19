@@ -13,7 +13,7 @@ describe("kiosk-store", () => {
     const cart = createEmptyKioskCart("MAIN");
     expect(cart.storeCode).toBe("MAIN");
     expect(cart.fulfillmentType).toBe("DINE_IN");
-    expect(cart.paymentMethod).toBe("PROMPTPAY");
+    expect(cart.paymentMethod).toBe("CASH_COUNTER");
     expect(cart.items).toHaveLength(0);
   });
 

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.preparation_stations (
   status text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
   created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
   updated_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
+  UNIQUE (organization_id, id),
   UNIQUE (organization_id, store_id, code),
   FOREIGN KEY (organization_id, store_id)
     REFERENCES public.stores(organization_id, id) ON DELETE CASCADE

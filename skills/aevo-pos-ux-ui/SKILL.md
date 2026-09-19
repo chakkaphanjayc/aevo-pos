@@ -67,6 +67,38 @@ receive that attribute.
 - On mobile, recomcompose the workflow: use horizontal category controls,
   stacked toolbars, readable rows/cards, and a bottom-sheet cart for POS.
 
+## Web design layout & element standards (Best Web Design Practices)
+
+Apply modern, clean, and consistent web design layout principles across all operational pages:
+
+### 1. Topbar & Header Alignment
+- **Normalized Height & Rhythm:** Keep the staff topbar at a crisp, consistent height (`64px`).
+- **Zero Label Wrapping:** Buttons with text labels (such as `#shift-btn` or `.staff-preview-trigger-btn`) must never wrap text vertically into multiple lines or overflow boundaries. Always specify `white-space: nowrap; display: inline-flex; align-items: center;` and allow auto-width with proper horizontal padding (`padding: 0 12px;`).
+- **Normalized Control Heights:** All interactive topbar controls, status capsules, user pills, and buttons must share an identical visual height (`38px`), matching corner radius (`var(--radius-sm)`), and vertical baseline alignment (`align-items: center`).
+- **Semantic Grouping & Spacing:**
+  - Left: Store selector and desktop sidebar collapse toggle.
+  - Middle/Right Working Zone: Page-specific operational actions (Shift, Held Orders, Filters).
+  - Divider: A quiet vertical separator (`.staff-topbar-divider`) cleanly demarcating page actions from global utilities.
+  - Far Right Utilities: Preview Studio launcher, connection status pill, user capsule, and danger-highlighted logout.
+
+### 2. Desktop Sidebar Collapse / Screen Real Estate
+- Cashier and operator screens (such as POS) need maximum horizontal real estate for products and carts.
+- Provide a desktop sidebar collapse toggle (`.staff-sidebar-toggle`) that transitions the 224px sidebar into a compact 68px icon rail.
+- Persist cashier preference in local storage (`aevo.staff.sidebar_collapsed`).
+
+### 3. POS Three-Zone Ergonomics
+- **Zone 1: Category Rail (`.pos-categories`):**
+  - Use high-contrast active state (`background: var(--brand); color: #fff;`) with subtle elevation to clearly show which category is being browsed.
+  - Maintain 44px touch height per category button.
+- **Zone 2: Product Surface (`.pos-products-area`):**
+  - Product cards must have clear typographic hierarchy: thumbnail/initials, product title (clamped to 2 lines), and prominent bold price in brand green (`var(--brand)`).
+  - Tactile feedback: Subtle elevation on hover (`translateY(-2px)`) and scale feedback on click/touch (`scale(0.98)`).
+- **Zone 3: Cart / Checkout Panel (`.pos-cart`):**
+  - Header: Clear item count pill and danger-hover clear action.
+  - Fulfillment: Segmented pill container (`background: var(--canvas); padding: 4px;`) with smooth toggle between "ซื้อกลับ" and "ทานที่ร้าน".
+  - Checkout CTA (`#pay-btn`): Generous 50px height, deep brand green, bold white text with high WCAG contrast, subtle green glow/shadow, and an uncluttered secondary hold button.
+  - Disabled states must retain legible text (`opacity: 0.5`) rather than disappearing into the background.
+
 ## Loading and data strategy
 
 Optimize perceived and actual latency without weakening authorization.

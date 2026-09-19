@@ -1,5 +1,6 @@
 import { roles, type AuditLogSummary, type MemberSummary, type Role, type SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -11,7 +12,8 @@ export async function listMembers(database: Database, principal: SessionPrincipa
     .select("id,user_id,role_id,status,created_at")
     .eq("organization_id", principal.organizationId)
     .order("created_at", { ascending: true });
-  if (membershipsResult.error || !membershipsResult.data) return [];
+  throwDatabaseError(membershipsResult.error, "member list");
+  if (!membershipsResult.data) return [];
   const memberships = membershipsResult.data as Row[];
   const userIds = memberships.map((row) => String(row.user_id));
   const roleIds = memberships.map((row) => String(row.role_id));
@@ -20,6 +22,9 @@ export async function listMembers(database: Database, principal: SessionPrincipa
     roleIds.length ? database.client.from("roles").select("id,code").in("id", roleIds) : Promise.resolve({ data: [], error: null }),
     memberships.length ? database.client.from("membership_stores").select("membership_id,store_id").in("membership_id", memberships.map((row) => String(row.id))) : Promise.resolve({ data: [], error: null })
   ]);
+  throwDatabaseError(profilesResult.error, "member profile lookup");
+  throwDatabaseError(rolesResult.error, "member role lookup");
+  throwDatabaseError(accessResult.error, "member store access lookup");
   const profiles = new Map((profilesResult.data ?? []).map((row) => [String((row as Row).id), row as Row]));
   const roleMap = new Map((rolesResult.data ?? []).map((row) => [String((row as Row).id), String((row as Row).code)]));
   const stores = new Map<string, string[]>();
@@ -48,25 +53,28 @@ export async function updateMember(
   input: { role: Role; status?: "ACTIVE" | "SUSPENDED"; storeIds: string[] }
 ): Promise<MemberSummary | null> {
   const roleResult = await database.client.from("roles").select("id").eq("code", input.role).maybeSingle();
-  if (roleResult.error || !roleResult.data) throw new Error("Role not found");
+  throwDatabaseError(roleResult.error, "member role lookup");
+  if (!roleResult.data) throw new Error("Role not found");
   const accessResult = await database.client.from("stores").select("id").eq("organization_id", principal.organizationId).in("id", input.storeIds);
-  if (accessResult.error) throw new Error(`Store access lookup failed: ${accessResult.error.message}`);
+  throwDatabaseError(accessResult.error, "member store access lookup");
   const allowedStoreIds = new Set((accessResult.data ?? []).map((row) => String((row as Row).id)));
   const storeIds = input.storeIds.filter((id) => allowedStoreIds.has(id));
   const updated = await database.client.from("memberships").update({ role_id: String((roleResult.data as Row).id), ...(input.status ? { status: input.status } : {}) }).eq("organization_id", principal.organizationId).eq("id", membershipId).select("id").maybeSingle();
-  if (updated.error || !updated.data) return null;
+  throwDatabaseError(updated.error, "member update");
+  if (!updated.data) return null;
   const deleted = await database.client.from("membership_stores").delete().eq("membership_id", membershipId);
-  if (deleted.error) throw new Error(`Store access update failed: ${deleted.error.message}`);
+  throwDatabaseError(deleted.error, "member store access delete");
   if (storeIds.length) {
     const inserted = await database.client.from("membership_stores").insert(storeIds.map((storeId) => ({ membership_id: membershipId, store_id: storeId })));
-    if (inserted.error) throw new Error(`Store access update failed: ${inserted.error.message}`);
+    throwDatabaseError(inserted.error, "member store access create");
   }
   return (await listMembers(database, principal)).find((member) => member.membershipId === membershipId) ?? null;
 }
 
 export async function listAuditLogs(database: Database, principal: SessionPrincipal, limit = 100): Promise<AuditLogSummary[]> {
   const result = await database.client.from("audit_logs").select("id,organization_id,user_id,action,resource_type,resource_id,metadata,created_at").eq("organization_id", principal.organizationId).order("created_at", { ascending: false }).limit(Math.min(Math.max(limit, 1), 200));
-  if (result.error || !result.data) return [];
+  throwDatabaseError(result.error, "audit log list");
+  if (!result.data) return [];
   return (result.data as Row[]).map((row) => ({
     id: String(row.id), organizationId: String(row.organization_id),
     ...(row.user_id ? { userId: String(row.user_id) } : {}), action: String(row.action), resourceType: String(row.resource_type),
@@ -75,5 +83,6 @@ export async function listAuditLogs(database: Database, principal: SessionPrinci
 }
 
 export async function writeAuditLog(database: Database, input: { organizationId: string; userId?: string; action: string; resourceType: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> {
-  await database.client.from("audit_logs").insert({ organization_id: input.organizationId, user_id: input.userId || null, action: input.action, resource_type: input.resourceType, resource_id: input.resourceId || null, metadata: input.metadata ?? {} });
+  const result = await database.client.from("audit_logs").insert({ organization_id: input.organizationId, user_id: input.userId || null, action: input.action, resource_type: input.resourceType, resource_id: input.resourceId || null, metadata: input.metadata ?? {} });
+  throwDatabaseError(result.error, "audit log create");
 }

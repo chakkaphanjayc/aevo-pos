@@ -1,9 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import StaffIcon from "./StaffIcon.astro";
+import StaffPreviewModal from "./StaffPreviewModal.astro";
 import type { Permission } from "@aevo/contracts";
 
-type StaffSection = "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "tables" | "reports" | "users" | "devices" | "audit" | "settings";
+type StaffSection = "hub" | "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "tables" | "booking" | "reports" | "users" | "devices" | "audit" | "settings" | "preview";
 
 interface Props {
   title: string;
@@ -14,6 +15,7 @@ interface Props {
 const { title, active, fullHeight = false } = Astro.props;
 
 const navItems = [
+  { key: "hub", group: "Ecosystem", label: "Aevo Hub", helper: "Apps & Plans", icon: "hub", href: "/staff/hub", permission: "store.read" as Permission, ready: true },
   { key: "workspace", group: "Workspace", label: "ภาพรวม", helper: "Workspace", icon: "dashboard", href: "/staff/workspace", permission: "store.read" as Permission, ready: true },
   { key: "catalog", group: "Store", label: "สินค้า", helper: "Catalog", icon: "catalog", href: "/staff/catalog", permission: "catalog.read" as Permission, ready: true },
   { key: "pos", group: "Sales", label: "ขายหน้าร้าน", helper: "POS", icon: "pos", href: "/staff/pos", permission: "order.create" as Permission, ready: true },
@@ -21,6 +23,8 @@ const navItems = [
   { key: "queue", group: "Sales", label: "คิวรับสินค้า", helper: "Queue", icon: "queue", href: "/staff/queue", permission: "store.read" as Permission, ready: true },
   { key: "prep", group: "Sales", label: "เตรียมสินค้า", helper: "Preparation", icon: "prep", href: "/staff/preparation", permission: "order.create" as Permission, ready: true },
   { key: "tables", group: "Store", label: "ผังโต๊ะ", helper: "Tables", icon: "utensils", href: "/staff/tables", permission: "store.read" as Permission, ready: true },
+  { key: "booking", group: "Store", label: "การจอง", helper: "Booking", icon: "calendar", href: "/staff/booking", permission: "store.read" as Permission, ready: true },
+  { key: "preview", group: "Store", label: "พรีวิวระบบ", helper: "Preview Modes", icon: "preview", href: "/staff/preview", permission: "store.read" as Permission, ready: true },
   { key: "reports", group: "Finance", label: "รายงาน", helper: "Reports", icon: "receipt", href: "/staff/reports", permission: "audit.read" as Permission, ready: true },
   { key: "users", group: "Settings", label: "ผู้ใช้งาน", helper: "Users & Roles", icon: "user", href: "/staff/users", permission: "member.manage" as Permission, ready: true },
   { key: "devices", group: "Settings", label: "อุปกรณ์", helper: "Devices", icon: "settings", href: "/staff/devices", permission: "devices.manage" as Permission, ready: true },
@@ -32,8 +36,20 @@ const primaryMobileItems = navItems.slice(0, 4);
 ---
 
 <BaseLayout title={title}>
+  <script is:inline>
+    if (window.self !== window.top || new URLSearchParams(window.location.search).has("preview")) {
+      document.documentElement.classList.add("is-preview-embedded");
+    }
+    if (localStorage.getItem("aevo.staff.sidebar_collapsed") === "true") {
+      document.documentElement.classList.add("sidebar-collapsed");
+    }
+  </script>
   <div class:list={["staff-app", { "staff-app-full": fullHeight }]} data-staff-shell>
     <header class="staff-topbar">
+      <button class="staff-sidebar-toggle" id="staff-sidebar-toggle" type="button" aria-label="ย่อ/ขยายเมนูด้านข้าง" title="ย่อ/ขยายเมนูด้านข้าง (Collapse Sidebar)">
+        <StaffIcon name="menu" size={18} />
+      </button>
+
       <button class="staff-menu-toggle" id="staff-menu-toggle" type="button" aria-label="เปิดเมนู" aria-expanded="false" aria-controls="staff-mobile-drawer">
         <StaffIcon name="menu" size={20} />
       </button>
@@ -58,7 +74,16 @@ const primaryMobileItems = navItems.slice(0, 4);
       </div>
 
       <div class="staff-topbar-actions">
+        <!-- Page-specific operational actions (Shift, Held Orders, etc.) -->
         <slot name="top-actions" />
+
+        <div class="staff-topbar-divider" aria-hidden="true"></div>
+
+        <!-- Global Utility Actions -->
+        <button class="staff-preview-trigger-btn" data-action="open-preview" type="button" title="พรีวิวโหมดต่าง ๆ (ลูกค้า, Kiosk, TV, POS)">
+          <StaffIcon name="preview" size={16} />
+          <span>พรีวิวโหมด</span>
+        </button>
         <span class="status staff-connection-status" id="connection-status" data-staff-connection>กำลังตรวจสอบ</span>
         <div class="staff-user" title="ผู้ใช้งานปัจจุบัน">
           <span class="staff-user-avatar" aria-hidden="true"><StaffIcon name="user" size={16} /></span>
@@ -81,6 +106,7 @@ const primaryMobileItems = navItems.slice(0, 4);
                 <a
                   class:list={["staff-nav-link", { "is-active": item.key === active }]}
                   href={item.href}
+                  title={item.label}
                   data-staff-store-link="true"
                   data-staff-permission={item.permission}
                   data-staff-nav-link
@@ -160,5 +186,16 @@ const primaryMobileItems = navItems.slice(0, 4);
         <span>เพิ่มเติม</span>
       </button>
     </nav>
+    <StaffPreviewModal />
   </div>
+
+  <script>
+    const sidebarToggle = document.getElementById("staff-sidebar-toggle");
+    if (sidebarToggle) {
+      sidebarToggle.addEventListener("click", () => {
+        const isCollapsed = document.documentElement.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("aevo.staff.sidebar_collapsed", isCollapsed ? "true" : "false");
+      });
+    }
+  </script>
 </BaseLayout>

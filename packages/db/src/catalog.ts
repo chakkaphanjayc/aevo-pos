@@ -24,6 +24,7 @@ import type {
 } from "@aevo/contracts";
 import { catalogChannels } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -37,7 +38,7 @@ export class CatalogConflictError extends Error {
 function throwIfError(error: { message: string; code?: string } | null, operation: string): void {
   if (!error) return;
   if (error.code === "23505") throw new CatalogConflictError(`Catalog ${operation} already exists`);
-  throw new Error(`Supabase catalog ${operation} failed: ${error.message}`);
+  throwDatabaseError(error, `catalog ${operation}`);
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -628,7 +629,8 @@ export async function getStoreByCode(
     .select("id,organization_id,code,name,currency,status")
     .eq("code", storeCode.trim().toUpperCase())
     .maybeSingle();
-  if (result.error || !result.data) return null;
+  throwDatabaseError(result.error, "store lookup");
+  if (!result.data) return null;
   const row = result.data as Row;
   return {
     id: String(row.id),

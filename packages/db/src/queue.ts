@@ -6,6 +6,7 @@ import type {
 } from "@aevo/contracts";
 import type { Database } from "./client";
 import { getStoreByCode } from "./catalog";
+import { throwDatabaseError } from "./errors";
 
 export class QueueError extends Error {
   constructor(readonly code: string, message: string) {
@@ -34,6 +35,7 @@ export async function getOrCreateQueueConfig(
     .maybeSingle();
 
   if (error) {
+    throwDatabaseError(error, "queue config lookup");
     throw new QueueError("QUEUE_CONFIG_READ_FAILED", error.message);
   }
 
@@ -63,14 +65,8 @@ export async function getOrCreateQueueConfig(
     .single();
 
   if (insertError) {
-    // Fall back to default in memory if upsert encounters conflict
-    return {
-      organizationId,
-      storeId,
-      prefix: "Q",
-      resetDaily: true,
-      displayMode: "NUMBER"
-    };
+    throwDatabaseError(insertError, "queue config create");
+    throw new QueueError("QUEUE_CONFIG_CREATE_FAILED", insertError.message);
   }
 
   return {
@@ -98,37 +94,61 @@ export async function createQueueTicket(
     return existing;
   }
 
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const prefix = params.prefix ?? "Q";
+  const config = await getOrCreateQueueConfig(database, params.organizationId, params.storeId);
+  const today = new Date().toISOString().split("T")[0] ?? "1970-01-01";
+  const businessDate = config.resetDaily ? today : "1970-01-01";
+  const prefix = params.prefix ?? config.prefix;
 
-  // Atomically get next sequence or insert
-  // Query current sequence
-  const { data: seqRow, error: seqReadError } = await database.client
-    .from("queue_sequences")
-    .select("next_value")
-    .eq("organization_id", params.organizationId)
-    .eq("store_id", params.storeId)
-    .eq("business_date", today)
-    .maybeSingle();
-
-  let nextSeq = 1;
-  if (!seqReadError && seqRow) {
-    nextSeq = (seqRow.next_value as number) || 1;
-    await database.client
+  // The production migration exposes an atomic upsert RPC. The fallback keeps
+  // the small repository unit tests useful when they provide only .from().
+  let nextSeq: number;
+  if (typeof database.client.rpc === "function") {
+    const sequenceResult = await database.client.rpc("next_queue_number", {
+      p_organization_id: params.organizationId,
+      p_store_id: params.storeId,
+      p_business_date: businessDate
+    });
+    throwDatabaseError(sequenceResult.error, "queue sequence allocation");
+    const rawSequence = Array.isArray(sequenceResult.data)
+      ? (sequenceResult.data[0] as Row | number | undefined)
+      : sequenceResult.data;
+    const sequenceValue = typeof rawSequence === "object" && rawSequence !== null
+      ? rawSequence.next_queue_number
+      : rawSequence;
+    nextSeq = Number(sequenceValue);
+    if (!Number.isInteger(nextSeq) || nextSeq < 1) {
+      throw new QueueError("QUEUE_SEQUENCE_INVALID", "Queue sequence allocation returned an invalid number");
+    }
+  } else {
+    const { data: seqRow, error: seqReadError } = await database.client
       .from("queue_sequences")
-      .update({ next_value: nextSeq + 1 })
+      .select("next_value")
       .eq("organization_id", params.organizationId)
       .eq("store_id", params.storeId)
-      .eq("business_date", today);
-  } else {
-    await database.client
-      .from("queue_sequences")
-      .insert({
-        organization_id: params.organizationId,
-        store_id: params.storeId,
-        business_date: today,
-        next_value: nextSeq + 1
-      });
+      .eq("business_date", businessDate)
+      .maybeSingle();
+    throwDatabaseError(seqReadError, "queue sequence lookup");
+
+    nextSeq = Number(seqRow?.next_value ?? 1);
+    if (seqRow) {
+      const updateResult = await database.client
+        .from("queue_sequences")
+        .update({ next_value: nextSeq + 1 })
+        .eq("organization_id", params.organizationId)
+        .eq("store_id", params.storeId)
+        .eq("business_date", businessDate);
+      throwDatabaseError(updateResult.error, "queue sequence update");
+    } else {
+      const insertResult = await database.client
+        .from("queue_sequences")
+        .insert({
+          organization_id: params.organizationId,
+          store_id: params.storeId,
+          business_date: businessDate,
+          next_value: nextSeq + 1
+        });
+      throwDatabaseError(insertResult.error, "queue sequence create");
+    }
   }
 
   const queueNumber = formatQueueNumber(prefix, nextSeq);
@@ -146,6 +166,11 @@ export async function createQueueTicket(
     .single();
 
   if (error) {
+    if (error.code === "23505") {
+      const concurrent = await getQueueTicketByOrderId(database, params.orderId);
+      if (concurrent) return concurrent;
+    }
+    throwDatabaseError(error, "queue ticket create");
     throw new QueueError("QUEUE_TICKET_CREATE_FAILED", error.message);
   }
 
@@ -162,7 +187,8 @@ export async function getQueueTicketByOrderId(
     .eq("order_id", orderId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) throwDatabaseError(error, "queue ticket order lookup");
+  if (!data) return null;
   return mapQueueTicketRow(data as Row);
 }
 
@@ -176,7 +202,8 @@ export async function getQueueTicketById(
     .eq("id", ticketId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) throwDatabaseError(error, "queue ticket lookup");
+  if (!data) return null;
   return mapQueueTicketRow(data as Row);
 }
 
@@ -201,6 +228,7 @@ export async function listQueueTickets(
 
   const { data, error } = await query;
   if (error) {
+    throwDatabaseError(error, "queue ticket list");
     throw new QueueError("QUEUE_TICKETS_LIST_FAILED", error.message);
   }
 
@@ -230,9 +258,11 @@ export async function transitionQueueTicket(
     .select("id, organization_id, store_id, order_id, queue_number, status, called_at, completed_at, created_at")
     .single();
 
-  if (error || !data) {
-    throw new QueueError("QUEUE_TICKET_UPDATE_FAILED", error?.message ?? "Ticket not found");
+  if (error) {
+    throwDatabaseError(error, "queue ticket update");
+    throw new QueueError("QUEUE_TICKET_UPDATE_FAILED", error.message);
   }
+  if (!data) throw new QueueError("QUEUE_TICKET_UPDATE_FAILED", "Ticket not found");
 
   return mapQueueTicketRow(data as Row);
 }
@@ -257,6 +287,7 @@ export async function getQueueDisplaySnapshot(
     .limit(100);
 
   if (error) {
+    throwDatabaseError(error, "queue display fetch");
     throw new QueueError("QUEUE_DISPLAY_FETCH_FAILED", error.message);
   }
 

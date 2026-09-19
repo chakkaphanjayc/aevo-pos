@@ -15,6 +15,8 @@ export interface AppConfig {
   /** Cookie policy used by the browser session. Defaults to lax. */
   sessionCookieSameSite?: SessionCookieSameSite;
   logLevel: LogLevel;
+  stripeSecretKey?: string | undefined;
+  stripeWebhookSecret?: string | undefined;
 }
 
 function required(source: Record<string, string | undefined>, key: string): string {
@@ -84,6 +86,8 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     supabaseKey,
     sessionCookieName: sessionCookieName(source.SESSION_COOKIE_NAME ?? "aevo_session"),
     sessionCookieSameSite: configuredCookieSameSite,
-    logLevel: logLevel as LogLevel
+    logLevel: logLevel as LogLevel,
+    stripeSecretKey: source.STRIPE_SECRET_KEY?.trim() || undefined,
+    stripeWebhookSecret: source.STRIPE_WEBHOOK_SECRET?.trim() || undefined
   };
 }

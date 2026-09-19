@@ -1,0 +1,204 @@
+---
+import type { FeatureEntitlement } from "@aevo/contracts";
+import StaffIcon from "../staff/StaffIcon.astro";
+
+interface Props {
+  feature: FeatureEntitlement | FeatureEntitlement[];
+  requireAll?: boolean;
+  entitledFeatures?: FeatureEntitlement[] | undefined;
+  fallbackTitle?: string;
+  fallbackDescription?: string;
+  upgradeHref?: string;
+  hideFallback?: boolean;
+  class?: string;
+}
+
+const {
+  feature,
+  requireAll = false,
+  entitledFeatures,
+  fallbackTitle = "ฟีเจอร์นี้ต้องใช้แพ็กเกจระดับสูงกว่า",
+  fallbackDescription = "กรุณาอัปเกรดแพ็กเกจเพื่อเปิดใช้งานฟีเจอร์นี้สำหรับร้านค้าของคุณ",
+  upgradeHref = "/staff/hub",
+  hideFallback = false,
+  class: className = ""
+} = Astro.props;
+
+const requiredList = Array.isArray(feature) ? feature : [feature];
+const hasServerFeatures = Array.isArray(entitledFeatures);
+
+let serverAllowed = true;
+if (hasServerFeatures) {
+  serverAllowed = requireAll
+    ? requiredList.every((f) => entitledFeatures.includes(f))
+    : requiredList.some((f) => entitledFeatures.includes(f));
+}
+---
+
+{hasServerFeatures && !serverAllowed ? (
+  !hideFallback && (
+    <div class:list={["aevo-feature-gate-card surface", className]}>
+      <div class="feature-gate-icon-wrap">
+        <StaffIcon name="lock" size={24} />
+      </div>
+      <div class="feature-gate-info">
+        <h4 class="feature-gate-title">{fallbackTitle}</h4>
+        <p class="feature-gate-desc">{fallbackDescription}</p>
+        <div class="feature-gate-tags">
+          {requiredList.map((f) => (
+            <span class="feature-tag"><code>{f}</code></span>
+          ))}
+        </div>
+      </div>
+      <div class="feature-gate-action">
+        <a href={upgradeHref} class="button primary small">
+          <span>อัปเกรดบน Aevo Hub</span>
+          <StaffIcon name="arrow-right" size={14} />
+        </a>
+      </div>
+    </div>
+  )
+) : (
+  <div
+    class:list={["aevo-feature-gate", className]}
+    data-gate-features={JSON.stringify(requiredList)}
+    data-gate-require-all={requireAll ? "true" : "false"}
+    data-hide-fallback={hideFallback ? "true" : "false"}
+  >
+    <div class="feature-gate-content">
+      <slot />
+    </div>
+
+    {!hideFallback && (
+      <div class="aevo-feature-fallback aevo-feature-gate-card surface" hidden>
+        <div class="feature-gate-icon-wrap">
+          <StaffIcon name="lock" size={24} />
+        </div>
+        <div class="feature-gate-info">
+          <h4 class="feature-gate-title">{fallbackTitle}</h4>
+          <p class="feature-gate-desc">{fallbackDescription}</p>
+          <div class="feature-gate-tags">
+            {requiredList.map((f) => (
+              <span class="feature-tag"><code>{f}</code></span>
+            ))}
+          </div>
+        </div>
+        <div class="feature-gate-action">
+          <a href={upgradeHref} class="button primary small">
+            <span>อัปเกรดบน Aevo Hub</span>
+            <StaffIcon name="arrow-right" size={14} />
+          </a>
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
+<script>
+  function evaluateFeatureGates() {
+    let features: string[] = [];
+    try {
+      const stored = localStorage.getItem("aevo_entitled_features") || sessionStorage.getItem("aevo_entitled_features");
+      if (stored) {
+        features = JSON.parse(stored);
+      } else if (Array.isArray((window as any).__AEVO_ENTITLED_FEATURES__)) {
+        features = (window as any).__AEVO_ENTITLED_FEATURES__;
+      }
+    } catch {}
+
+    document.querySelectorAll<HTMLElement>(".aevo-feature-gate").forEach((gate) => {
+      const requiredStr = gate.dataset.gateFeatures;
+      if (!requiredStr) return;
+      try {
+        const required: string[] = JSON.parse(requiredStr);
+        const requireAll = gate.dataset.gateRequireAll === "true";
+        const hideFallback = gate.dataset.hideFallback === "true";
+
+        const allowed = requireAll
+          ? required.every((f) => features.includes(f))
+          : required.some((f) => features.includes(f));
+
+        const content = gate.querySelector<HTMLElement>(".feature-gate-content");
+        const fallback = gate.querySelector<HTMLElement>(".aevo-feature-fallback");
+
+        if (!allowed && features.length > 0) {
+          if (hideFallback) {
+            gate.style.display = "none";
+          } else {
+            if (content) content.style.display = "none";
+            if (fallback) fallback.hidden = false;
+          }
+        } else {
+          if (hideFallback) {
+            gate.style.display = "";
+          } else {
+            if (content) content.style.display = "";
+            if (fallback) fallback.hidden = true;
+          }
+        }
+      } catch {}
+    });
+  }
+
+  if (typeof window !== "undefined") {
+    document.addEventListener("DOMContentLoaded", evaluateFeatureGates);
+    window.addEventListener("aevo:entitlements-changed", evaluateFeatureGates);
+    if (document.readyState !== "loading") {
+      evaluateFeatureGates();
+    }
+  }
+</script>
+
+<style>
+  .aevo-feature-gate-card {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  }
+  .feature-gate-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(234, 179, 8, 0.12);
+    color: #eab308;
+    flex-shrink: 0;
+  }
+  .feature-gate-info {
+    flex: 1;
+  }
+  .feature-gate-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #f8fafc;
+  }
+  .feature-gate-desc {
+    margin: 0 0 0.5rem;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+  .feature-gate-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .feature-tag code {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #cbd5e1;
+  }
+  .feature-gate-action {
+    flex-shrink: 0;
+  }
+</style>

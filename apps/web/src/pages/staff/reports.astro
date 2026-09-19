@@ -680,6 +680,8 @@ import StaffShell from "../../components/staff/StaffShell.astro";
 
     btnRefresh.addEventListener("click", loadReports);
     dateInput.addEventListener("change", loadReports);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void loadReports(); });
+    window.setInterval(() => { if (document.visibilityState === "visible") void loadReports(); }, 60_000);
     btnExport.addEventListener("click", exportCSV);
 
     init();

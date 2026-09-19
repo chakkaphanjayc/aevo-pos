@@ -5,6 +5,7 @@ import type {
   SessionPrincipal
 } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -66,9 +67,8 @@ export async function getCurrentCashSession(
     .limit(1)
     .maybeSingle();
 
-  if (sessionRes.error || !sessionRes.data) {
-    return null;
-  }
+  throwDatabaseError(sessionRes.error, "cash session lookup");
+  if (!sessionRes.data) return null;
 
   const session = sessionRes.data as Row;
 
@@ -78,6 +78,7 @@ export async function getCurrentCashSession(
     .select("*")
     .eq("cash_session_id", String(session.id))
     .order("created_at", { ascending: true });
+  throwDatabaseError(movementsRes.error, "cash movement lookup");
 
   const movements = (movementsRes.data ?? []).map((m) => mapCashMovement(m as Row));
 
@@ -88,7 +89,9 @@ export async function getCurrentCashSession(
     .eq("organization_id", principal.organizationId)
     .eq("store_id", storeId)
     .eq("method", "CASH")
+    .eq("status", "PAID")
     .gte("created_at", String(session.opened_at));
+  throwDatabaseError(paymentsRes.error, "cash payment lookup");
 
   const cashSalesMinor = (paymentsRes.data ?? []).reduce(
     (acc, curr) => acc + Number(curr.amount_minor ?? 0),
@@ -129,9 +132,12 @@ export async function openCashSession(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to open cash session: ${error?.message}`);
+  if (error?.code === "23505") {
+    const concurrent = await getCurrentCashSession(database, principal, input.storeId);
+    if (concurrent) return concurrent;
   }
+  throwDatabaseError(error, "cash session open");
+  if (!data) throw new Error("Failed to open cash session: no session was returned");
 
   return mapCashSession(data as Row, []);
 }
@@ -147,6 +153,19 @@ export async function recordCashMovement(
     reason: string;
   }
 ): Promise<CashMovementSummary> {
+  const sessionRes = await database.client
+    .from("cash_sessions")
+    .select("id, status")
+    .eq("organization_id", principal.organizationId)
+    .eq("store_id", input.storeId)
+    .eq("id", input.cashSessionId)
+    .maybeSingle();
+  throwDatabaseError(sessionRes.error, "cash movement session lookup");
+  if (!sessionRes.data) throw new Error("Cash session not found in the selected store");
+  if (String((sessionRes.data as Row).status) !== "OPEN") {
+    throw new Error("Cash movements can only be recorded on an open session");
+  }
+
   const { data, error } = await database.client
     .from("cash_movements")
     .insert({
@@ -161,9 +180,8 @@ export async function recordCashMovement(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to record cash movement: ${error?.message}`);
-  }
+  throwDatabaseError(error, "cash movement create");
+  if (!data) throw new Error("Failed to record cash movement: no movement was returned");
 
   return mapCashMovement(data as Row);
 }
@@ -185,13 +203,15 @@ export async function closeCashSession(
     .eq("id", input.cashSessionId)
     .single();
 
-  if (sessionRes.error || !sessionRes.data) {
-    throw new Error("Cash session not found");
-  }
+  throwDatabaseError(sessionRes.error, "cash session close lookup");
+  if (!sessionRes.data) throw new Error("Cash session not found");
 
   const session = sessionRes.data as Row;
   if (String(session.store_id) !== input.storeId) {
     throw new Error("Cash session does not belong to this store");
+  }
+  if (String(session.status) !== "OPEN") {
+    throw new Error("Cash session is already closed");
   }
   const openingAmount = Number(session.opening_amount_minor ?? 0);
 
@@ -200,6 +220,7 @@ export async function closeCashSession(
     .from("cash_movements")
     .select("*")
     .eq("cash_session_id", input.cashSessionId);
+  throwDatabaseError(movementsRes.error, "cash movement close lookup");
 
   const movements = (movementsRes.data ?? []).map((m) => mapCashMovement(m as Row));
   let netMovements = 0;
@@ -218,7 +239,9 @@ export async function closeCashSession(
     .eq("organization_id", principal.organizationId)
     .eq("store_id", input.storeId)
     .eq("method", "CASH")
+    .eq("status", "PAID")
     .gte("created_at", String(session.opened_at));
+  throwDatabaseError(paymentsRes.error, "cash payment close lookup");
 
   const cashSales = (paymentsRes.data ?? []).reduce(
     (acc, curr) => acc + Number(curr.amount_minor ?? 0),
@@ -241,12 +264,12 @@ export async function closeCashSession(
     })
     .eq("organization_id", principal.organizationId)
     .eq("id", input.cashSessionId)
+    .eq("status", "OPEN")
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to close cash session: ${error?.message}`);
-  }
+  throwDatabaseError(error, "cash session close");
+  if (!data) throw new Error("Failed to close cash session: no session was returned");
 
   return mapCashSession(data as Row, movements);
 }
@@ -265,6 +288,7 @@ export async function listCashSessions(
     .order("opened_at", { ascending: false })
     .limit(limit);
 
-  if (error || !data) return [];
+  throwDatabaseError(error, "cash session history");
+  if (!data) return [];
   return (data as Row[]).map((row) => mapCashSession(row, []));
 }

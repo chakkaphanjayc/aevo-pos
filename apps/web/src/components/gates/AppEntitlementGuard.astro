@@ -1,0 +1,248 @@
+---
+import type { AppId, SubscriptionStatus } from "@aevo/contracts";
+import StaffIcon from "../staff/StaffIcon.astro";
+
+interface Props {
+  app: AppId | string;
+  appName?: string;
+  isEntitled?: boolean;
+  status?: SubscriptionStatus | "UNSUBSCRIBED";
+  trialEndsAt?: string | null;
+  trialDaysRemaining?: number;
+  fallbackTitle?: string;
+  fallbackDescription?: string;
+  showTrialNotice?: boolean;
+  hubHref?: string;
+  class?: string;
+}
+
+const {
+  app,
+  appName = app.toUpperCase(),
+  isEntitled,
+  status,
+  trialEndsAt,
+  trialDaysRemaining,
+  fallbackTitle = `แอปพลิเคชัน ${appName} ยังไม่ได้เปิดใช้งาน`,
+  fallbackDescription = `แอปนี้ไม่ได้อยู่ในแพ็กเกจปัจจุบันของคุณ เริ่มต้นทดลองใช้ฟรี 14 วัน หรือสมัครสมาชิกเพื่อเข้าถึงการทำงานเต็มรูปแบบ`,
+  showTrialNotice = true,
+  hubHref = "/staff/hub",
+  class: className = ""
+} = Astro.props as Props;
+
+const hasServerStatus = isEntitled !== undefined;
+const serverAllowed = isEntitled === true;
+const isTrial = status === "TRIAL";
+const trialNoticeDetail = trialDaysRemaining !== undefined
+  ? `(เหลืออีก ${trialDaysRemaining} วัน)`
+  : trialEndsAt
+    ? `(สิ้นสุด ${new Date(trialEndsAt).toLocaleDateString("th-TH")})`
+    : "";
+---
+
+{hasServerStatus && !serverAllowed ? (
+  <div class:list={["aevo-app-locked-container", className]}>
+    <div class="aevo-app-locked-card surface">
+      <div class="app-locked-badge">
+        <StaffIcon name="lock" size={28} />
+      </div>
+      <h2 class="app-locked-title">{fallbackTitle}</h2>
+      <p class="app-locked-desc">{fallbackDescription}</p>
+
+      <div class="app-locked-actions">
+        <a href={hubHref} class="button primary">
+          <StaffIcon name="spark" size={16} />
+          <span>เปิดใช้งานบน Aevo Hub</span>
+        </a>
+        <a href="https://aevo.app/contact" target="_blank" rel="noopener noreferrer" class="button secondary">
+          <span>ติดต่อฝ่ายขาย</span>
+        </a>
+      </div>
+    </div>
+  </div>
+) : (
+  <div class:list={["aevo-app-guard", className]} data-guard-app={app}>
+    {showTrialNotice && (isTrial || !hasServerStatus) && (
+      <div class="aevo-trial-notice-banner surface" data-trial-notice-app={app} style={hasServerStatus && isTrial ? "" : "display: none;"}>
+        <div class="trial-notice-badge">
+          <StaffIcon name="spark" size={14} />
+          <span>14-DAY TRIAL</span>
+        </div>
+        <span class="trial-notice-text">
+          คุณกำลังใช้งานช่วงทดลองใช้ฟรี {trialNoticeDetail}
+        </span>
+        <a href={hubHref} class="trial-notice-link">
+          <span>จัดการแพ็กเกจ</span>
+          <StaffIcon name="arrow-right" size={12} />
+        </a>
+      </div>
+    )}
+
+    <div class="app-guard-content">
+      <slot />
+    </div>
+
+    <div class="aevo-app-locked-fallback aevo-app-locked-container" hidden>
+      <div class="aevo-app-locked-card surface">
+        <div class="app-locked-badge">
+          <StaffIcon name="lock" size={28} />
+        </div>
+        <h2 class="app-locked-title">{fallbackTitle}</h2>
+        <p class="app-locked-desc">{fallbackDescription}</p>
+
+        <div class="app-locked-actions">
+          <a href={hubHref} class="button primary">
+            <StaffIcon name="spark" size={16} />
+            <span>เปิดใช้งานบน Aevo Hub</span>
+          </a>
+          <a href="https://aevo.app/contact" target="_blank" rel="noopener noreferrer" class="button secondary">
+            <span>ติดต่อฝ่ายขาย</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+<script>
+  function evaluateAppGuards() {
+    let entitlements: Array<{ appId: string; isEntitled: boolean; status: string; daysRemaining?: number }> = [];
+    try {
+      const stored = localStorage.getItem("aevo_app_entitlements") || sessionStorage.getItem("aevo_app_entitlements");
+      if (stored) {
+        entitlements = JSON.parse(stored);
+      } else if (Array.isArray((window as any).__AEVO_APP_ENTITLEMENTS__)) {
+        entitlements = (window as any).__AEVO_APP_ENTITLEMENTS__;
+      }
+    } catch {}
+
+    document.querySelectorAll<HTMLElement>(".aevo-app-guard").forEach((guard) => {
+      const appId = guard.dataset.guardApp;
+      if (!appId) return;
+
+      const ent = entitlements.find((e) => e.appId === appId);
+      const content = guard.querySelector<HTMLElement>(".app-guard-content");
+      const fallback = guard.querySelector<HTMLElement>(".aevo-app-locked-fallback");
+      const trialNotice = guard.querySelector<HTMLElement>(".aevo-trial-notice-banner");
+
+      if (ent && !ent.isEntitled) {
+        if (content) content.style.display = "none";
+        if (fallback) fallback.hidden = false;
+        if (trialNotice) trialNotice.style.display = "none";
+      } else {
+        if (content) content.style.display = "";
+        if (fallback) fallback.hidden = true;
+
+        if (trialNotice && ent && ent.status === "TRIAL") {
+          trialNotice.style.display = "flex";
+          const textEl = trialNotice.querySelector(".trial-notice-text");
+          if (textEl && ent.daysRemaining !== undefined) {
+            textEl.textContent = `คุณกำลังใช้งานช่วงทดลองใช้ฟรี (เหลืออีก ${ent.daysRemaining} วัน)`;
+          }
+        }
+      }
+    });
+  }
+
+  if (typeof window !== "undefined") {
+    document.addEventListener("DOMContentLoaded", evaluateAppGuards);
+    window.addEventListener("aevo:entitlements-changed", evaluateAppGuards);
+    if (document.readyState !== "loading") {
+      evaluateAppGuards();
+    }
+  }
+</script>
+
+<style>
+  .aevo-app-locked-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 480px;
+    padding: 3rem 1.5rem;
+    width: 100%;
+  }
+  .aevo-app-locked-card {
+    max-width: 520px;
+    width: 100%;
+    text-align: center;
+    padding: 3rem 2rem;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.85));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .app-locked-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.2);
+  }
+  .app-locked-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+    color: #f8fafc;
+  }
+  .app-locked-desc {
+    font-size: 0.875rem;
+    color: #94a3b8;
+    line-height: 1.6;
+    margin: 0 0 2rem;
+  }
+  .app-locked-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .aevo-trial-notice-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.625rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(234, 179, 8, 0.12), rgba(245, 158, 11, 0.05));
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    font-size: 0.8125rem;
+    color: #fbbf24;
+  }
+  .trial-notice-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-weight: 700;
+    font-size: 0.6875rem;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(234, 179, 8, 0.2);
+    color: #fde047;
+  }
+  .trial-notice-text {
+    flex: 1;
+    font-weight: 500;
+  }
+  .trial-notice-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #fef08a;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+</style>

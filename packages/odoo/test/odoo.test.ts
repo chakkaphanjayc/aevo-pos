@@ -9,6 +9,7 @@ describe("odoo package", () => {
     storeId: "store-1",
     orderNumber: "SO-20260917-00001",
     channel: "POS",
+    orderType: "POS",
     fulfillmentType: "DINE_IN",
     status: "COMPLETED",
     paymentStatus: "PAID",

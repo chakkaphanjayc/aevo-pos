@@ -1,6 +1,7 @@
 import type { Permission, Role, SessionPrincipal, StoreSummary } from "@aevo/contracts";
-import { permissions as permissionCodes, roles as roleCodes } from "@aevo/contracts";
+import { permissions as permissionCodes, rolePermissionDefaults, roles as roleCodes } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 interface UserProfileRow {
   id: string;
@@ -32,7 +33,7 @@ interface StoreRow {
 }
 
 function throwIfError(error: { message: string } | null, operation: string): void {
-  if (error) throw new Error(`Supabase ${operation} failed: ${error.message}`);
+  throwDatabaseError(error, operation);
 }
 
 function isRole(value: string): value is Role {
@@ -98,9 +99,13 @@ export async function resolvePrincipal(
     .select("permission_code")
     .eq("role_id", role.id);
   throwIfError(permissionResult.error, "permission lookup");
-  const resolvedPermissions = (permissionResult.data ?? [])
+  const storedPermissions = (permissionResult.data ?? [])
     .map((row) => (row as { permission_code: string }).permission_code)
     .filter(isPermission);
+  const resolvedPermissions = [...new Set([
+    ...rolePermissionDefaults[role.code],
+    ...storedPermissions
+  ])];
 
   return {
     userId: profile.id,

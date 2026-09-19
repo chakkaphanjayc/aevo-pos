@@ -136,27 +136,18 @@ export function getStaticPaths() {
             <strong id="checkout-amount-text">฿0.00</strong>
           </div>
           <div class="payment-method-choices">
-            <button class="pay-method-btn active" id="pay-promptpay" type="button">
+            <button class="pay-method-btn disabled" id="pay-promptpay" type="button" disabled aria-disabled="true">
               <span class="pay-icon">📱</span>
               <strong>PromptPay QR</strong>
-              <small>สแกนจ่ายผ่านแอปธนาคาร</small>
+              <small>ยังไม่เปิดใช้งาน</small>
             </button>
-            <button class="pay-method-btn" id="pay-cash" type="button">
+            <button class="pay-method-btn active" id="pay-cash" type="button">
               <span class="pay-icon">💵</span>
               <strong>ชำระที่เคาน์เตอร์</strong>
               <small>แจ้งเบอร์คิวและจ่ายเงินสด</small>
             </button>
           </div>
-
-          <!-- PromptPay QR Demo Box -->
-          <div class="promptpay-box" id="promptpay-box">
-            <div class="promptpay-qr-placeholder">
-              <div class="qr-matrix">
-                <span>QR CODE</span>
-              </div>
-            </div>
-            <p class="promptpay-note">กรุณาสแกน QR เพื่อชำระเงิน แล้วกด "ยืนยันการสั่ง"</p>
-          </div>
+          <p class="payment-note">ระบบจะส่งออเดอร์เข้าคิวก่อน และชำระเงินสดที่เคาน์เตอร์ตามหมายเลขคิว</p>
         </div>
         <footer class="kiosk-dialog-footer">
           <button class="kiosk-confirm-order-btn" id="btn-confirm-order" type="button">
@@ -171,7 +162,7 @@ export function getStaticPaths() {
       <div class="success-card">
         <div class="success-check-icon">✓</div>
         <h2>การสั่งซื้อสำเร็จ!</h2>
-        <p class="success-hint">กรุณารับใบเสร็จและรอเรียกคิวทางหน้าจอทีวี</p>
+        <p class="success-hint">กรุณาชำระเงินสดที่เคาน์เตอร์ตามหมายเลขคิว แล้วรอเรียกคิวทางหน้าจอทีวี</p>
         <div class="success-queue-box">
           <small>หมายเลขคิวของคุณ</small>
           <strong class="success-queue-num" id="success-queue-number">Q-001</strong>
@@ -799,6 +790,19 @@ export function getStaticPaths() {
       background: rgba(88, 166, 255, 0.1);
     }
 
+    .pay-method-btn:disabled {
+      cursor: not-allowed;
+      opacity: .48;
+    }
+
+    .payment-note {
+      margin: 1rem 0 0;
+      color: #8b949e;
+      font-size: .9rem;
+      line-height: 1.5;
+      text-align: center;
+    }
+
     .pay-icon {
       font-size: 2.5rem;
     }
@@ -963,9 +967,13 @@ export function getStaticPaths() {
 
     const kioskApp = document.querySelector<HTMLElement>("#kiosk-app")!;
     const configuredStoreCode = kioskApp.dataset.storeCode || "";
-    const storeCode = configuredStoreCode !== "__runtime__"
+    let storeCode = configuredStoreCode !== "__runtime__" && configuredStoreCode !== ""
       ? configuredStoreCode
       : decodeURIComponent(window.location.pathname.split("/")[2] || "");
+    if (storeCode === "__runtime__" || !storeCode) {
+      const sp = new URLSearchParams(window.location.search);
+      storeCode = sp.get("store") || sp.get("storeCode") || "";
+    }
 
     const attractScreen = document.querySelector<HTMLElement>("#attract-screen")!;
     const attractStoreName = document.querySelector<HTMLElement>("#attract-store-name")!;

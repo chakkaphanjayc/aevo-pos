@@ -6,15 +6,17 @@ import type {
   OrderListItem,
   OrderStatus,
   OrderSummary,
+  OrderType,
   PaymentMethod,
   RecordPaymentInput,
   SessionPrincipal,
   TransitionOrderInput
 } from "@aevo/contracts";
-import { fulfillmentTypes, orderChannels, orderStatuses, paymentMethods } from "@aevo/contracts";
+import { fulfillmentTypes, orderChannels, orderStatuses, orderTypes, paymentMethods } from "@aevo/contracts";
 import { assertOrderTransition } from "@aevo/ordering";
 import { getStoreByCode } from "./catalog";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -99,12 +101,16 @@ function mapOrder(row: Row, items: ReturnType<typeof mapItem>[]): OrderSummary {
   if (!isOrderChannel(channel) || !isFulfillmentType(fulfillmentType) || !isOrderStatus(status)) {
     throw new Error("Supabase returned an invalid order enum");
   }
+  const orderType: OrderType = (row.order_type && orderTypes.includes(row.order_type as OrderType))
+    ? (row.order_type as OrderType)
+    : (channel === "KIOSK" ? "KIOSK" : channel === "QR" ? "QR_ORDER" : "POS");
   return {
     id: String(row.id),
     organizationId: String(row.organization_id),
     storeId: String(row.store_id),
     orderNumber: String(row.order_number),
     channel,
+    orderType,
     fulfillmentType,
     status,
     paymentStatus: paymentStatus as OrderSummary["paymentStatus"],
@@ -135,12 +141,16 @@ function mapListOrder(row: Row, itemCount: number): OrderListItem {
   if (!isOrderChannel(channel) || !isFulfillmentType(fulfillmentType) || !isOrderStatus(status)) {
     throw new Error("Supabase returned an invalid order enum");
   }
+  const orderType: OrderType = (row.order_type && orderTypes.includes(row.order_type as OrderType))
+    ? (row.order_type as OrderType)
+    : (channel === "KIOSK" ? "KIOSK" : channel === "QR" ? "QR_ORDER" : "POS");
   return {
     id: String(row.id),
     organizationId: String(row.organization_id),
     storeId: String(row.store_id),
     orderNumber: String(row.order_number),
     channel,
+    orderType,
     fulfillmentType,
     status,
     paymentStatus: paymentStatus as OrderListItem["paymentStatus"],
@@ -165,7 +175,7 @@ function throwOrderError(error: { message: string; code?: string } | null, opera
   if (error.code === "40001" || error.code === "23505") throw new OrderConflictError(message);
   if (error.code === "P0002") throw new OrderNotFoundError(message);
   if (error.code === "22023" || error.code === "23503" || error.code === "22P02") throw new OrderValidationError(message);
-  throw new Error(`Supabase ${operation} failed: ${message}`);
+  throwDatabaseError(error, operation);
 }
 
 function normalizeCreateInput(input: CreateOrderInput): CreateOrderInput {
@@ -206,7 +216,7 @@ function normalizeCreateInput(input: CreateOrderInput): CreateOrderInput {
   };
 }
 
-const orderSelect = "id,organization_id,store_id,order_number,channel,fulfillment_type,status,payment_status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,customer_name,customer_phone,customer_email,notes,created_by,created_at,updated_at,scheduled_pickup_at,prepare_at,public_tracking_token";
+const orderSelect = "id,organization_id,store_id,order_number,channel,fulfillment_type,status,payment_status,currency,subtotal_minor,discount_minor,tax_minor,total_minor,customer_name,customer_phone,customer_email,notes,created_by,created_at,updated_at,scheduled_pickup_at,prepare_at,public_tracking_token,order_type";
 const itemSelect = "id,organization_id,order_id,line_number,product_id,variant_id,menu_item_id,sku,product_name,product_description,variant_code,variant_name,unit_price_minor,quantity,subtotal_minor,note";
 const modifierSelect = "id,organization_id,order_item_id,modifier_id,modifier_group_id,name,price_delta_minor,quantity";
 
@@ -255,14 +265,16 @@ export async function listOrders(
     .eq("organization_id", principal.organizationId).eq("store_id", storeId)
     .order("created_at", { ascending: false }).limit(limit);
   if (options.status) query = query.eq("status", options.status);
-  const [ordersResult, itemsResult] = await Promise.all([
-    query,
-    database.client.from("order_items").select("order_id")
-      .eq("organization_id", principal.organizationId)
-  ]);
+  const ordersResult = await query;
   throwOrderError(ordersResult.error, "order list");
-  throwOrderError(itemsResult.error, "order item count");
   const rows = (ordersResult.data ?? []) as Row[];
+  const orderIds = rows.map((row) => String(row.id));
+  const itemsResult = orderIds.length > 0
+    ? await database.client.from("order_items").select("order_id")
+      .eq("organization_id", principal.organizationId)
+      .in("order_id", orderIds)
+    : { data: [], error: null };
+  throwOrderError(itemsResult.error, "order item count");
   const counts = new Map<string, number>();
   for (const row of (itemsResult.data ?? []) as Row[]) {
     const id = String(row.order_id);
@@ -302,10 +314,11 @@ export async function createOrder(
     const pickupDate = new Date(normalized.scheduledPickupAt);
     const prepMinutes = 15;
     const prepareAt = new Date(pickupDate.getTime() - prepMinutes * 60 * 1000).toISOString();
-    await database.client.from("orders").update({
+    const pickupUpdate = await database.client.from("orders").update({
       scheduled_pickup_at: pickupDate.toISOString(),
       prepare_at: prepareAt
-    }).eq("id", orderId);
+    }).eq("organization_id", principal.organizationId).eq("store_id", normalized.storeId).eq("id", orderId);
+    throwOrderError(pickupUpdate.error, "scheduled pickup update");
   }
 
   return getOrder(database, principal, normalized.storeId, orderId);
@@ -367,7 +380,8 @@ export async function getPublicOrderByToken(
     .eq("store_id", store.id)
     .eq("public_tracking_token", token)
     .maybeSingle();
-  if (result.error || !result.data) return null;
+  throwDatabaseError(result.error, "public order lookup");
+  if (!result.data) return null;
 
   const anonymousPrincipal: SessionPrincipal = {
     userId: "",
@@ -421,6 +435,7 @@ export async function recordOrderPayment(
   if (!isPaymentMethod(input.method)) throw new OrderValidationError("Unsupported payment method");
   if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) throw new OrderValidationError("Payment amount must be positive");
   if (!idempotencyKey?.trim()) throw new OrderValidationError("Idempotency-Key is required for payments");
+
   const result = await database.client.rpc("record_order_payment", {
     p_organization_id: principal.organizationId,
     p_store_id: input.storeId,

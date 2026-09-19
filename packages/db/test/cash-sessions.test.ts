@@ -36,20 +36,22 @@ describe("cash-sessions repository", () => {
               update: (updateFields: any) => ({
                 eq: () => ({
                   eq: () => ({
-                    select: () => ({
-                      single: async () => {
-                        closedSessionData = updateFields;
-                        return {
-                          data: {
-                            id: "session-1",
-                            organization_id: "org-1",
-                            store_id: "store-1",
-                            opened_by: "user-1",
-                            ...updateFields
-                          },
-                          error: null
-                        };
-                      }
+                    eq: () => ({
+                      select: () => ({
+                        single: async () => {
+                          closedSessionData = updateFields;
+                          return {
+                            data: {
+                              id: "session-1",
+                              organization_id: "org-1",
+                              store_id: "store-1",
+                              opened_by: "user-1",
+                              ...updateFields
+                            },
+                            error: null
+                          };
+                        }
+                      })
                     })
                   })
                 })
@@ -80,21 +82,17 @@ describe("cash-sessions repository", () => {
             };
           }
           if (table === "payments") {
-            return {
-              select: () => ({
-                eq: () => ({
-                  eq: () => ({
-                    eq: () => ({
-                      gte: async () => ({
-                        data: [
-                          { amount_minor: 150000 } // +1,500 THB cash sales
-                        ],
-                        error: null
-                      })
-                    })
-                  })
-                })
+            const paymentsQuery: any = {
+              eq: () => paymentsQuery,
+              gte: async () => ({
+                data: [
+                  { amount_minor: 150000 } // +1,500 THB cash sales
+                ],
+                error: null
               })
+            };
+            return {
+              select: () => paymentsQuery
             };
           }
           return {};

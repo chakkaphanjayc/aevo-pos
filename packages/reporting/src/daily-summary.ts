@@ -12,7 +12,7 @@ export function calculateDailySummary(
   orders: Array<{ totalMinor: number; status: string }>,
   payments: Array<{ method: string; amountMinor: number }>
 ): DailySalesSummary {
-  const activeOrders = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "REFUNDED");
+  const activeOrders = orders.filter((o) => !["DRAFT", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED", "NO_SHOW"].includes(o.status));
   const totalRevenueMinor = activeOrders.reduce((sum, o) => sum + o.totalMinor, 0);
   const orderCount = activeOrders.length;
   const averageTicketMinor = orderCount > 0 ? Math.round(totalRevenueMinor / orderCount) : 0;

@@ -52,6 +52,8 @@ import StaffShell from "../../components/staff/StaffShell.astro";
       catch (cause) { error.textContent = friendlyErrorMessage(cause, "โหลดประวัติไม่สำเร็จ"); error.hidden = false; grid.innerHTML = '<div class="audit-empty">ไม่สามารถโหลดประวัติได้ กรุณาลองใหม่</div>'; }
     }
     document.querySelector<HTMLButtonElement>("#refresh-audit")!.addEventListener("click", () => void load());
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void load(); });
+    window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
     async function init(): Promise<void> {
       const context = await loadStaffContext(); stores = context.stores;
       const selected = findSelectedStore(stores, getSelectedStoreId());

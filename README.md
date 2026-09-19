@@ -54,8 +54,9 @@ effect without waiting for a custom session cache.
    npx --yes supabase@2.117.0 db push
    ```
 
-   Or paste `supabase/migrations/20260916083047_foundation.sql` into the
-   Supabase SQL Editor and run it once.
+   If using the SQL Editor instead, run every file in
+   `supabase/migrations/` in filename order. Running only the foundation file
+   leaves Store Core tables such as orders, cash sessions and devices missing.
 
 The migration creates the organization → optional brand → store model,
 Supabase-user profiles, memberships, roles/permissions, explicit store access,
@@ -63,6 +64,18 @@ domain/outbox events, idempotency keys and audit logs. RLS is enabled on every
 public application table. `private.is_org_member` and
 `private.has_org_permission` are non-exposed `SECURITY DEFINER` helpers with a
 fixed search path; no browser key can bypass tenant policies.
+
+If this project was migrated before Devices was added, run `bun run db:migrate`
+again. The follow-up migrations `20260917210000_devices.sql` and
+`20260917220000_permission_backfill.sql` create the device tables and repair
+`devices.manage` for existing Owner, Admin and Branch Manager roles. After
+deploying the web app, reload the Staff page once so the permission context is
+refreshed.
+
+The queue migration includes an expression-index fix required by PostgreSQL;
+apply the migrations after pulling the latest code. If the API returns
+`SCHEMA_NOT_READY`, the database migration history is incomplete rather than
+the store being empty.
 
 ## Catalog (Phase 1)
 
@@ -107,6 +120,26 @@ The staff Orders workspace is available at `/staff/orders`. POS checkout,
 queue numbering and preparation stations build on this aggregate in later
 phases.
 
+## Customer Magic Link, Kiosk and queue display
+
+Each active store already has a stable customer link based on its store code:
+
+```text
+https://<web-origin>/order/<store-code>
+https://<web-origin>/order/<store-code>/table/<table-number>
+https://<web-origin>/kiosk/<store-code>
+https://<web-origin>/queue/<store-code>
+```
+
+Open `/staff/preview` after selecting a store to copy a link or show its QR
+code. The customer link is public and only exposes the store's available QR
+catalog. Kiosk orders currently use the cash-at-counter flow; PromptPay is
+kept disabled until a real payment provider and webhook are configured.
+
+After a customer submits a QR/Kiosk order, staff can open `/staff/orders`,
+select the order and use `รับเงินสดที่เคาน์เตอร์`. The same order then moves
+through payment, confirmation, receipt and queue/KDS processing.
+
 ## Create the first admin/owner
 
 The seed command uses the Supabase Admin Auth API and must run as a one-off
@@ -125,6 +158,10 @@ account should not be the owner. Running the seed again is idempotent for the
 same email/organization/store and updates that Auth user's password.
 
 ## Local development
+
+For the full ecosystem use `../LOCAL_DEVELOPMENT.md` from the parent
+directory. The root launcher runs POS on `http://localhost:4323` with its API
+on `http://localhost:3003`, allowing Hub and Play to run at the same time.
 
 ```bash
 cp .env.example .env

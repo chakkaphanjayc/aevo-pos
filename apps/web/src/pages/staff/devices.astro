@@ -116,6 +116,8 @@ import StaffShell from "../../components/staff/StaffShell.astro";
     document.querySelector<HTMLButtonElement>("#new-device")!.addEventListener("click", () => { formError.hidden = true; dialog.showModal(); });
     document.querySelector<HTMLButtonElement>("#refresh-devices")!.addEventListener("click", () => void loadDevices());
     document.querySelector<HTMLButtonElement>("#pairing-close")!.addEventListener("click", () => { pairingDialog.close(); void loadDevices(); });
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void loadDevices(); });
+    window.setInterval(() => { if (document.visibilityState === "visible") void loadDevices(); }, 30_000);
     document.querySelector<HTMLFormElement>("#device-form")!.addEventListener("submit", async (event) => {
       if ((event.submitter as HTMLButtonElement | null)?.value !== "default") return;
       event.preventDefault();

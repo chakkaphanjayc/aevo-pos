@@ -1,0 +1,686 @@
+---
+import StaffIcon from "./StaffIcon.astro";
+---
+
+<dialog class="staff-preview-modal" id="staff-preview-dialog" aria-label="ระบบพรีวิวโหมดต่าง ๆ">
+  <div class="preview-shell">
+    <!-- Modal Header -->
+    <header class="preview-header">
+      <div class="preview-header-left">
+        <div class="preview-badge"><StaffIcon name="preview" size={16} /> พรีวิวระบบ</div>
+        <h2 class="preview-title">สลับดูการทำงานแต่ละโหมด (Mode Preview Studio)</h2>
+      </div>
+
+      <div class="preview-header-center">
+        <!-- Mode Tabs -->
+        <div class="preview-mode-tabs" role="tablist" aria-label="เลือกโหมดพรีวิว">
+          <button class="preview-tab active" data-mode="client" type="button" role="tab" aria-selected="true">
+            <span>📱</span> <span>ลูกค้าสั่ง (Client QR)</span>
+          </button>
+          <button class="preview-tab" data-mode="kiosk" type="button" role="tab" aria-selected="false">
+            <span>🖥️</span> <span>ตู้สั่งเอง (Kiosk)</span>
+          </button>
+          <button class="preview-tab" data-mode="queue" type="button" role="tab" aria-selected="false">
+            <span>📺</span> <span>จอทีวีคิว (Queue TV)</span>
+          </button>
+          <button class="preview-tab" data-mode="pos" type="button" role="tab" aria-selected="false">
+            <span>💻</span> <span>แคชเชียร์ (POS)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="preview-header-right">
+        <label class="preview-store-label">
+          <span class="sr-only">เลือกสาขาที่พรีวิว</span>
+          <select id="preview-store-select" class="preview-store-select" aria-label="สาขาที่ต้องการพรีวิว">
+            <option value="">กำลังโหลดสาขา…</option>
+          </select>
+        </label>
+        <button class="preview-close-btn" id="preview-close-btn" type="button" aria-label="ปิดพรีวิว">
+          <StaffIcon name="close" size={18} />
+        </button>
+      </div>
+    </header>
+
+    <!-- Sub Header / Device & Link Controls -->
+    <div class="preview-toolbar">
+      <div class="preview-device-switcher" role="radiogroup" aria-label="เลือกขนาดหน้าจอจำลอง">
+        <button class="preview-device-btn active" data-device="mobile" type="button" title="หน้าจอมือถือ (Mobile 390px)">
+          <span>📱 มือถือ</span>
+        </button>
+        <button class="preview-device-btn" data-device="tablet" type="button" title="หน้าจอแนวตั้ง / Kiosk (Tablet 600px)">
+          <span>📟 ตู้ Kiosk / แท็บเล็ต</span>
+        </button>
+        <button class="preview-device-btn" data-device="desktop" type="button" title="หน้าจอใหญ่ / Desktop / TV">
+          <span>🖥️ เดสก์ท็อป / จอทีวี</span>
+        </button>
+      </div>
+
+      <div class="preview-url-box">
+        <span class="preview-url-icon">🌐</span>
+        <input type="text" id="preview-url-display" class="preview-url-input" readonly value="" />
+      </div>
+
+      <div class="preview-actions">
+        <button class="preview-action-btn" id="preview-copy-btn" type="button" title="คัดลอกลิงก์สำหรับส่งต่อ">
+          <span>📋</span> <span>คัดลอกลิงก์</span>
+        </button>
+        <a class="preview-action-btn" id="preview-open-link" href="#" target="_blank" rel="noopener" title="เปิดหน้าต่างใหม่">
+          <span>↗️</span> <span>เปิดแท็บใหม่</span>
+        </a>
+        <button class="preview-action-btn" id="preview-qr-toggle-btn" type="button" title="สแกนด้วยมือถือจริง">
+          <span>📷</span> <span>สแกน QR</span>
+        </button>
+        <button class="preview-action-btn" id="preview-reload-btn" type="button" title="รีเฟรชหน้าพรีวิว">
+          <StaffIcon name="refresh" size={15} /> <span>รีเฟรช</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Preview Stage Area -->
+    <div class="preview-stage">
+      <!-- QR Popover for testing on real phone -->
+      <div class="preview-qr-popover" id="preview-qr-popover" hidden>
+        <div class="preview-qr-card">
+          <div class="preview-qr-header">
+            <strong>สแกนด้วยกล้องมือถือจริง</strong>
+            <button id="preview-qr-close" type="button" class="preview-qr-close">&times;</button>
+          </div>
+          <p class="preview-qr-desc">ทดสอบการใช้งานบนสมาร์ทโฟนของท่านในโหมดนี้ได้ทันที</p>
+          <div class="preview-qr-image-wrap">
+            <img id="preview-qr-img" src="" alt="QR Code สำหรับทดสอบ" width="180" height="180" />
+          </div>
+          <small id="preview-qr-caption" class="preview-qr-caption"></small>
+        </div>
+      </div>
+
+      <!-- Iframe Wrapper Container -->
+      <div class="preview-frame-wrap device-mobile" id="preview-frame-wrap">
+        <div class="device-notch"></div>
+        <iframe id="preview-iframe" class="preview-iframe" title="Aevo POS Preview Frame" src="about:blank"></iframe>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<style is:global>
+  .staff-preview-modal {
+    width: 96vw;
+    max-width: 1480px;
+    height: 94vh;
+    max-height: 960px;
+    padding: 0;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: var(--radius-lg, 16px);
+    background: var(--canvas, #f4efe6);
+    box-shadow: 0 24px 60px rgba(16, 49, 34, 0.28);
+    overflow: hidden;
+  }
+
+  .staff-preview-modal::backdrop {
+    background: rgba(15, 36, 26, 0.65);
+    backdrop-filter: blur(4px);
+  }
+
+  .preview-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 20px;
+    background: var(--surface, #ffffff);
+    border-bottom: 1px solid var(--line, #d8cebf);
+  }
+
+  .preview-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .preview-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--brand-soft, #eef7f2);
+    color: var(--brand, #176348);
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+
+  .preview-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 750;
+    color: var(--ink, #1f2a24);
+  }
+
+  .preview-header-center {
+    display: flex;
+    align-items: center;
+  }
+
+  .preview-mode-tabs {
+    display: flex;
+    background: var(--surface-soft, #fbf8f2);
+    padding: 3px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid var(--line, #d8cebf);
+    gap: 4px;
+  }
+
+  .preview-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 13px;
+    min-height: 36px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--muted, #5e6d63);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .preview-tab:hover {
+    color: var(--ink, #1f2a24);
+    background: var(--surface, #ffffff);
+  }
+
+  .preview-tab.active {
+    background: var(--brand, #176348);
+    color: #ffffff;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .preview-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .preview-store-select {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink, #1f2a24);
+    background: var(--surface-soft, #fbf8f2);
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: var(--radius-sm, 8px);
+    cursor: pointer;
+  }
+
+  .preview-close-btn {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 8px;
+    background: var(--surface, #ffffff);
+    color: var(--muted, #5e6d63);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .preview-close-btn:hover {
+    color: var(--ink, #1f2a24);
+    background: var(--surface-soft, #fbf8f2);
+    border-color: var(--brand, #176348);
+  }
+
+  /* Toolbar */
+  .preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 20px;
+    background: var(--paper, #fdfbf7);
+    border-bottom: 1px solid var(--line, #d8cebf);
+    flex-wrap: wrap;
+  }
+
+  .preview-device-switcher {
+    display: flex;
+    gap: 4px;
+    background: var(--surface, #ffffff);
+    padding: 3px;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 8px;
+  }
+
+  .preview-device-btn {
+    padding: 4px 10px;
+    min-height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted, #5e6d63);
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .preview-device-btn:hover {
+    color: var(--ink, #1f2a24);
+  }
+
+  .preview-device-btn.active {
+    background: var(--brand-soft, #eef7f2);
+    color: var(--brand, #176348);
+  }
+
+  .preview-url-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 460px;
+    min-width: 220px;
+    min-height: 34px;
+    padding: 0 10px;
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 8px;
+  }
+
+  .preview-url-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    font-family: ui-monospace, monospace;
+    font-size: 0.74rem;
+    color: var(--muted, #5e6d63);
+    background: transparent;
+  }
+
+  .preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .preview-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--ink, #1f2a24);
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+  }
+
+  .preview-action-btn:hover {
+    border-color: var(--brand, #176348);
+    color: var(--brand, #176348);
+  }
+
+  /* Stage Area */
+  .preview-stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow: auto;
+    background: var(--canvas, #f4efe6);
+    position: relative;
+  }
+
+  /* Device Frames */
+  .preview-frame-wrap {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 18px 45px rgba(22, 54, 38, 0.18), 0 2px 8px rgba(0,0,0,0.06);
+    position: relative;
+    overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.2, 0, 0, 1), height 0.3s cubic-bezier(0.2, 0, 0, 1);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .preview-frame-wrap.device-mobile {
+    width: 390px;
+    height: 780px;
+    max-height: calc(100% - 10px);
+    border: 10px solid #232c27;
+    border-radius: 40px;
+  }
+
+  .preview-frame-wrap.device-mobile .device-notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 22px;
+    background: #232c27;
+    border-radius: 0 0 14px 14px;
+    z-index: 10;
+  }
+
+  .preview-frame-wrap.device-tablet {
+    width: 620px;
+    height: 840px;
+    max-height: calc(100% - 10px);
+    border: 12px solid #2d3832;
+    border-radius: 26px;
+  }
+
+  .preview-frame-wrap.device-tablet .device-notch {
+    display: none;
+  }
+
+  .preview-frame-wrap.device-desktop {
+    width: 100%;
+    max-width: 1240px;
+    height: 100%;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 12px;
+  }
+
+  .preview-frame-wrap.device-desktop .device-notch {
+    display: none;
+  }
+
+  .preview-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #ffffff;
+  }
+
+  /* QR Popover */
+  .preview-qr-popover {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    z-index: 50;
+  }
+
+  .preview-qr-card {
+    background: #ffffff;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 12px 32px rgba(18, 48, 33, 0.18);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 250px;
+    text-align: center;
+  }
+
+  .preview-qr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 0.85rem;
+    color: var(--ink, #1f2a24);
+  }
+
+  .preview-qr-close {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--muted, #5e6d63);
+  }
+
+  .preview-qr-desc {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--muted, #5e6d63);
+  }
+
+  .preview-qr-image-wrap {
+    padding: 8px;
+    background: #ffffff;
+    border: 1px solid var(--line, #d8cebf);
+    border-radius: 8px;
+    margin: 4px 0;
+  }
+
+  .preview-qr-caption {
+    font-size: 0.68rem;
+    color: var(--brand, #176348);
+    font-weight: 700;
+  }
+
+  @media (max-width: 900px) {
+    .preview-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .preview-header-center {
+      overflow-x: auto;
+    }
+    .preview-frame-wrap.device-mobile {
+      width: 100%;
+      max-width: 360px;
+      height: 640px;
+    }
+  }
+</style>
+
+<script>
+  import { loadStaffContext, findSelectedStore, getSelectedStoreId } from "../../lib/staff-ui";
+  import type { StoreSummary } from "@aevo/contracts";
+
+  type PreviewMode = "client" | "kiosk" | "queue" | "pos";
+  type DeviceType = "mobile" | "tablet" | "desktop";
+
+  const dialog = document.querySelector<HTMLDialogElement>("#staff-preview-dialog");
+  const closeBtn = document.querySelector<HTMLButtonElement>("#preview-close-btn");
+  const iframe = document.querySelector<HTMLIFrameElement>("#preview-iframe");
+  const frameWrap = document.querySelector<HTMLElement>("#preview-frame-wrap");
+  const urlDisplay = document.querySelector<HTMLInputElement>("#preview-url-display");
+  const copyBtn = document.querySelector<HTMLButtonElement>("#preview-copy-btn");
+  const openLink = document.querySelector<HTMLAnchorElement>("#preview-open-link");
+  const reloadBtn = document.querySelector<HTMLButtonElement>("#preview-reload-btn");
+  const storeSelect = document.querySelector<HTMLSelectElement>("#preview-store-select");
+  const modeTabs = document.querySelectorAll<HTMLButtonElement>(".preview-tab");
+  const deviceBtns = document.querySelectorAll<HTMLButtonElement>(".preview-device-btn");
+  const qrToggleBtn = document.querySelector<HTMLButtonElement>("#preview-qr-toggle-btn");
+  const qrPopover = document.querySelector<HTMLElement>("#preview-qr-popover");
+  const qrCloseBtn = document.querySelector<HTMLButtonElement>("#preview-qr-close");
+  const qrImg = document.querySelector<HTMLImageElement>("#preview-qr-img");
+  const qrCaption = document.querySelector<HTMLElement>("#preview-qr-caption");
+
+  let activeMode: PreviewMode = "client";
+  let activeDevice: DeviceType = "mobile";
+  let currentStores: StoreSummary[] = [];
+  let currentStore: StoreSummary | undefined;
+
+  function computePreviewUrl(mode: PreviewMode, store?: StoreSummary): string {
+    const origin = window.location.origin;
+    const storeCode = store?.code || "MAIN";
+    const storeId = store?.id || "";
+
+    switch (mode) {
+      case "client":
+        return `${origin}/order/${encodeURIComponent(storeCode)}`;
+      case "kiosk":
+        return `${origin}/kiosk/${encodeURIComponent(storeCode)}`;
+      case "queue":
+        return `${origin}/queue/${encodeURIComponent(storeCode)}`;
+      case "pos":
+        return `${origin}/staff/pos?store=${encodeURIComponent(storeId)}&preview=1`;
+      default:
+        return origin;
+    }
+  }
+
+  function updatePreview(): void {
+    if (!iframe || !urlDisplay || !openLink) return;
+
+    const targetUrl = computePreviewUrl(activeMode, currentStore);
+    iframe.src = targetUrl;
+    urlDisplay.value = targetUrl;
+    openLink.href = targetUrl;
+
+    if (qrImg && qrCaption) {
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(targetUrl)}`;
+      qrImg.src = qrApiUrl;
+      qrCaption.textContent = `${activeMode.toUpperCase()} · ${currentStore?.name || ""}`;
+    }
+  }
+
+  function setMode(mode: PreviewMode): void {
+    activeMode = mode;
+    modeTabs.forEach((tab) => {
+      const isMatch = tab.dataset.mode === mode;
+      tab.classList.toggle("active", isMatch);
+      tab.setAttribute("aria-selected", String(isMatch));
+    });
+
+    // Auto-select natural device frame if needed
+    if (mode === "client" && activeDevice === "desktop") {
+      setDevice("mobile");
+    } else if (mode === "kiosk" && activeDevice === "mobile") {
+      setDevice("tablet");
+    } else if ((mode === "queue" || mode === "pos") && activeDevice === "mobile") {
+      setDevice("desktop");
+    }
+
+    updatePreview();
+  }
+
+  function setDevice(device: DeviceType): void {
+    activeDevice = device;
+    deviceBtns.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.device === device);
+    });
+
+    if (frameWrap) {
+      frameWrap.classList.remove("device-mobile", "device-tablet", "device-desktop");
+      frameWrap.classList.add(`device-${device}`);
+    }
+  }
+
+  async function initPreviewModal(): Promise<void> {
+    try {
+      const ctx = await loadStaffContext();
+      currentStores = ctx.stores ?? [];
+      const selectedId = getSelectedStoreId();
+      currentStore = findSelectedStore(currentStores, selectedId) || currentStores[0];
+
+      if (storeSelect) {
+        storeSelect.replaceChildren();
+        for (const s of currentStores) {
+          storeSelect.add(new Option(`${s.name} (${s.code})`, s.id));
+        }
+        if (currentStore) storeSelect.value = currentStore.id;
+      }
+    } catch {
+      // Best effort fallback
+    }
+
+    // Bind event handlers
+    modeTabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        setMode((tab.dataset.mode as PreviewMode) || "client");
+      });
+    });
+
+    deviceBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setDevice((btn.dataset.device as DeviceType) || "mobile");
+      });
+    });
+
+    storeSelect?.addEventListener("change", () => {
+      currentStore = currentStores.find((s) => s.id === storeSelect.value) || currentStores[0];
+      updatePreview();
+    });
+
+    copyBtn?.addEventListener("click", async () => {
+      if (!urlDisplay?.value) return;
+      try {
+        await navigator.clipboard.writeText(urlDisplay.value);
+        const original = copyBtn.innerHTML;
+        copyBtn.innerHTML = "<span>✓</span> <span>คัดลอกแล้ว!</span>";
+        setTimeout(() => {
+          copyBtn.innerHTML = original;
+        }, 1800);
+      } catch {
+        alert("กรุณาคัดลอกจากช่องข้อความโดยตรง");
+      }
+    });
+
+    reloadBtn?.addEventListener("click", () => {
+      if (iframe && iframe.src) {
+        const currentSrc = iframe.src;
+        iframe.src = "about:blank";
+        setTimeout(() => {
+          iframe.src = currentSrc;
+        }, 80);
+      }
+    });
+
+    qrToggleBtn?.addEventListener("click", () => {
+      if (qrPopover) qrPopover.hidden = !qrPopover.hidden;
+    });
+
+    qrCloseBtn?.addEventListener("click", () => {
+      if (qrPopover) qrPopover.hidden = true;
+    });
+
+    closeBtn?.addEventListener("click", () => {
+      dialog?.close();
+    });
+
+    // Close on backdrop click
+    dialog?.addEventListener("click", (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+
+    // Wire global open trigger
+    document.querySelectorAll("[data-action='open-preview']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        // Sync latest store before opening
+        const currentId = getSelectedStoreId();
+        currentStore = currentStores.find((s) => s.id === currentId) || currentStores[0] || currentStore;
+        if (storeSelect && currentStore) storeSelect.value = currentStore.id;
+        setMode(activeMode);
+        dialog?.showModal();
+      });
+    });
+
+    window.addEventListener("aevo:open-preview", (e: any) => {
+      if (e.detail?.mode) activeMode = e.detail.mode;
+      const currentId = getSelectedStoreId();
+      currentStore = currentStores.find((s) => s.id === currentId) || currentStores[0] || currentStore;
+      if (storeSelect && currentStore) storeSelect.value = currentStore.id;
+      setMode(activeMode);
+      dialog?.showModal();
+    });
+  }
+
+  initPreviewModal();
+</script>

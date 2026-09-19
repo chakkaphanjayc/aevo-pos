@@ -190,12 +190,14 @@ export function getStaticPaths() {
 
     const appEl = document.getElementById("qr-app")!;
     const configuredStoreCode = appEl.dataset.storeCode || "";
-    const storeCode = configuredStoreCode !== "__runtime__"
+    // Parse optional query parameters (?table=... / ?store=...)
+    const queryParams = new URLSearchParams(window.location.search);
+    let storeCode = configuredStoreCode !== "__runtime__" && configuredStoreCode !== ""
       ? configuredStoreCode
       : decodeURIComponent(window.location.pathname.split("/")[2] || "");
-
-    // Parse optional table from URL query (?table=...)
-    const queryParams = new URLSearchParams(window.location.search);
+    if (storeCode === "__runtime__" || !storeCode) {
+      storeCode = queryParams.get("store") || queryParams.get("storeCode") || "";
+    }
     const initialTable = queryParams.get("table") || "";
 
     let catalog: PublicCatalogSnapshot | null = null;

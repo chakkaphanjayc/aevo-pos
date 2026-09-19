@@ -4,6 +4,7 @@ import type {
   SessionPrincipal
 } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -49,6 +50,7 @@ export async function createDailyClosing(
     .lte("created_at", endOfDay);
 
   const orders = (ordersRes.data ?? []) as Row[];
+  throwDatabaseError(ordersRes.error, "daily closing orders");
 
   let grossSales = 0;
   let netSales = 0;
@@ -58,8 +60,10 @@ export async function createDailyClosing(
   let totalOrders = 0;
 
   for (const o of orders) {
-    if (o.status === "CANCELLED") {
+    if (["DRAFT", "PENDING_PAYMENT", "CANCELLED", "NO_SHOW"].includes(String(o.status))) {
+      if (o.status === "CANCELLED") {
       voids += Number(o.total_minor ?? 0);
+      }
       continue;
     }
     totalOrders++;
@@ -75,12 +79,14 @@ export async function createDailyClosing(
     .select("method, amount_minor")
     .eq("organization_id", principal.organizationId)
     .eq("store_id", input.storeId)
+    .eq("status", "PAID")
     .gte("created_at", startOfDay)
     .lte("created_at", endOfDay);
 
   let cashSales = 0;
   let promptpaySales = 0;
   let cardSales = 0;
+  throwDatabaseError(paymentsRes.error, "daily closing payments");
 
   for (const p of (paymentsRes.data ?? []) as Row[]) {
     const amt = Number(p.amount_minor ?? 0);
@@ -92,16 +98,17 @@ export async function createDailyClosing(
   // Fetch refunds for this date
   const refundsRes = await database.client
     .from("refunds")
-    .select("amount_minor")
+    .select("amount_minor, status")
     .eq("organization_id", principal.organizationId)
     .eq("store_id", input.storeId)
     .gte("created_at", startOfDay)
     .lte("created_at", endOfDay);
 
   const refunds = (refundsRes.data ?? []).reduce(
-    (acc, curr) => acc + Number(curr.amount_minor ?? 0),
+    (acc, curr) => acc + (curr.status === "COMPLETED" ? Number(curr.amount_minor ?? 0) : 0),
     0
   );
+  throwDatabaseError(refundsRes.error, "daily closing refunds");
 
   const upsertData = {
     organization_id: principal.organizationId,
@@ -126,9 +133,8 @@ export async function createDailyClosing(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to create daily closing: ${error?.message}`);
-  }
+  throwDatabaseError(error, "daily closing create");
+  if (!data) throw new Error("Failed to create daily closing: no closing was returned");
 
   return mapDailyClosing(data as Row);
 }
@@ -147,7 +153,8 @@ export async function getDailyClosing(
     .eq("closing_date", closingDate)
     .maybeSingle();
 
-  if (error || !data) return null;
+  throwDatabaseError(error, "daily closing lookup");
+  if (!data) return null;
   return mapDailyClosing(data as Row);
 }
 
@@ -165,6 +172,7 @@ export async function listDailyClosings(
     .order("closing_date", { ascending: false })
     .limit(limit);
 
-  if (error || !data) return [];
+  throwDatabaseError(error, "daily closing history");
+  if (!data) return [];
   return (data as Row[]).map((row) => mapDailyClosing(row));
 }

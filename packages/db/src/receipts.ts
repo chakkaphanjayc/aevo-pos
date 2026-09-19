@@ -1,5 +1,6 @@
 import type { ReceiptItemSnapshot, ReceiptSummary, SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -63,6 +64,7 @@ export async function createReceiptFromOrder(
   if (existing.data) {
     return mapReceipt(existing.data as Row);
   }
+  throwDatabaseError(existing.error, "receipt lookup");
 
   // Load Order
   const orderRes = await database.client
@@ -73,9 +75,8 @@ export async function createReceiptFromOrder(
     .eq("id", input.orderId)
     .single();
 
-  if (orderRes.error || !orderRes.data) {
-    throw new Error(`Order ${input.orderId} not found`);
-  }
+  throwDatabaseError(orderRes.error, "receipt order lookup");
+  if (!orderRes.data) throw new Error(`Order ${input.orderId} not found`);
 
   const order = orderRes.data;
 
@@ -86,6 +87,7 @@ export async function createReceiptFromOrder(
     .eq("organization_id", principal.organizationId)
     .eq("id", input.storeId)
     .maybeSingle();
+  throwDatabaseError(storeRes.error, "receipt store lookup");
 
   const storeSnapshot = {
     name: storeRes.data?.name ?? "AEVO Store",
@@ -97,7 +99,9 @@ export async function createReceiptFromOrder(
     .from("payments")
     .select("*")
     .eq("organization_id", principal.organizationId)
-    .eq("order_id", input.orderId);
+    .eq("order_id", input.orderId)
+    .in("status", ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"]);
+  throwDatabaseError(paymentsRes.error, "receipt payment lookup");
 
   const paymentsSummary = (paymentsRes.data ?? []).map((p) => ({
     method: p.method as any,
@@ -159,9 +163,18 @@ export async function createReceiptFromOrder(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to create receipt: ${error?.message}`);
+  if (error?.code === "23505") {
+    const concurrent = await database.client
+      .from("receipts")
+      .select("*")
+      .eq("organization_id", principal.organizationId)
+      .eq("order_id", input.orderId)
+      .maybeSingle();
+    throwDatabaseError(concurrent.error, "receipt concurrent lookup");
+    if (concurrent.data) return mapReceipt(concurrent.data as Row);
   }
+  throwDatabaseError(error, "receipt create");
+  if (!data) throw new Error("Failed to create receipt: no receipt was returned");
 
   return mapReceipt(data as Row);
 }
@@ -178,7 +191,8 @@ export async function getReceiptByOrderId(
     .eq("order_id", orderId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  throwDatabaseError(error, "receipt order lookup");
+  if (!data) return null;
   return mapReceipt(data as Row);
 }
 
@@ -194,7 +208,8 @@ export async function getReceiptById(
     .eq("id", receiptId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  throwDatabaseError(error, "receipt lookup");
+  if (!data) return null;
   return mapReceipt(data as Row);
 }
 
@@ -224,9 +239,8 @@ export async function reprintReceipt(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to reprint receipt: ${error?.message}`);
-  }
+  throwDatabaseError(error, "receipt reprint");
+  if (!data) throw new Error("Failed to reprint receipt: no receipt was returned");
 
   return mapReceipt(data as Row);
 }
@@ -260,9 +274,8 @@ export async function voidReceipt(
     .select("*")
     .single();
 
-  if (error || !data) {
-    throw new Error(`Failed to void receipt: ${error?.message}`);
-  }
+  throwDatabaseError(error, "receipt void");
+  if (!data) throw new Error("Failed to void receipt: no receipt was returned");
 
   return mapReceipt(data as Row);
 }

@@ -369,9 +369,13 @@ export function getStaticPaths() {
   // Elements
   const container = document.getElementById("queue-tv")!;
   const configuredStoreCode = container.dataset.storeCode || "";
-  const storeCode = configuredStoreCode !== "__runtime__"
+  let storeCode = configuredStoreCode !== "__runtime__" && configuredStoreCode !== ""
     ? configuredStoreCode
     : decodeURIComponent(window.location.pathname.split("/")[2] || "");
+  if (storeCode === "__runtime__" || !storeCode) {
+    const sp = new URLSearchParams(window.location.search);
+    storeCode = sp.get("store") || sp.get("storeCode") || "";
+  }
   const storeNameEl = document.getElementById("store-name")!;
   const clockEl = document.getElementById("live-clock")!;
   const soundBtn = document.getElementById("sound-btn")!;

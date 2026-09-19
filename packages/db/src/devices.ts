@@ -1,5 +1,6 @@
 import type { DeviceMode, DeviceSummary, SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "./client";
+import { throwDatabaseError } from "./errors";
 
 type Row = Record<string, unknown>;
 
@@ -33,7 +34,8 @@ export async function listDevices(database: Database, principal: SessionPrincipa
     .eq("organization_id", principal.organizationId)
     .eq("store_id", storeId)
     .order("created_at", { ascending: false });
-  if (result.error || !result.data) return [];
+  throwDatabaseError(result.error, "device list");
+  if (!result.data) return [];
   return (result.data as Row[]).map(mapDevice);
 }
 
@@ -56,7 +58,8 @@ export async function createDevice(
     })
     .select(select)
     .single();
-  if (result.error || !result.data) throw new Error(`Failed to create device: ${result.error?.message ?? "unknown error"}`);
+  throwDatabaseError(result.error, "device create");
+  if (!result.data) throw new Error("Failed to create device: no device was returned");
   return mapDevice(result.data as Row);
 }
 
@@ -68,7 +71,8 @@ export async function findPairingDevice(database: Database, pairingCodeHash: str
     .eq("status", "ACTIVE")
     .gt("pairing_expires_at", new Date().toISOString())
     .maybeSingle();
-  if (result.error || !result.data) return null;
+  throwDatabaseError(result.error, "device pairing lookup");
+  if (!result.data) return null;
   return mapDevice(result.data as Row);
 }
 
@@ -86,7 +90,8 @@ export async function pairDevice(database: Database, deviceId: string, deviceTok
     .eq("status", "ACTIVE")
     .select(select)
     .single();
-  if (result.error || !result.data) return null;
+  throwDatabaseError(result.error, "device pairing");
+  if (!result.data) return null;
   return mapDevice(result.data as Row);
 }
 
@@ -97,12 +102,14 @@ export async function findDeviceByTokenHash(database: Database, deviceTokenHash:
     .eq("device_token_hash", deviceTokenHash)
     .eq("status", "ACTIVE")
     .maybeSingle();
-  if (result.error || !result.data) return null;
+  throwDatabaseError(result.error, "device token lookup");
+  if (!result.data) return null;
   return mapDevice(result.data as Row);
 }
 
 export async function touchDevice(database: Database, deviceId: string): Promise<void> {
-  await database.client.from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", deviceId);
+  const result = await database.client.from("devices").update({ last_seen_at: new Date().toISOString() }).eq("id", deviceId);
+  throwDatabaseError(result.error, "device heartbeat");
 }
 
 export async function revokeDevice(database: Database, principal: SessionPrincipal, storeId: string, deviceId: string): Promise<boolean> {
@@ -114,5 +121,6 @@ export async function revokeDevice(database: Database, principal: SessionPrincip
     .eq("store_id", storeId)
     .select("id")
     .maybeSingle();
-  return !result.error && Boolean(result.data);
+  throwDatabaseError(result.error, "device revoke");
+  return Boolean(result.data);
 }

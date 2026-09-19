@@ -594,7 +594,7 @@ import StaffShell from "../../components/staff/StaffShell.astro";
           btn.disabled = true;
           btn.textContent = "กำลังบันทึก…";
           try {
-            await api.post(`/api/preparation/tasks/${taskId}/complete`, {});
+            await api.post(`/api/preparation/tasks/${taskId}/complete`, { storeId });
             playBeep(880, 0.15); // Confirmation high beep
             // Remove locally
             tasks = tasks.filter((t) => t.id !== taskId);

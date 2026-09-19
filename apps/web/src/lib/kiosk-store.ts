@@ -38,7 +38,7 @@ export function createEmptyKioskCart(storeCode: string): KioskCart {
     storeCode,
     fulfillmentType: "DINE_IN",
     items: [],
-    paymentMethod: "PROMPTPAY"
+    paymentMethod: "CASH_COUNTER"
   };
 }
 

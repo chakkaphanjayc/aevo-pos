@@ -1,0 +1,142 @@
+---
+import type { Permission } from "@aevo/contracts";
+import StaffIcon from "../staff/StaffIcon.astro";
+
+interface Props {
+  permission: Permission | Permission[];
+  requireAll?: boolean;
+  userPermissions?: Permission[] | undefined;
+  fallbackText?: string;
+  hideFallback?: boolean;
+  as?: string;
+  class?: string;
+}
+
+const {
+  permission,
+  requireAll = false,
+  userPermissions,
+  fallbackText = "ไม่มีสิทธิ์ในการเข้าถึงการดำเนินการนี้",
+  hideFallback = false,
+  as = "div",
+  class: className = ""
+} = Astro.props as Props;
+
+const requiredList = Array.isArray(permission) ? permission : [permission];
+const hasServerPermissions = Array.isArray(userPermissions);
+
+let serverAllowed = true;
+if (hasServerPermissions) {
+  serverAllowed = requireAll
+    ? requiredList.every((p) => userPermissions.includes(p))
+    : requiredList.some((p) => userPermissions.includes(p));
+}
+
+const Tag = as as any;
+---
+
+{hasServerPermissions && !serverAllowed ? (
+  !hideFallback && (
+    <div class:list={["aevo-gate-denied", className]} role="status">
+      <StaffIcon name="shield" size={16} />
+      <span>{fallbackText}</span>
+    </div>
+  )
+) : (
+  <Tag
+    class:list={["aevo-permission-gate", className]}
+    data-gate-permissions={JSON.stringify(requiredList)}
+    data-gate-require-all={requireAll ? "true" : "false"}
+    data-hide-fallback={hideFallback ? "true" : "false"}
+  >
+    <slot />
+    {!hideFallback && (
+      <div class="aevo-permission-fallback" hidden>
+        <span class="aevo-gate-denied">
+          <StaffIcon name="shield" size={14} />
+          <span>{fallbackText}</span>
+        </span>
+      </div>
+    )}
+  </Tag>
+)}
+
+<script>
+  function evaluatePermissionGates() {
+    let permissions: string[] = [];
+    try {
+      const stored = localStorage.getItem("aevo_user_permissions") || sessionStorage.getItem("aevo_user_permissions");
+      if (stored) {
+        permissions = JSON.parse(stored);
+      } else if (Array.isArray((window as any).__AEVO_PERMISSIONS__)) {
+        permissions = (window as any).__AEVO_PERMISSIONS__;
+      }
+    } catch {}
+
+    const isOwner = permissions.includes("store.manage") && permissions.includes("member.manage");
+
+    document.querySelectorAll<HTMLElement>(".aevo-permission-gate").forEach((gate) => {
+      const requiredStr = gate.dataset.gatePermissions;
+      if (!requiredStr) return;
+      try {
+        const required: string[] = JSON.parse(requiredStr);
+        const requireAll = gate.dataset.gateRequireAll === "true";
+        const hideFallback = gate.dataset.hideFallback === "true";
+
+        const allowed = isOwner || (requireAll
+          ? required.every((p) => permissions.includes(p))
+          : required.some((p) => permissions.includes(p)));
+
+        const fallback = gate.querySelector<HTMLElement>(".aevo-permission-fallback");
+        if (!allowed && permissions.length > 0) {
+          gate.classList.add("is-denied");
+          if (hideFallback) {
+            gate.style.display = "none";
+          } else if (fallback) {
+            fallback.hidden = false;
+          }
+          gate.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input, select").forEach((el) => {
+            el.disabled = true;
+          });
+        } else {
+          gate.classList.remove("is-denied");
+          if (hideFallback) {
+            gate.style.display = "";
+          } else if (fallback) {
+            fallback.hidden = true;
+          }
+          gate.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input, select").forEach((el) => {
+            el.disabled = false;
+          });
+        }
+      } catch {}
+    });
+  }
+
+  if (typeof window !== "undefined") {
+    document.addEventListener("DOMContentLoaded", evaluatePermissionGates);
+    window.addEventListener("aevo:permissions-changed", evaluatePermissionGates);
+    if (document.readyState !== "loading") {
+      evaluatePermissionGates();
+    }
+  }
+</script>
+
+<style>
+  .aevo-permission-gate.is-denied > :not(.aevo-permission-fallback) {
+    opacity: 0.45;
+    pointer-events: none;
+    filter: grayscale(0.5);
+  }
+  .aevo-gate-denied {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted, #94a3b8);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+  }
+</style>
