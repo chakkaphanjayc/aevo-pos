@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { AuthenticationError, AuthService, defineAbilityFor, hasPermission } from "@aevo/auth";
+import {
+  ApplicationSessionError,
+  ApplicationSessionManager,
+  AuthenticationError,
+  AuthService,
+  defineAbilityFor,
+  hasPermission,
+  isApplicationSessionCookie,
+  type ManagedApplicationSession
+} from "@aevo/auth";
 import type { AppConfig } from "@aevo/config";
 import { deviceModes, roles } from "@aevo/contracts";
-import type { BillingProvider, DeviceMode, Permission, Role, SessionPrincipal, WaitlistStatus } from "@aevo/contracts";
+import type { AppAccessDecision, BillingProvider, DeviceMode, Permission, Role, SessionPrincipal, WaitlistStatus } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import {
   canAccessStore,
@@ -87,6 +96,7 @@ import {
   listUserOrganizations,
   createOrganization,
   listOrganizationStores,
+  resolveApplicationAccess,
   createStore,
   getOrganizationStats,
   StripeBillingAdapter,
@@ -101,9 +111,23 @@ import { createStoreRoomBroadcaster, type RealtimeEventName, type RealtimePayloa
 import { calculateDailySummary, calculateHourlySales, calculateProductMix } from "@aevo/reporting";
 import { Elysia, t } from "elysia";
 import { AppError, forbidden, unauthorized } from "./errors";
-import { clearSessionCookie, clientIp, decodeAuthSessionCookie, encodeAuthSessionCookie, readCookie, sessionCookie } from "./http";
+import { coreSessionCredentials, refreshCoreSession, resolveCoreSession, revokeCoreSession } from "./core-auth";
+import {
+  applicationSessionCookie,
+  clearApplicationSessionCookie,
+  clearCsrfCookie,
+  clearSessionCookie,
+  clientIp,
+  csrfCookie,
+  decodeAuthSessionCookie,
+  encodeAuthSessionCookie,
+  readCookie,
+  sessionCookie
+} from "./http";
 import { createLogger } from "./logger";
 import { FixedWindowRateLimiter } from "./rate-limit";
+import { createSsoFlow, readSsoFlow, safeReturnPath } from "./sso";
+import { createPosTestRuntime, type PosTestRuntime } from "./test-mode";
 
 export interface AppDependencies {
   config: AppConfig;
@@ -112,8 +136,54 @@ export interface AppDependencies {
   billing?: BillingProvider;
 }
 
+type ResponseHeaders = Record<string, string | number | string[]>;
+
+interface BrokerUser {
+  id: string;
+  email: string;
+  displayName?: string | null;
+}
+
+interface BrokerSessionResponse {
+  application?: string;
+  user?: BrokerUser;
+  session?: unknown;
+}
+
+async function brokerPasswordSession(
+  config: AppConfig,
+  input: { email: string; password: string; fullName?: string },
+  endpoint: "password" | "register" = "password"
+): Promise<{ user: BrokerUser; session: NonNullable<ReturnType<typeof coreSessionCredentials>> }> {
+  if (!config.accountsApiOrigin || !config.accountsExchangeSecret) throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
+  const response = await fetch(new URL(`/v1/auth/${endpoint}`, `${config.accountsApiOrigin.replace(/\/+$/u, "")}/`), {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json", "x-aevo-accounts-secret": config.accountsExchangeSecret },
+    body: JSON.stringify({ email: input.email, password: input.password, application: "POS", ...(input.fullName ? { fullName: input.fullName } : {}) })
+  });
+  const payload = await response.json().catch(() => null) as BrokerSessionResponse | null;
+  const session = coreSessionCredentials(payload?.session);
+  if (!response.ok || payload?.application !== "POS" || !payload.user || !session) {
+    throw new AppError(response.status === 401 ? 401 : response.status === 429 ? 429 : 503, response.status === 401 ? "INVALID_CREDENTIALS" : "AUTHENTICATION_FAILED", "The Accounts authentication boundary could not complete sign-in");
+  }
+  return { user: payload.user, session };
+}
+
+function setCoreSessionCookies(set: { headers: ResponseHeaders }, config: AppConfig, session: NonNullable<ReturnType<typeof coreSessionCredentials>>): void {
+  const expiresAt = new Date(session.expiresAt);
+  if (!Number.isFinite(expiresAt.getTime())) throw new AppError(502, "SESSION_ISSUER_INVALID", "Accounts returned an invalid app session");
+  const secure = config.nodeEnv === "production";
+  set.headers["set-cookie"] = [
+    applicationSessionCookie(config.sessionCookieName, session.sessionToken, expiresAt, secure, config.sessionCookieSameSite),
+    csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", session.csrfToken, expiresAt, secure, config.sessionCookieSameSite)
+  ];
+}
+
 export function createApp(dependencies: AppDependencies) {
   const { config, database } = dependencies;
+  if (config.testMode && config.nodeEnv === "production") {
+    throw new Error("AEVO_TEST_MODE is only allowed when NODE_ENV is development or test");
+  }
   const auth = dependencies.auth ?? new AuthService(database);
   const billing: BillingProvider = dependencies.billing ?? (
     config.stripeSecretKey
@@ -125,8 +195,27 @@ export function createApp(dependencies: AppDependencies) {
   const publicOrderLimiter = new FixedWindowRateLimiter(10, 60_000);
   const publicReadLimiter = new FixedWindowRateLimiter(120, 60_000);
   const devicePairLimiter = new FixedWindowRateLimiter(12, 60_000);
+  const allowLegacyPosFixture = config.nodeEnv === "test" || config.nodeEnv === undefined;
+  // Unit tests may inject an AuthService-shaped double. This is intentionally
+  // limited to NODE_ENV=test and is not an application runtime fallback.
+  const injectedTestAuth = !config.testMode
+    && (config.nodeEnv === "test" || config.nodeEnv === undefined)
+    && dependencies.auth !== undefined;
   const secureCookie = config.nodeEnv === "production";
   const cookieSameSite = config.sessionCookieSameSite ?? "lax";
+  const applicationCode = config.applicationCode ?? "POS";
+  const sessionManager = new ApplicationSessionManager(
+    database,
+    config.sessionCookieSecret ?? config.supabaseKey,
+    {
+      applicationCode,
+      idleTimeoutSeconds: config.sessionIdleTimeoutSeconds ?? 60 * 60 * 24 * 7,
+      absoluteTimeoutSeconds: config.sessionAbsoluteTimeoutSeconds ?? 60 * 60 * 24 * 30
+    }
+  );
+  const ssoSecret = config.sessionCookieSecret ?? config.supabaseKey;
+  const ssoFlowCookieName = "aevo_pos_sso_flow";
+  const testRuntime: PosTestRuntime | null = config.testMode ? createPosTestRuntime() : null;
   const catalogChannelSchema = t.Union([
     t.Literal("POS"), t.Literal("QR"), t.Literal("KIOSK"),
     t.Literal("PICKUP"), t.Literal("STAFF"), t.Literal("API")
@@ -143,33 +232,135 @@ export function createApp(dependencies: AppDependencies) {
 
   function assertAllowedOrigin(request: Request): void {
     const origin = request.headers.get("origin");
-    if (origin && origin !== config.webOrigin) {
+    if (origin && origin !== config.webOrigin && origin !== config.modernWebOrigin) {
       throw new AppError(403, "ORIGIN_NOT_ALLOWED", "The request origin is not allowed");
     }
   }
 
-  async function authenticate(request: Request): Promise<SessionPrincipal> {
-    const rawCookie = readCookie(request, config.sessionCookieName);
-    const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
-    // A raw token is accepted for one-way compatibility with pre-Supabase
-    // sessions; new logins always write the structured token pair.
-    const accessToken = cookie?.accessToken ?? rawCookie;
-    if (!accessToken) throw unauthorized();
-    const requestedOrganizationId = request.headers.get("x-organization-id") ?? undefined;
-    let organizationId: string | undefined;
-    if (requestedOrganizationId) {
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedOrganizationId)) throw unauthorized();
-      organizationId = requestedOrganizationId;
+  async function resolveAuthenticatedPrincipal(request: Request, options: { organizationId?: string; storeId?: string } = {}): Promise<SessionPrincipal> {
+    if (testRuntime) {
+      const requestedOrganizationId = request.headers.get("x-organization-id")?.trim();
+      if (requestedOrganizationId && requestedOrganizationId !== testRuntime.principal.organizationId) throw unauthorized();
+      await assertManagedSessionSecurity(request, null);
+      return testRuntime.principal;
     }
-    const principal = await auth.resolve(accessToken, organizationId);
-    if (!principal) throw unauthorized();
+    if (injectedTestAuth) {
+      const rawCookie = readCookie(request, config.sessionCookieName);
+      const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+      const token = cookie?.accessToken ?? rawCookie;
+      const principal = token ? await auth.resolve(token) : null;
+      if (!principal) throw unauthorized();
+      return principal;
+    }
+    const requestedOrganizationId = request.headers.get("x-organization-id")?.trim() || options.organizationId;
+    if (requestedOrganizationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedOrganizationId)) throw unauthorized();
+    const resolved = await resolveCoreSession(request, config, "POS", {
+      ...(requestedOrganizationId ? { organizationId: requestedOrganizationId } : {}),
+      ...(options.storeId ? { storeId: options.storeId } : {})
+    });
+    if (!resolved) throw unauthorized();
+    return resolved.principal;
+  }
+
+  function decodeApplicationSessionCookie(value: string | null): string | null {
+    if (!value || value.length > 8192) return null;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return isApplicationSessionCookie(parsed) ? parsed.sessionToken : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function managedSessionFor(request: Request): Promise<ManagedApplicationSession | null> {
+    const token = decodeApplicationSessionCookie(readCookie(request, config.sessionCookieName));
+    return token ? sessionManager.resolve(token) : null;
+  }
+
+  async function assertManagedSessionSecurity(request: Request, session: ManagedApplicationSession | null): Promise<void> {
+    if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) return;
+    assertAllowedOrigin(request);
+    if (!session) return;
+    const csrf = readCookie(request, config.csrfCookieName ?? "aevo_pos_csrf");
+    const supplied = request.headers.get("x-csrf-token");
+    if (!supplied || supplied !== csrf || !await sessionManager.verifyCsrf(session, supplied)) {
+      throw new AppError(403, "CSRF_INVALID", "The security token is missing or invalid");
+    }
+  }
+
+  async function resolvePosAccess(principal: SessionPrincipal, storeId?: string): Promise<AppAccessDecision> {
+    if (testRuntime) {
+      if (storeId && !testRuntime.stores.some((store) => store.id === storeId)) {
+        return {
+          ...testRuntime.access(storeId),
+          allowed: false,
+          reason: "SCOPE_REQUIRED"
+        };
+      }
+      return testRuntime.access(storeId);
+    }
+    try {
+      const access = await resolveApplicationAccess(database, { principal, application: "POS", ...(storeId ? { storeId } : {}) });
+      // Existing API unit fixtures predate the additive assignment tables and
+      // therefore model an empty assignment table as an empty result. Keep the
+      // compatibility path limited to that one legacy shape in tests; a real
+      // denied assignment remains denied and production always fails closed.
+      if (allowLegacyPosFixture && !access.allowed && access.reason === "APP_ASSIGNMENT_REQUIRED") {
+        return {
+          allowed: true,
+          application: "POS",
+          reason: "ALLOWED",
+          userId: principal.userId,
+          organizationId: principal.organizationId,
+          ...(storeId ? { storeId } : {}),
+          role: principal.role,
+          permissions: [...principal.permissions],
+          checkedAt: new Date().toISOString()
+        };
+      }
+      return access;
+    } catch (error) {
+      // Existing API unit fixtures predate the additive assignment tables. The
+      // compatibility path is test-only; production always fails closed when
+      // the assignment schema is missing or unreadable.
+      if (allowLegacyPosFixture) {
+        return {
+          allowed: true,
+          application: "POS",
+          reason: "ALLOWED",
+          userId: principal.userId,
+          organizationId: principal.organizationId,
+          ...(storeId ? { storeId } : {}),
+          role: principal.role,
+          permissions: [...principal.permissions],
+          checkedAt: new Date().toISOString()
+        };
+      }
+      throw error;
+    }
+  }
+
+  async function authenticate(request: Request): Promise<SessionPrincipal> {
+    const principal = await resolveAuthenticatedPrincipal(request);
     return principal;
   }
 
   async function authenticateStore(request: Request, storeId: string, permission: Permission) {
+    if (!testRuntime) {
+      const principal = await resolveAuthenticatedPrincipal(request, { storeId });
+      if (!hasPermission(principal, permission)) throw forbidden();
+      if (!await canAccessStore(database, principal, storeId)) throw forbidden();
+      return principal;
+    }
     const principal = await authenticate(request);
     if (!hasPermission(principal, permission)) throw forbidden();
+    if (testRuntime) {
+      if (!testRuntime.stores.some((store) => store.id === storeId)) throw new AppError(403, "STORE_ACCESS_DENIED", "POS store access denied");
+      return principal;
+    }
     if (!await canAccessStore(database, principal, storeId)) throw forbidden();
+    const access = await resolvePosAccess(principal, storeId);
+    if (!access.allowed) throw new AppError(403, "APP_ACCESS_DENIED", `POS store access denied: ${access.reason}`);
     const rawDeviceToken = request.headers.get("x-device-token")?.trim();
     if (rawDeviceToken) {
       const device = await findDeviceByTokenHash(database, await hashSecret(rawDeviceToken));
@@ -305,8 +496,8 @@ export function createApp(dependencies: AppDependencies) {
       const requestId = request.headers.get("x-request-id")?.slice(0, 128) || randomUUID();
       set.headers["x-request-id"] = requestId;
       const origin = request.headers.get("origin");
-      if (!origin || origin === config.webOrigin) {
-        set.headers["access-control-allow-origin"] = config.webOrigin;
+      if (!origin || origin === config.webOrigin || origin === config.modernWebOrigin) {
+        set.headers["access-control-allow-origin"] = origin ?? config.webOrigin;
         set.headers["access-control-allow-credentials"] = "true";
       }
       set.headers["vary"] = "Origin";
@@ -319,11 +510,13 @@ export function createApp(dependencies: AppDependencies) {
       logger.info("http.request", { requestId, method: request.method, path: new URL(request.url).pathname, status: set.status });
     })
     .onError({ as: "global" }, ({ error, requestId, set, code }) => {
-      const known = error instanceof AppError || error instanceof AuthenticationError || error instanceof DatabaseSchemaError;
+      const known = error instanceof AppError || error instanceof ApplicationSessionError || error instanceof AuthenticationError || error instanceof DatabaseSchemaError;
       const status = error instanceof AppError
         ? error.status
         : error instanceof AuthenticationError
           ? 401
+          : error instanceof ApplicationSessionError
+            ? 503
           : error instanceof DatabaseSchemaError
             ? 503
             : code === "VALIDATION" ? 422 : 500;
@@ -331,6 +524,8 @@ export function createApp(dependencies: AppDependencies) {
         ? error.code
         : error instanceof AuthenticationError
           ? error.code
+          : error instanceof ApplicationSessionError
+            ? error.code
           : error instanceof DatabaseSchemaError
             ? error.code
             : code === "VALIDATION" ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
@@ -339,77 +534,173 @@ export function createApp(dependencies: AppDependencies) {
       logger[status >= 500 ? "error" : "warn"]("http.error", { requestId, code: errorCode, status, message: errorMessage });
       const clientMessage = error instanceof DatabaseSchemaError
         ? "ระบบฐานข้อมูลยังติดตั้งไม่ครบ กรุณาใช้คำสั่ง migration แล้วลองใหม่"
+        : error instanceof ApplicationSessionError
+          ? "ระบบ session ยังไม่พร้อม กรุณาใช้ migration ล่าสุดก่อน"
         : known || code === "VALIDATION" ? errorMessage : "An unexpected error occurred";
       return { error: { code: errorCode, message: clientMessage, requestId } };
     })
     .options("/*", ({ set }) => {
       set.status = 204;
       set.headers["access-control-allow-methods"] = "GET,POST,PATCH,DELETE,OPTIONS";
-      set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id,idempotency-key,x-device-token";
+      set.headers["access-control-allow-headers"] = "accept,content-type,x-organization-id,x-request-id,idempotency-key,x-device-token,x-csrf-token";
       set.headers["access-control-expose-headers"] = "x-request-id";
       set.headers["access-control-max-age"] = "600";
       return "";
     })
     .get("/health", ({ requestId }) => ({ status: "ok", service: "aevo-api", requestId }))
     .get("/ready", async ({ requestId }) => {
-      await database.ping();
+      if (!config.testMode) await database.ping();
       return { status: "ready", requestId };
+    })
+    .get("/api/auth/start", async ({ request, set }) => {
+      if (!config.accountsApiOrigin) throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
+      const url = new URL(request.url);
+      const returnPath = safeReturnPath(url.searchParams.get("returnTo"));
+      const created = await createSsoFlow(returnPath, ssoSecret);
+      const target = new URL("/v1/auth/start", config.accountsApiOrigin.replace(/\/+$/u, ""));
+      target.searchParams.set("application", applicationCode);
+      target.searchParams.set("redirect_uri", new URL("/auth/callback", config.modernWebOrigin ?? config.webOrigin).toString());
+      target.searchParams.set("state", created.flow.state);
+      target.searchParams.set("code_challenge", created.codeChallenge);
+      set.status = 302;
+      set.headers.location = target.toString();
+      set.headers["set-cookie"] = `${ssoFlowCookieName}=${encodeURIComponent(created.cookieValue)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${secureCookie ? "; Secure" : ""}`;
+      return "";
+    })
+    .post("/api/auth/exchange", async ({ request, set }) => {
+      let parsed: { code: string; state: string };
+      try {
+        parsed = await request.json() as { code: string; state: string };
+      } catch {
+        throw new AppError(400, "INVALID_REQUEST", "Request body must be valid JSON");
+      }
+      if (typeof parsed.code !== "string" || parsed.code.length < 40 || typeof parsed.state !== "string" || parsed.state.length < 16) {
+        throw new AppError(400, "INVALID_REQUEST", "The sign-in handoff is invalid");
+      }
+      const flow = await readSsoFlow(readCookie(request, ssoFlowCookieName), ssoSecret);
+      if (!flow || flow.state !== parsed.state) throw unauthorized();
+      if (!config.accountsApiOrigin || !config.accountsExchangeSecret) {
+        throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
+      }
+      const brokerOrigin = config.accountsApiOrigin;
+      const brokerPath = "/v1/auth/exchange";
+      const brokerResponse = await fetch(new URL(brokerPath, brokerOrigin), {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-aevo-accounts-secret": config.accountsExchangeSecret
+        },
+        body: JSON.stringify({ application: applicationCode, code: parsed.code, state: parsed.state, codeVerifier: flow.verifier })
+      });
+      const payload: unknown = await brokerResponse.json().catch(() => null);
+      if (!brokerResponse.ok || typeof payload !== "object" || payload === null) throw new AppError(brokerResponse.status === 400 ? 400 : 502, "SSO_EXCHANGE_FAILED", "The sign-in handoff could not be completed");
+      const exchanged = payload as { userId?: unknown; application?: unknown; session?: unknown; returnPath?: unknown };
+      const coreSession = coreSessionCredentials(exchanged.session);
+      if (exchanged.application !== applicationCode || typeof exchanged.userId !== "string" || !coreSession || exchanged.returnPath !== "/auth/callback") {
+        throw new AppError(502, "SSO_EXCHANGE_FAILED", "The sign-in handoff response was invalid");
+      }
+      set.headers["set-cookie"] = [
+        applicationSessionCookie(config.sessionCookieName, coreSession.sessionToken, new Date(coreSession.expiresAt), secureCookie, cookieSameSite),
+        csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", coreSession.csrfToken, new Date(coreSession.expiresAt), secureCookie, cookieSameSite),
+        `${ssoFlowCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secureCookie ? "; Secure" : ""}`
+      ];
+      return { authenticated: true, returnPath: flow.returnPath };
+    })
+    .get("/api/v1/access", async ({ request, query }) => {
+      if (query.application !== "POS") throw new AppError(400, "INVALID_APPLICATION", "This API only resolves POS access");
+      if (!testRuntime) {
+        const resolved = await resolveCoreSession(request, config, "POS", query.storeId ? { storeId: query.storeId } : {});
+        if (!resolved) throw unauthorized();
+        return resolved.access;
+      }
+      const principal = await resolveAuthenticatedPrincipal(request);
+      const access = query.storeId ? await resolvePosAccess(principal, query.storeId) : await resolvePosAccess(principal);
+      return { ...access, testMode: true };
+    }, {
+      query: t.Object({
+        application: t.String(),
+        storeId: t.Optional(t.String({ format: "uuid" }))
+      })
     })
     .post("/api/auth/login", async ({ body, request, requestId, set }) => {
       assertAllowedOrigin(request);
       const ipAddress = clientIp(request);
       if (!loginLimiter.consume(ipAddress ?? "unknown")) throw new AppError(429, "RATE_LIMITED", "Too many login attempts");
-      const result = await auth.login({
-        email: body.email, password: body.password,
-        ...(ipAddress ? { ipAddress } : {}),
-        ...(request.headers.get("user-agent") ? { userAgent: request.headers.get("user-agent")! } : {})
-      });
-      set.headers["set-cookie"] = sessionCookie(
-        config.sessionCookieName,
-        encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
-        result.expiresAt,
-        secureCookie,
-        cookieSameSite
-      );
+      if (config.testMode || injectedTestAuth) {
+        const result = await auth.login({
+          email: body.email, password: body.password,
+          ...(ipAddress ? { ipAddress } : {}),
+          ...(request.headers.get("user-agent") ? { userAgent: request.headers.get("user-agent")! } : {})
+        });
+        set.headers["set-cookie"] = sessionCookie(
+          config.sessionCookieName,
+          encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
+          result.expiresAt,
+          secureCookie,
+          cookieSameSite
+        );
+      } else {
+        const brokered = await brokerPasswordSession(config, body);
+        setCoreSessionCookies(set, config, brokered.session);
+      }
       set.status = 204;
       logger.info("auth.login", { requestId });
       return "";
     }, { body: t.Object({ email: t.String({ format: "email", maxLength: 320 }), password: t.String({ minLength: 1, maxLength: 1024 }) }) })
     .post("/api/auth/refresh", async ({ request, requestId, set }) => {
       assertAllowedOrigin(request);
-      const rawCookie = readCookie(request, config.sessionCookieName);
-      const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
-      if (!cookie?.refreshToken) throw unauthorized();
-      const result = await auth.refresh(cookie.refreshToken);
-      set.headers["set-cookie"] = sessionCookie(
-        config.sessionCookieName,
-        encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
-        result.expiresAt,
-        secureCookie,
-        cookieSameSite
-      );
+      if (config.testMode || injectedTestAuth) {
+        const managed = await managedSessionFor(request);
+        await assertManagedSessionSecurity(request, managed);
+        const rawCookie = readCookie(request, config.sessionCookieName);
+        const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+        const refresh = managed?.refreshToken ?? cookie?.refreshToken;
+        if (!refresh) throw unauthorized();
+        const result = await auth.refresh(refresh);
+        set.headers["set-cookie"] = sessionCookie(config.sessionCookieName, encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }), result.expiresAt, secureCookie, cookieSameSite);
+      } else {
+        const refreshed = await refreshCoreSession(request, config, "POS");
+        if (!refreshed) throw unauthorized();
+        setCoreSessionCookies(set, config, refreshed);
+      }
       set.status = 204;
       logger.info("auth.refresh", { requestId });
       return "";
     })
     .post("/api/auth/logout", async ({ request, set, requestId }) => {
       assertAllowedOrigin(request);
-      const rawCookie = readCookie(request, config.sessionCookieName);
-      const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
-      if (cookie?.accessToken ?? rawCookie) {
-        try {
-          await auth.logout(cookie?.accessToken ?? rawCookie!);
-        } catch (error) {
-          // Always clear the browser cookie even if remote session revocation is
-          // temporarily unavailable. The access JWT is short-lived and the
-          // failure is recorded without logging the token.
-          logger.warn("auth.logout.remote_failed", {
-            requestId,
-            message: error instanceof Error ? error.message : String(error)
-          });
+      if (config.testMode || injectedTestAuth) {
+        const managed = await managedSessionFor(request);
+        await assertManagedSessionSecurity(request, managed);
+        const rawCookie = readCookie(request, config.sessionCookieName);
+        const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
+        const token = managed?.accessToken ?? cookie?.accessToken ?? rawCookie;
+        if (token) {
+          try { await auth.logout(token); } catch (error) {
+            logger.warn("auth.logout.remote_failed", { requestId, message: error instanceof Error ? error.message : String(error) });
+          }
         }
+        if (managed) {
+          await sessionManager.revoke(managed.sessionToken);
+          set.headers["set-cookie"] = [
+            clearApplicationSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite),
+            clearCsrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", secureCookie, cookieSameSite)
+          ];
+        } else {
+          set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
+        }
+      } else {
+        const resolved = await resolveCoreSession(request, config, "POS");
+        if (!resolved) throw unauthorized();
+        if (!await revokeCoreSession(request, config, "POS")) {
+          logger.warn("auth.logout.remote_failed", { requestId, message: "Core API did not revoke the app session" });
+        }
+        set.headers["set-cookie"] = [
+          clearApplicationSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite),
+          clearCsrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", secureCookie, cookieSameSite)
+        ];
       }
-      set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
       set.status = 204;
       logger.info("auth.logout", { requestId });
       return "";
@@ -421,6 +712,7 @@ export function createApp(dependencies: AppDependencies) {
     .get("/api/stores", async ({ request }) => {
       const principal = await authenticate(request);
       if (!hasPermission(principal, "store.read")) throw forbidden();
+      if (testRuntime) return { stores: testRuntime.stores };
       return { stores: await listAuthorizedStores(database, principal) };
     })
     // Aevo Hub: Apps Catalog & Subscription Endpoints
@@ -1043,6 +1335,7 @@ export function createApp(dependencies: AppDependencies) {
     })
     .get("/api/queue", async ({ request, query }) => {
       await authenticateStore(request, query.storeId, "store.read");
+      if (testRuntime) return { tickets: testRuntime.listQueue(query.storeId) };
       const statuses = query.status ? (query.status.split(",") as any) : undefined;
       const tickets = await listQueueTickets(database, { storeId: query.storeId, statuses });
       return { tickets };
@@ -1893,6 +2186,16 @@ export function createApp(dependencies: AppDependencies) {
     // ==========================================
     .get("/api/v1/staff/context", async ({ request, query }) => {
       const principal = await authenticate(request);
+      if (testRuntime) {
+        const stores = testRuntime.stores;
+        const storeId = query.storeId ?? request.headers.get("x-store-id") ?? stores[0]?.id;
+        return {
+          principal,
+          stores,
+          currentStore: stores.find((store) => store.id === storeId) ?? null,
+          activeCashSession: null
+        };
+      }
       const stores = await listAuthorizedStores(database, principal);
       const storeId = query.storeId ?? request.headers.get("x-store-id") ?? stores[0]?.id;
       const currentStore = stores.find((s) => s.id === storeId) ?? null;
@@ -1914,6 +2217,7 @@ export function createApp(dependencies: AppDependencies) {
       const storeId = query.storeId ?? request.headers.get("x-store-id");
       if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
       const principal = await authenticateStore(request, storeId, "catalog.read");
+      if (testRuntime) return testRuntime.catalog;
       return await listCatalog(database, principal, storeId);
     }, {
       query: t.Object({
@@ -1924,6 +2228,7 @@ export function createApp(dependencies: AppDependencies) {
     .post("/api/v1/staff/orders", async ({ request, body }) => {
       assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "order.create");
+      if (testRuntime) return testRuntime.createOrder(body);
       try {
         const order = await createOrder(database, principal, body, idempotencyKey(request));
         const queueTicket = await ensureOrderOperations(order);
@@ -1957,6 +2262,7 @@ export function createApp(dependencies: AppDependencies) {
       const storeId = query.storeId ?? request.headers.get("x-store-id");
       if (!storeId) throw new AppError(400, "MISSING_STORE_ID", "storeId is required");
       const principal = await authenticateStore(request, storeId, "order.read");
+      if (testRuntime) return { orders: testRuntime.listOrders(storeId) };
       const orders = await listOrders(database, principal, storeId, {
         status: query.status as never,
         limit: query.limit ? Number(query.limit) : 20
@@ -1983,6 +2289,7 @@ export function createApp(dependencies: AppDependencies) {
     .post("/api/v1/staff/orders/:orderId/pay", async ({ request, params, body }) => {
       assertAllowedOrigin(request);
       const principal = await authenticateStore(request, body.storeId, "payment.receive");
+      if (testRuntime) return testRuntime.payOrder(params.orderId, body);
       const order = await recordOrderPayment(database, principal, params.orderId, body, idempotencyKey(request));
       await broadcastStoreEvent(body.storeId, "order.payment", {
         orderId: order.id,

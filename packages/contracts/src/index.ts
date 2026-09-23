@@ -1,3 +1,31 @@
+/** First-party application boundaries are separate from commercial products. */
+export const applicationCodes = ["HUB", "ADMIN", "PLAY", "POS", "KIOSK", "QUEUE", "GO"] as const;
+export type ApplicationCode = (typeof applicationCodes)[number];
+export const applicationAssignmentStatuses = ["ACTIVE", "SUSPENDED", "REVOKED"] as const;
+export type ApplicationAssignmentStatus = (typeof applicationAssignmentStatuses)[number];
+export type AccessDecisionReason =
+  | "ALLOWED"
+  | "AUTHENTICATION_REQUIRED"
+  | "ACCOUNT_DISABLED"
+  | "MEMBERSHIP_REQUIRED"
+  | "APP_ASSIGNMENT_REQUIRED"
+  | "APP_ASSIGNMENT_SUSPENDED"
+  | "SCOPE_REQUIRED"
+  | "PERMISSION_REQUIRED"
+  | "ENTITLEMENT_INACTIVE";
+
+export interface AppAccessDecision {
+  allowed: boolean;
+  application: ApplicationCode;
+  reason: AccessDecisionReason;
+  userId?: string;
+  organizationId?: string;
+  storeId?: string;
+  role?: Role;
+  permissions: Permission[];
+  checkedAt: string;
+}
+
 export const roles = [
   "OWNER", "ADMIN", "BRANCH_MANAGER", "CASHIER", "KITCHEN", "STAFF", "VIEWER"
 ] as const;

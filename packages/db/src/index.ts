@@ -1,5 +1,6 @@
 export * from "./client";
 export * from "./errors";
+export * from "./application-access";
 export * from "./repository";
 export * from "./catalog";
 export * from "./orders";

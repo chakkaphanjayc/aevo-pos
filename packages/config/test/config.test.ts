@@ -27,6 +27,19 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ WEB_ORIGIN: base.WEB_ORIGIN, SUPABASE_URL: base.SUPABASE_URL })).toThrow("SUPABASE_SECRET_KEY");
   });
 
+  test("allows credential-free local test mode", () => {
+    const config = loadConfig({ NODE_ENV: "development", AEVO_TEST_MODE: "1", SUPABASE_URL: "https://real-project.supabase.co", SUPABASE_SECRET_KEY: "real-secret" });
+    expect(config.testMode).toBe(true);
+    expect(config.webOrigin).toBe("http://localhost:4332");
+    expect(config.apiPort).toBe(3003);
+    expect(config.supabaseUrl).toBe("http://aevo-test-mode.invalid");
+    expect(config.supabaseKey).toBe("aevo-test-mode-secret");
+  });
+
+  test("rejects test mode in production", () => {
+    expect(() => loadConfig({ NODE_ENV: "production", WEB_ORIGIN: "https://pos.example.com", AEVO_TEST_MODE: "1" })).toThrow("AEVO_TEST_MODE");
+  });
+
   test("rejects non-HTTP Supabase URLs", () => {
     expect(() => loadConfig({ ...base, SUPABASE_URL: "postgres://db/app" })).toThrow("SUPABASE_URL");
   });

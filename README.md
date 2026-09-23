@@ -1,14 +1,14 @@
 # Aevo Store Operations Platform
 
-Phase 2 of a multi-tenant store operations platform. The Worker serves the
-Astro staff shell and Elysia API, while Supabase Auth/PostgreSQL provide the
+Phase 2 of a multi-tenant store operations platform. The React + Vite POS
+console and Elysia API use Supabase Auth/PostgreSQL for the
 tenant boundary, catalog and unified Order aggregate.
 
 ## Architecture
 
 ```text
 Cloudflare Worker
-├── Astro static assets (/, /login, /staff)
+├── React + Vite POS console (/, /auth/callback)
 └── Elysia API (/health, /ready, /api/*)
        │
        └── Supabase Auth + PostgreSQL (RLS enabled)
@@ -18,7 +18,7 @@ Cloudflare Worker
 apps/
   worker/              Single Worker entrypoint and API/static routing
   api/                  Elysia routes, auth boundary, request IDs and errors
-  web/                  Astro public entry, login and authenticated staff shell
+  pos-modern/           React + Vite operational console and SSO callback
 packages/
   auth/                Supabase Auth adapter and permission checks
   config/              Fail-fast environment validation
@@ -160,7 +160,7 @@ same email/organization/store and updates that Auth user's password.
 ## Local development
 
 For the full ecosystem use `../LOCAL_DEVELOPMENT.md` from the parent
-directory. The root launcher runs POS on `http://localhost:4323` with its API
+directory. The root launcher runs POS on `http://localhost:4332` with its API
 on `http://localhost:3003`, allowing Hub and Play to run at the same time.
 
 ```bash
@@ -170,14 +170,18 @@ bun run db:seed
 bun run dev:api
 ```
 
-In another terminal run the Astro site:
+Open [http://localhost:4332](http://localhost:4332), then use the Hub SSO flow.
+
+For temporary UI/API testing without a user or Supabase credentials, run:
 
 ```bash
-PUBLIC_API_URL=http://localhost:3001 bun run dev:web
+AEVO_TEST_MODE=1 bun run dev
 ```
 
-Open [http://localhost:4321/login](http://localhost:4321/login), then use the
-seed email/password. For a same-origin Worker preview, put the values below in
+This serves a synthetic POS workspace entirely in memory and resets its data
+when the process restarts. It is disabled in production and is marked with a
+visible test-mode banner.
+For a same-origin Worker preview, put the values below in
 `.dev.vars` (do not commit that file) and run:
 
 ```bash
@@ -212,14 +216,25 @@ Preview and Production. Use **Encrypt** for the Supabase secret:
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `SUPABASE_SECRET_KEY` | Supabase server-only Secret key (or `SUPABASE_SERVICE_ROLE_KEY`) |
 | `WEB_ORIGIN` | Exact public Worker origin, e.g. `https://pos.example.com` |
+| `AEVO_ACCOUNTS_API_URL` | Optional Aevo Accounts origin for the app-scoped handoff |
+| `AEVO_ACCOUNTS_EXCHANGE_SECRET` | Encrypted Worker secret used only for server-to-server code exchange |
 | `SESSION_COOKIE_NAME` | Optional; default `aevo_session` |
 | `SESSION_COOKIE_SAME_SITE` | Optional; use `lax` for same-origin Worker UI |
 | `LOG_LEVEL` | Optional: `info`, `warn`, `error` or `debug` |
 
-Do not set `SUPABASE_SECRET_KEY` as `PUBLIC_SUPABASE_*`, do not commit it to
-`wrangler.jsonc`, and do not expose it to the browser. The frontend uses a
-relative `/api` URL in production; `PUBLIC_API_URL` is only needed when running
-the Astro site separately during local development.
+Do not set `SUPABASE_SECRET_KEY` or `AEVO_ACCOUNTS_EXCHANGE_SECRET` as public
+variables, do not commit either secret to `wrangler.jsonc`, and do not expose
+them to the browser. Leave `AEVO_ACCOUNTS_API_URL` empty to keep the reversible
+Hub handoff during local migration. The frontend uses a relative `/api` URL in
+production; `PUBLIC_API_URL` is only needed when running the Astro site
+separately during local development.
+
+For a connected environment, store the exchange secret with Wrangler rather
+than in `vars`:
+
+```bash
+wrangler secret put AEVO_ACCOUNTS_EXCHANGE_SECRET --env preview
+```
 
 The first user is still created by the one-off `bun run db:seed` command above;
 the Worker deliberately has no public setup endpoint.

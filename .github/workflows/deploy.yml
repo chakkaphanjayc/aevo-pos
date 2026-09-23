@@ -1,0 +1,53 @@
+name: Deploy POS Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Cloudflare environment
+        required: true
+        default: staging
+        type: choice
+        options: [preview, staging, production]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aevo-pos-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test packages apps
+      - run: bun run build
+
+  deploy:
+    needs: verify
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: .
+          command: deploy --env ${{ github.event.inputs.environment || 'staging' }}

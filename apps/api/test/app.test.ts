@@ -4,6 +4,7 @@ import type { SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import { createApp } from "../src/app";
 import { encodeAuthSessionCookie } from "../src/http";
+import { POS_TEST_STORE_ID, POS_TEST_USER_ID } from "../src/test-mode";
 
 const config: AppConfig = {
   nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4321",
@@ -145,5 +146,50 @@ describe("API foundation", () => {
     }));
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+  });
+});
+
+describe("POS test mode", () => {
+  const testConfig: AppConfig = { ...config, testMode: true };
+  const testApp = createApp({ config: testConfig, database: fakeDatabase, auth: fakeAuth });
+
+  test("opens the POS without a cookie and returns a demo store", async () => {
+    const me = await testApp.handle(new Request("http://localhost/api/auth/me"));
+    expect(me.status).toBe(200);
+    expect((await me.json()).user.userId).toBe(POS_TEST_USER_ID);
+
+    const stores = await testApp.handle(new Request("http://localhost/api/stores"));
+    expect(stores.status).toBe(200);
+    expect((await stores.json()).stores[0].id).toBe(POS_TEST_STORE_ID);
+  });
+
+  test("serves catalog and keeps order/payment state in memory", async () => {
+    const catalog = await testApp.handle(new Request(`http://localhost/api/v1/staff/catalog?storeId=${POS_TEST_STORE_ID}`));
+    expect(catalog.status).toBe(200);
+    const product = (await catalog.json()).products[0];
+
+    const create = await testApp.handle(new Request("http://localhost/api/v1/staff/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: testConfig.webOrigin },
+      body: JSON.stringify({
+        storeId: POS_TEST_STORE_ID,
+        channel: "POS",
+        orderType: "POS",
+        fulfillmentType: "TAKEAWAY",
+        currency: "THB",
+        items: [{ productId: product.id, quantity: 1 }]
+      })
+    }));
+    expect(create.status).toBe(200);
+    const created = (await create.json()).order;
+    expect(created.status).toBe("PENDING_PAYMENT");
+
+    const pay = await testApp.handle(new Request(`http://localhost/api/v1/staff/orders/${created.id}/pay`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: testConfig.webOrigin },
+      body: JSON.stringify({ storeId: POS_TEST_STORE_ID, method: "CASH", amountMinor: created.totalMinor, currency: "THB" })
+    }));
+    expect(pay.status).toBe(200);
+    expect((await pay.json()).order.status).toBe("PAID");
   });
 });

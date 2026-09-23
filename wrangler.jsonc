@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/wrangler@4.132.0/config-schema.json",
+  "$schema": "https://unpkg.com/wrangler@4.136.1/config-schema.json",
   "name": "aevo-pos",
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
@@ -8,5 +8,43 @@
     "directory": "./apps/web/dist",
     "binding": "ASSETS",
     "not_found_handling": "404-page"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "AEVO_APP_CODE": "POS",
+    "AEVO_ENVIRONMENT": "preview",
+    "AEVO_CORE_API_ORIGIN": "",
+    "AEVO_ACCOUNTS_API_URL": ""
+  },
+  "env": {
+    "preview": {
+      "name": "aevo-pos-preview",
+      "vars": {
+        "AEVO_APP_CODE": "POS",
+        "AEVO_ENVIRONMENT": "preview",
+        "AEVO_CORE_API_ORIGIN": "",
+        "AEVO_ACCOUNTS_API_URL": ""
+      }
+    },
+    "staging": {
+      "name": "aevo-pos-staging",
+      "vars": {
+        "AEVO_APP_CODE": "POS",
+        "AEVO_ENVIRONMENT": "staging",
+        "AEVO_CORE_API_ORIGIN": "",
+        "AEVO_ACCOUNTS_API_URL": ""
+      }
+    },
+    "production": {
+      "name": "aevo-pos-production",
+      "vars": {
+        "AEVO_APP_CODE": "POS",
+        "AEVO_ENVIRONMENT": "production",
+        "AEVO_CORE_API_ORIGIN": "",
+        "AEVO_ACCOUNTS_API_URL": ""
+      }
+    }
   }
 }

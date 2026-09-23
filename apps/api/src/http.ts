@@ -42,6 +42,22 @@ export function clearSessionCookie(name: string, secure: boolean, sameSite: Same
   return `${name}=; Path=/; HttpOnly; SameSite=${sameSiteAttribute(sameSite)}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? "; Secure" : ""}`;
 }
 
+export function applicationSessionCookie(name: string, sessionToken: string, expiresAt: Date, secure: boolean, sameSite: SameSite = "lax"): string {
+  return `${name}=${encodeURIComponent(JSON.stringify({ sessionToken }))}; Path=/; HttpOnly; SameSite=${sameSiteAttribute(sameSite)}; Expires=${expiresAt.toUTCString()}; Max-Age=${Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000))}${secure ? "; Secure" : ""}`;
+}
+
+export function clearApplicationSessionCookie(name: string, secure: boolean, sameSite: SameSite = "lax"): string {
+  return `${name}=; Path=/; HttpOnly; SameSite=${sameSiteAttribute(sameSite)}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? "; Secure" : ""}`;
+}
+
+export function csrfCookie(name: string, value: string, expiresAt: Date, secure: boolean, sameSite: SameSite = "lax"): string {
+  return `${name}=${encodeURIComponent(value)}; Path=/; SameSite=${sameSiteAttribute(sameSite)}; Expires=${expiresAt.toUTCString()}; Max-Age=${Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000))}${secure ? "; Secure" : ""}`;
+}
+
+export function clearCsrfCookie(name: string, secure: boolean, sameSite: SameSite = "lax"): string {
+  return `${name}=; Path=/; SameSite=${sameSiteAttribute(sameSite)}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0${secure ? "; Secure" : ""}`;
+}
+
 export function clientIp(request: Request): string | undefined {
   return request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
 }
