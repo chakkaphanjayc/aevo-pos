@@ -14,8 +14,9 @@ export interface AppConfig {
   hubWebOrigin?: string;
   coreApiOrigin?: string;
   coreApiServiceSecret?: string;
+  handshakeSecret?: string;
   accountsApiOrigin?: string;
-  accountsExchangeSecret?: string;
+  accountsServiceSecret?: string;
   /** Supabase project URL (for example https://<project>.supabase.co). */
   supabaseUrl: string;
   /** Server-only Supabase secret/service-role key. Never send this to browsers. */
@@ -110,8 +111,9 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     hubWebOrigin: source.AEVO_HUB_WEB_URL?.trim() || "http://localhost:4330",
     coreApiOrigin: source.AEVO_CORE_API_ORIGIN?.trim() || source.AEVO_CORE_API_URL?.trim() || "http://localhost:5099",
     ...(source.AEVO_CORE_API_SERVICE_SECRET?.trim() ? { coreApiServiceSecret: source.AEVO_CORE_API_SERVICE_SECRET.trim() } : {}),
+    ...(source.AEVO_HANDSHAKE_SHARED_SECRET?.trim() ? { handshakeSecret: source.AEVO_HANDSHAKE_SHARED_SECRET.trim() } : {}),
     ...(source.AEVO_ACCOUNTS_API_URL?.trim() ? { accountsApiOrigin: source.AEVO_ACCOUNTS_API_URL.trim() } : {}),
-    ...(source.AEVO_ACCOUNTS_EXCHANGE_SECRET?.trim() ? { accountsExchangeSecret: source.AEVO_ACCOUNTS_EXCHANGE_SECRET.trim() } : {}),
+    ...(source.AEVO_ACCOUNTS_SERVICE_SECRET?.trim() ? { accountsServiceSecret: source.AEVO_ACCOUNTS_SERVICE_SECRET.trim() } : {}),
     supabaseUrl: normalizedSupabaseUrl!,
     supabaseKey,
     sessionCookieName: sessionCookieName(source.SESSION_COOKIE_NAME ?? "aevo_session"),

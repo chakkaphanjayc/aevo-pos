@@ -19,7 +19,7 @@ class Query {
 }
 
 const config: AppConfig = {
-  nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4321",
+  nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4332",
   supabaseUrl: "https://demo.supabase.co", supabaseKey: "server-secret",
   sessionCookieName: "aevo_session", sessionCookieSameSite: "lax", logLevel: "error"
 };

@@ -8,7 +8,7 @@ const config: AppConfig = {
   nodeEnv: "test",
   apiHost: "127.0.0.1",
   apiPort: 3001,
-  webOrigin: "http://localhost:4321",
+  webOrigin: "http://localhost:4332",
   supabaseUrl: "https://demo.supabase.co",
   supabaseKey: "server-secret",
   sessionCookieName: "aevo_session",
@@ -67,50 +67,6 @@ const mockStore = {
   created_at: "2026-09-17T00:00:00Z",
   updated_at: "2026-09-17T00:00:00Z"
 };
-
-const mockApps = [
-  {
-    id: "pos",
-    name: "Aevo POS",
-    description: "Point of Sale",
-    icon: "pos",
-    pricing_model: "PER_BRANCH",
-    base_price_monthly_minor: 49900,
-    status: "ACTIVE",
-    features: ["Checkout", "KDS"],
-    created_at: "2026-09-17T00:00:00Z"
-  },
-  {
-    id: "booking",
-    name: "Aevo Booking",
-    description: "Sports & Resource Booking",
-    icon: "booking",
-    pricing_model: "PER_VENUE",
-    base_price_monthly_minor: 59900,
-    status: "ACTIVE",
-    features: ["Time slots", "LINE Notify"],
-    created_at: "2026-09-17T00:00:00Z"
-  }
-];
-
-const mockSubscriptions = [
-  {
-    id: "sub-pos",
-    organization_id: mockOrgId,
-    store_id: null,
-    app_id: "pos",
-    status: "ACTIVE",
-    plan_code: "STANDARD",
-    trial_ends_at: null,
-    current_period_starts_at: "2026-01-01T00:00:00Z",
-    current_period_ends_at: "2030-01-01T00:00:00Z",
-    grace_period_ends_at: "2030-01-15T00:00:00Z",
-    device_limit: null,
-    resource_limit: null,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z"
-  }
-];
 
 class FluentQuery {
   private rows: any[];
@@ -184,8 +140,6 @@ async function createTestDatabase(): Promise<any> {
       { id: mockRoleId, code: "OWNER", name: "Owner" }
     ],
     stores: [mockStore],
-    apps: mockApps,
-    app_subscriptions: mockSubscriptions,
     cash_sessions: [
       {
         id: "00000000-0000-4000-8000-000000000300",
@@ -293,130 +247,7 @@ describe("Aevo Canonical API Gateway (v1)", () => {
     expect(app).toBeDefined();
   });
 
-  describe("Surface 1: /api/v1/hub/*", () => {
-    test("GET /api/v1/hub/apps returns full apps catalog", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/apps"));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.apps).toBeDefined();
-      expect(body.apps.length).toBe(2);
-      expect(body.apps[0].id).toBe("pos");
-    });
-
-    test("GET /api/v1/hub/subscriptions enforces auth and returns entitled status", async () => {
-      const unauth = await app.handle(new Request("http://localhost/api/v1/hub/subscriptions"));
-      expect(unauth.status).toBe(401);
-
-      const auth = await app.handle(new Request("http://localhost/api/v1/hub/subscriptions", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(auth.status).toBe(200);
-      const body = await auth.json();
-      expect(body.subscriptions).toBeDefined();
-      expect(body.subscriptions[0].appId).toBe("pos");
-      expect(body.subscriptions[0].isEntitled).toBe(true);
-    });
-
-    test("GET /api/v1/hub/entitlements/pos checks app entitlement", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/entitlements/pos", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.entitlement).toBeDefined();
-      expect(body.entitlement.appId).toBe("pos");
-      expect(body.entitlement.isEntitled).toBe(true);
-    });
-
-    test("POST /api/v1/hub/subscriptions/trial creates 14-day trial", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/subscriptions/trial", {
-        method: "POST",
-        headers: {
-          cookie: cookieHeader(),
-          origin: "http://localhost:4321",
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ appId: "booking" })
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.subscription.appId).toBe("booking");
-      expect(body.subscription.status).toBe("TRIAL");
-    });
-
-    test("GET /api/v1/hub/organizations returns organizations list", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/organizations", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.organizations).toBeDefined();
-      expect(body.organizations[0].name).toBe("Aevo Corporation");
-    });
-
-    test("POST /api/v1/hub/organizations creates new organization", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/organizations", {
-        method: "POST",
-        headers: {
-          cookie: cookieHeader(),
-          origin: "http://localhost:4321",
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ name: "Aevo New Corp", slug: "aevo-new" })
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.organization).toBeDefined();
-      expect(body.organization.name).toBe("Aevo New Corp");
-    });
-
-    test("GET /api/v1/hub/stores returns stores list", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/stores", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.stores).toBeDefined();
-      expect(body.stores[0].code).toBe("BKK-01");
-    });
-
-    test("POST /api/v1/hub/stores creates new store", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/stores", {
-        method: "POST",
-        headers: {
-          cookie: cookieHeader(),
-          origin: "http://localhost:4321",
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ name: "Aevo Chiang Mai", code: "CNX-01" })
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.store).toBeDefined();
-      expect(body.store.code).toBe("CNX-01");
-    });
-
-    test("GET /api/v1/hub/stats returns platform statistics", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/stats", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.stats).toBeDefined();
-      expect(body.stats.totalApps).toBeGreaterThanOrEqual(2);
-    });
-
-    test("GET /api/v1/hub/audit-logs returns audit log list", async () => {
-      const res = await app.handle(new Request("http://localhost/api/v1/hub/audit-logs?limit=10", {
-        headers: { cookie: cookieHeader() }
-      }));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.logs).toBeDefined();
-    });
-  });
-
-  describe("Surface 2: /api/v1/staff/*", () => {
+  describe("Surface 1: /api/v1/staff/*", () => {
     test("GET /api/v1/staff/context returns principal and stores", async () => {
       const res = await app.handle(new Request("http://localhost/api/v1/staff/context", {
         headers: { cookie: cookieHeader() }
@@ -502,7 +333,7 @@ describe("Aevo Canonical API Gateway (v1)", () => {
       const res = await app.handle(new Request("http://localhost/api/v1/device/pair", {
         method: "POST",
         headers: {
-          origin: "http://localhost:4321",
+          origin: "http://localhost:4332",
           "content-type": "application/json"
         },
         body: JSON.stringify({})

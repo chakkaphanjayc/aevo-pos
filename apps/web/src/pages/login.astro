@@ -12,6 +12,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <label for="password">รหัสผ่าน
         <span class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required /><button id="toggle-password" class="password-toggle" type="button" aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button></span>
       </label>
+      <label class="remember-choice" for="remember-me"><input id="remember-me" name="rememberMe" type="checkbox" /><span><strong>จดจำอุปกรณ์นี้</strong><small>อย่าเลือกบนเครื่องสาธารณะ</small></span></label>
       <p class="error" id="error" role="alert" hidden></p>
       <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
       <button class="button" id="submit" type="submit">เข้าสู่ระบบ</button>
@@ -25,6 +26,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     const status = document.querySelector<HTMLParagraphElement>("#form-status")!;
     const button = document.querySelector<HTMLButtonElement>("#submit")!;
     const password = document.querySelector<HTMLInputElement>("#password")!;
+    const rememberMe = document.querySelector<HTMLInputElement>("#remember-me")!;
     const togglePassword = document.querySelector<HTMLButtonElement>("#toggle-password")!;
 
     togglePassword.addEventListener("click", () => {
@@ -51,7 +53,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       }
       button.disabled = true; button.textContent = "กำลังเข้าสู่ระบบ…"; status.textContent = "กำลังตรวจสอบข้อมูลบัญชี";
       try {
-        await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password: passwordValue }) });
+        await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password: passwordValue, rememberMe: rememberMe.checked }) });
         window.location.assign("/staff");
       } catch (cause) {
         if (cause instanceof ApiError && cause.code === "INVALID_CREDENTIALS") {
@@ -78,5 +80,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     .password-toggle:hover { background: #eef5f1; }
     .form-status, .helper { margin: 0; color: var(--muted); font-size: .88rem; }
     .helper { text-align: center; }
+    .remember-choice { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+    .remember-choice input { width: 17px; min-height: 17px; margin-top: 2px; accent-color: var(--brand); }
+    .remember-choice span { display: grid; gap: 2px; font-size: .78rem; line-height: 1.35; }
+    .remember-choice small { color: var(--muted); font-size: .7rem; font-weight: 500; }
   </style>
 </BaseLayout>

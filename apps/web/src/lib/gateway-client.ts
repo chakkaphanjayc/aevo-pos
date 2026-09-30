@@ -1,7 +1,4 @@
 import type {
-  AppCatalogItem,
-  AppEntitlement,
-  AppSubscriptionSummary,
   BookableResourceSummary,
   BookingSummary,
   BookingWaitlistSummary,
@@ -10,15 +7,12 @@ import type {
   CreateOrderInput,
   DailyClosingSummary,
   DeviceSummary,
-  MemberSummary,
   OrderListItem,
   OrderSummary,
-  OrganizationSummary,
   PreparationStationSummary,
   PreparationTaskSummary,
   QueueDisplaySnapshot,
   QueueTicketSummary,
-  Role,
   SessionPrincipal,
   StoreSummary,
   VenueSummary
@@ -38,14 +32,12 @@ export class GatewayError extends Error {
 
 export interface GatewayClientConfig {
   baseUrl?: string;
-  organizationId?: string;
   storeId?: string;
   deviceToken?: string;
 }
 
 export class GatewayClient {
   private baseUrl: string;
-  private organizationId?: string;
   private storeId?: string;
   private deviceToken?: string;
 
@@ -54,17 +46,8 @@ export class GatewayClient {
       ? String(import.meta.env.PUBLIC_API_URL)
       : "";
     this.baseUrl = (config.baseUrl ?? configuredApi).replace(/\/$/, "");
-    this.organizationId = config.organizationId;
     this.storeId = config.storeId;
     this.deviceToken = config.deviceToken;
-  }
-
-  setOrganizationId(orgId: string | undefined): void {
-    this.organizationId = orgId;
-    if (typeof window !== "undefined") {
-      if (orgId) localStorage.setItem("aevo.hub.activeOrgId", orgId);
-      else localStorage.removeItem("aevo.hub.activeOrgId");
-    }
   }
 
   setStoreId(storeId: string | undefined): void {
@@ -77,14 +60,6 @@ export class GatewayClient {
 
   setDeviceToken(token: string | undefined): void {
     this.deviceToken = token;
-  }
-
-  getOrganizationId(): string | undefined {
-    if (this.organizationId) return this.organizationId;
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("aevo.hub.activeOrgId") || undefined;
-    }
-    return undefined;
   }
 
   getStoreId(): string | undefined {
@@ -113,11 +88,6 @@ export class GatewayClient {
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers);
     headers.set("accept", "application/json");
-
-    const orgId = this.getOrganizationId();
-    if (orgId && !headers.has("x-organization-id")) {
-      headers.set("x-organization-id", orgId);
-    }
 
     const storeId = this.getStoreId();
     if (storeId && !headers.has("x-store-id")) {
@@ -179,89 +149,7 @@ export class GatewayClient {
   }
 
   // ==========================================
-  // SURFACE 1: Aevo Hub Management API Client
-  // ==========================================
-  readonly hub = {
-    getMe: (): Promise<{ principal: SessionPrincipal }> =>
-      this.request<{ principal: SessionPrincipal }>("/api/v1/hub/me"),
-
-    getOrganizations: (): Promise<{ organizations: OrganizationSummary[] }> =>
-      this.request<{ organizations: OrganizationSummary[] }>("/api/v1/hub/organizations"),
-
-    createOrganization: (input: { name: string; slug?: string }): Promise<{ organization: OrganizationSummary }> =>
-      this.request<{ organization: OrganizationSummary }>("/api/v1/hub/organizations", {
-        method: "POST",
-        body: JSON.stringify(input)
-      }),
-
-    getStores: (organizationId?: string): Promise<{ stores: StoreSummary[] }> => {
-      const q = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
-      return this.request<{ stores: StoreSummary[] }>(`/api/v1/hub/stores${q}`);
-    },
-
-    createStore: (input: {
-      organizationId?: string;
-      name: string;
-      code: string;
-      timezone?: string;
-    }): Promise<{ store: StoreSummary }> =>
-      this.request<{ store: StoreSummary }>("/api/v1/hub/stores", {
-        method: "POST",
-        body: JSON.stringify(input)
-      }),
-
-    getApps: (): Promise<{ apps: AppCatalogItem[] }> =>
-      this.request<{ apps: AppCatalogItem[] }>("/api/v1/hub/apps"),
-
-    getSubscriptions: (storeId?: string): Promise<{ subscriptions: AppSubscriptionSummary[] }> => {
-      const q = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
-      return this.request<{ subscriptions: AppSubscriptionSummary[] }>(`/api/v1/hub/subscriptions${q}`);
-    },
-
-    getEntitlement: (appId: string, storeId?: string): Promise<{ entitlement: AppEntitlement }> => {
-      const q = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
-      return this.request<{ entitlement: AppEntitlement }>(`/api/v1/hub/entitlements/${encodeURIComponent(appId)}${q}`);
-    },
-
-    startTrial: (appId: string, storeId?: string): Promise<{ subscription: AppSubscriptionSummary }> =>
-      this.request<{ subscription: AppSubscriptionSummary }>("/api/v1/hub/subscriptions/trial", {
-        method: "POST",
-        body: JSON.stringify({ appId, ...(storeId ? { storeId } : {}) })
-      }),
-
-    getMembers: (): Promise<{ members: MemberSummary[] }> =>
-      this.request<{ members: MemberSummary[] }>("/api/v1/hub/members"),
-
-    updateMember: (
-      membershipId: string,
-      input: { role?: Role; customPermissions?: string[] }
-    ): Promise<{ member: MemberSummary }> =>
-      this.request<{ member: MemberSummary }>(`/api/v1/hub/members/${encodeURIComponent(membershipId)}`, {
-        method: "PATCH",
-        body: JSON.stringify(input)
-      }),
-
-    getAuditLogs: (query: { limit?: number; action?: string; resourceType?: string } = {}): Promise<{ logs: any[] }> => {
-      const params = new URLSearchParams();
-      if (query.limit) params.set("limit", String(query.limit));
-      if (query.action) params.set("action", query.action);
-      if (query.resourceType) params.set("resourceType", query.resourceType);
-      const q = params.toString() ? `?${params.toString()}` : "";
-      return this.request<{ logs: any[] }>(`/api/v1/hub/audit-logs${q}`);
-    },
-
-    getStats: (): Promise<{ stats: { totalApps: number; activeApps: number; totalStores: number; totalMembers: number } }> =>
-      this.request<{ stats: { totalApps: number; activeApps: number; totalStores: number; totalMembers: number } }>("/api/v1/hub/stats"),
-
-    getBillingPortal: (returnUrl?: string): Promise<{ url: string }> =>
-      this.request<{ url: string }>("/api/v1/hub/billing/portal", {
-        method: "POST",
-        body: JSON.stringify({ ...(returnUrl ? { returnUrl } : {}) })
-      })
-  };
-
-  // ==========================================
-  // SURFACE 2: Staff & POS Operations Client
+  // Staff & POS Operations Client
   // ==========================================
   readonly staff = {
     getContext: (storeId?: string): Promise<{

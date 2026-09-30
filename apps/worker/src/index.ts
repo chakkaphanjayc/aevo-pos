@@ -12,7 +12,7 @@ export interface WorkerEnv {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   WEB_ORIGIN: string;
   AEVO_ACCOUNTS_API_URL?: string;
-  AEVO_ACCOUNTS_EXCHANGE_SECRET?: string;
+  AEVO_ACCOUNTS_SERVICE_SECRET?: string;
   SESSION_COOKIE_NAME?: string;
   SESSION_COOKIE_SAME_SITE?: "lax" | "strict" | "none";
   LOG_LEVEL?: "debug" | "info" | "warn" | "error";
@@ -87,7 +87,7 @@ function createRuntime(env: WorkerEnv): WorkerRuntime {
     API_PORT: "8787",
     WEB_ORIGIN: env.WEB_ORIGIN,
     AEVO_ACCOUNTS_API_URL: env.AEVO_ACCOUNTS_API_URL,
-    AEVO_ACCOUNTS_EXCHANGE_SECRET: env.AEVO_ACCOUNTS_EXCHANGE_SECRET,
+    AEVO_ACCOUNTS_SERVICE_SECRET: env.AEVO_ACCOUNTS_SERVICE_SECRET,
     SUPABASE_URL: env.SUPABASE_URL,
     SUPABASE_SECRET_KEY: supabaseKey,
     SESSION_COOKIE_NAME: env.SESSION_COOKIE_NAME,

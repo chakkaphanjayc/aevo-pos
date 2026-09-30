@@ -247,6 +247,8 @@ export interface CreateProductInput {
   description?: string;
   basePriceMinor: number;
   currency?: string;
+  imageUrl?: string | null;
+  displayOrder?: number;
   variants?: CreateProductVariantInput[];
 }
 
@@ -255,6 +257,9 @@ export interface UpdateProductInput {
   name?: string;
   description?: string;
   basePriceMinor?: number;
+  currency?: string;
+  imageUrl?: string | null;
+  displayOrder?: number;
   status?: ProductStatus;
 }
 

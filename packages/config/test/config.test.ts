@@ -2,16 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { loadConfig } from "../src";
 
 const base = {
-  WEB_ORIGIN: "http://localhost:4321",
+  WEB_ORIGIN: "http://localhost:4332",
   SUPABASE_URL: "https://demo.supabase.co",
   SUPABASE_SECRET_KEY: "server-secret"
 };
 
 describe("loadConfig", () => {
   test("validates and normalizes Supabase environment", () => {
-    const config = loadConfig({ ...base, WEB_ORIGIN: "http://localhost:4321/" });
+    const config = loadConfig({ ...base, WEB_ORIGIN: "http://localhost:4332/" });
     expect(config.apiPort).toBe(3001);
-    expect(config.webOrigin).toBe("http://localhost:4321");
+    expect(config.webOrigin).toBe("http://localhost:4332");
     expect(config.supabaseUrl).toBe("https://demo.supabase.co");
     expect(config.supabaseKey).toBe("server-secret");
     expect(config.sessionCookieSameSite).toBe("lax");

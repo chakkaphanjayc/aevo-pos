@@ -2,13 +2,13 @@ import { spawn } from "bun";
 
 console.log("\x1b[36m%s\x1b[0m", "🚀 Starting Aevo POS API + Modern Console...");
 
-const api = spawn(["bun", "--env-file=.env", "run", "--cwd", "apps/api", "dev"], {
+const api = spawn(["bun", "--conditions=development", "--env-file=.env", "run", "--cwd", "apps/api", "dev"], {
   stdout: "inherit",
   stderr: "inherit",
   env: process.env
 });
 
-const modern = spawn(["bun", "--env-file=.env", "run", "--cwd", "apps/pos-modern", "dev"], {
+const modern = spawn(["bun", "--conditions=development", "--env-file=.env", "run", "--cwd", "apps/pos-modern", "dev"], {
   stdout: "inherit",
   stderr: "inherit",
   env: process.env

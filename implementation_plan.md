@@ -58,7 +58,7 @@ curl -s https://<worker>.workers.dev/ready | jq .
 ```bash
 curl -s -X POST http://localhost:3001/api/auth/login \
   -H 'content-type: application/json' \
-  -H 'origin: http://localhost:4321' \
+  -H 'origin: http://localhost:4332' \
   -d '{"email":"owner@example.com","password":"change-me-now"}' \
   -D - -o /dev/null
 # Expected: 204 + set-cookie header

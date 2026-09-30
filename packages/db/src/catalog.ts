@@ -214,7 +214,7 @@ export async function listCatalog(database: Database, principal: SessionPrincipa
       .order("name", { ascending: true }),
     database.client
       .from("products")
-      .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+      .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status,image_url,display_order")
       .eq("organization_id", principal.organizationId)
       .order("name", { ascending: true }),
     database.client
@@ -352,9 +352,11 @@ export async function createProduct(
       name: input.name.trim(),
       description: input.description?.trim() ?? "",
       base_price_minor: input.basePriceMinor,
-      currency: input.currency?.trim().toUpperCase() || "THB"
+      currency: input.currency?.trim().toUpperCase() || "THB",
+      ...(input.imageUrl !== undefined ? { image_url: input.imageUrl } : {}),
+      ...(input.displayOrder !== undefined ? { display_order: input.displayOrder } : {})
     })
-    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status,image_url,display_order")
     .single();
   throwIfError(productResult.error, "product create");
   const product = productResult.data as Row;
@@ -514,13 +516,16 @@ export async function updateProduct(
   if (input.name !== undefined) patch.name = input.name.trim();
   if (input.description !== undefined) patch.description = input.description.trim();
   if (input.basePriceMinor !== undefined) patch.base_price_minor = input.basePriceMinor;
+  if (input.currency !== undefined) patch.currency = input.currency.trim().toUpperCase();
+  if (input.imageUrl !== undefined) patch.image_url = input.imageUrl;
+  if (input.displayOrder !== undefined) patch.display_order = input.displayOrder;
   if (input.status !== undefined) patch.status = input.status;
   const result = await database.client
     .from("products")
     .update(patch)
     .eq("id", productId)
     .eq("organization_id", principal.organizationId)
-    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status")
+    .select("id,organization_id,category_id,sku,name,description,base_price_minor,currency,status,image_url,display_order")
     .single();
   throwIfError(result.error, "product update");
   const variantResult = await database.client

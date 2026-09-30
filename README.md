@@ -54,9 +54,10 @@ effect without waiting for a custom session cache.
    npx --yes supabase@2.117.0 db push
    ```
 
-   If using the SQL Editor instead, run every file in
-   `supabase/migrations/` in filename order. Running only the foundation file
-   leaves Store Core tables such as orders, cash sessions and devices missing.
+   If using the SQL Editor instead, run the remaining POS-owned files in
+   `supabase/migrations/` in filename order. Hub/Core control-plane migrations
+   are intentionally absent from this tree; apply those only through the Core
+   API migration job described in the ecosystem `LOCAL_DEVELOPMENT.md`.
 
 The migration creates the organization → optional brand → store model,
 Supabase-user profiles, memberships, roles/permissions, explicit store access,
@@ -217,12 +218,12 @@ Preview and Production. Use **Encrypt** for the Supabase secret:
 | `SUPABASE_SECRET_KEY` | Supabase server-only Secret key (or `SUPABASE_SERVICE_ROLE_KEY`) |
 | `WEB_ORIGIN` | Exact public Worker origin, e.g. `https://pos.example.com` |
 | `AEVO_ACCOUNTS_API_URL` | Optional Aevo Accounts origin for the app-scoped handoff |
-| `AEVO_ACCOUNTS_EXCHANGE_SECRET` | Encrypted Worker secret used only for server-to-server code exchange |
+| `AEVO_ACCOUNTS_SERVICE_SECRET` | Encrypted Worker secret used only for server-to-server code exchange |
 | `SESSION_COOKIE_NAME` | Optional; default `aevo_session` |
 | `SESSION_COOKIE_SAME_SITE` | Optional; use `lax` for same-origin Worker UI |
 | `LOG_LEVEL` | Optional: `info`, `warn`, `error` or `debug` |
 
-Do not set `SUPABASE_SECRET_KEY` or `AEVO_ACCOUNTS_EXCHANGE_SECRET` as public
+Do not set `SUPABASE_SECRET_KEY` or `AEVO_ACCOUNTS_SERVICE_SECRET` as public
 variables, do not commit either secret to `wrangler.jsonc`, and do not expose
 them to the browser. Leave `AEVO_ACCOUNTS_API_URL` empty to keep the reversible
 Hub handoff during local migration. The frontend uses a relative `/api` URL in
@@ -233,7 +234,7 @@ For a connected environment, store the exchange secret with Wrangler rather
 than in `vars`:
 
 ```bash
-wrangler secret put AEVO_ACCOUNTS_EXCHANGE_SECRET --env preview
+wrangler secret put AEVO_ACCOUNTS_SERVICE_SECRET --env preview
 ```
 
 The first user is still created by the one-off `bun run db:seed` command above;

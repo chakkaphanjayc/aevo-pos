@@ -7,6 +7,8 @@ interface CoreSessionPayload {
   sessionToken: string;
   csrfToken: string;
   expiresAt: string;
+  absoluteExpiresAt: string;
+  rememberMe: boolean;
 }
 
 export interface CoreResolvedSession {
@@ -130,12 +132,12 @@ export async function revokeCoreSession(
 ): Promise<boolean> {
   const sessionToken = sessionTokenFromCookie(request, config);
   if (!sessionToken) return true;
-  if (!config.accountsApiOrigin || !config.accountsExchangeSecret) {
+  if (!config.accountsApiOrigin || !config.accountsServiceSecret) {
     throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
   }
   const response = await fetch(new URL("/v1/auth/logout", `${config.accountsApiOrigin.replace(/\/+$/u, "")}/`), {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json", "x-aevo-accounts-secret": config.accountsExchangeSecret },
+    headers: { accept: "application/json", "content-type": "application/json", "x-aevo-accounts-secret": config.accountsServiceSecret },
     body: JSON.stringify({ sessionToken, application })
   });
   return response.ok;
@@ -144,5 +146,9 @@ export async function revokeCoreSession(
 export function coreSessionCredentials(value: unknown): CoreSessionPayload | null {
   const session = object(value);
   if (typeof session?.sessionToken !== "string" || typeof session.csrfToken !== "string" || typeof session.expiresAt !== "string" || !/^[A-Za-z0-9_-]{40,4096}$/u.test(session.sessionToken) || !/^[A-Za-z0-9_-]{40,4096}$/u.test(session.csrfToken)) return null;
-  return { sessionToken: session.sessionToken, csrfToken: session.csrfToken, expiresAt: session.expiresAt };
+  if (session.rememberMe !== undefined && typeof session.rememberMe !== "boolean") return null;
+  const rememberMe = session.rememberMe === true;
+  const absoluteExpiresAt = typeof session.absoluteExpiresAt === "string" ? session.absoluteExpiresAt : rememberMe ? null : session.expiresAt;
+  if (!absoluteExpiresAt || !Number.isFinite(Date.parse(absoluteExpiresAt))) return null;
+  return { sessionToken: session.sessionToken, csrfToken: session.csrfToken, expiresAt: session.expiresAt, absoluteExpiresAt, rememberMe };
 }

@@ -1,4 +1,5 @@
 import { expect, test, describe } from "bun:test";
+import { createHmac } from "node:crypto";
 import type { AppConfig } from "@aevo/config";
 import type { SessionPrincipal } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
@@ -7,7 +8,7 @@ import { encodeAuthSessionCookie } from "../src/http";
 import { POS_TEST_STORE_ID, POS_TEST_USER_ID } from "../src/test-mode";
 
 const config: AppConfig = {
-  nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4321",
+  nodeEnv: "test", apiHost: "127.0.0.1", apiPort: 3001, webOrigin: "http://localhost:4332",
   supabaseUrl: "https://demo.supabase.co", supabaseKey: "server-secret",
   sessionCookieName: "aevo_session", sessionCookieSameSite: "lax", logLevel: "error"
 };
@@ -49,6 +50,46 @@ describe("API foundation", () => {
     const response = await app.handle(new Request("http://localhost/ready"));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "ready" });
+  });
+
+  test("requires a signed compatibility handshake", async () => {
+    const handshakeApp = createApp({
+      config: { ...config, handshakeSecret: "handshake-secret" },
+      database: fakeDatabase,
+      auth: fakeAuth
+    });
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const signature = createHmac("sha256", "handshake-secret")
+      .update([timestamp, "GET", "/.well-known/aevo-handshake", nonce, "POS"].join("\n"))
+      .digest("hex");
+    const unauthorized = await handshakeApp.handle(new Request("http://localhost/.well-known/aevo-handshake"));
+    expect(unauthorized.status).toBe(401);
+    const response = await handshakeApp.handle(new Request("http://localhost/.well-known/aevo-handshake", {
+      headers: {
+        "x-aevo-handshake-timestamp": timestamp,
+        "x-aevo-handshake-nonce": nonce,
+        "x-aevo-handshake-signature": signature
+      }
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ protocol: "aevo.application-handshake", appCode: "POS", contractVersion: "v1", status: "ready" });
+  });
+
+  test("forwards a store context through the Accounts login start", async () => {
+    const ssoApp = createApp({
+      config: {
+        ...config,
+        accountsApiOrigin: "https://accounts.test",
+        modernWebOrigin: "https://pos.test"
+      },
+      database: fakeDatabase,
+      auth: fakeAuth
+    });
+    const storeId = "00000000-0000-4000-8000-000000000010";
+    const response = await ssoApp.handle(new Request(`http://localhost/api/auth/start?returnTo=%2F&storeId=${storeId}`));
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get("location") ?? "").searchParams.get("store_id")).toBe(storeId);
   });
 
   test("login writes an http-only cookie containing Supabase tokens", async () => {

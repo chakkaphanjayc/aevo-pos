@@ -8,7 +8,7 @@ const config: AppConfig = {
   nodeEnv: "test",
   apiHost: "127.0.0.1",
   apiPort: 3001,
-  webOrigin: "http://localhost:4321",
+  webOrigin: "http://localhost:4332",
   supabaseUrl: "https://demo.supabase.co",
   supabaseKey: "server-secret",
   sessionCookieName: "aevo_session",
@@ -267,7 +267,7 @@ describe("Aevo Booking API endpoints", () => {
       method: "POST",
       headers: {
         cookie: cookieHeader(),
-        origin: "http://localhost:4321",
+        origin: "http://localhost:4332",
         "content-type": "application/json"
       },
       body: JSON.stringify({
@@ -288,7 +288,7 @@ describe("Aevo Booking API endpoints", () => {
       method: "POST",
       headers: {
         cookie: cookieHeader(),
-        origin: "http://localhost:4321",
+        origin: "http://localhost:4332",
         "content-type": "application/json"
       },
       body: JSON.stringify({
@@ -314,7 +314,7 @@ describe("Aevo Booking API endpoints", () => {
       method: "POST",
       headers: {
         cookie: cookieHeader(),
-        origin: "http://localhost:4321",
+        origin: "http://localhost:4332",
         "content-type": "application/json"
       },
       body: JSON.stringify({ code: "CK1234" })
@@ -343,7 +343,7 @@ describe("Aevo Booking API endpoints", () => {
       method: "POST",
       headers: {
         cookie: cookieHeader(),
-        origin: "http://localhost:4321",
+        origin: "http://localhost:4332",
         "content-type": "application/json"
       },
       body: JSON.stringify({

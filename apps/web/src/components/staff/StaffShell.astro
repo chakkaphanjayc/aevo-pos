@@ -4,7 +4,7 @@ import StaffIcon from "./StaffIcon.astro";
 import StaffPreviewModal from "./StaffPreviewModal.astro";
 import type { Permission } from "@aevo/contracts";
 
-type StaffSection = "hub" | "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "tables" | "booking" | "reports" | "users" | "devices" | "audit" | "settings" | "preview";
+type StaffSection = "workspace" | "catalog" | "pos" | "orders" | "queue" | "prep" | "tables" | "booking" | "reports" | "users" | "devices" | "audit" | "settings" | "preview";
 
 interface Props {
   title: string;
@@ -15,7 +15,6 @@ interface Props {
 const { title, active, fullHeight = false } = Astro.props;
 
 const navItems = [
-  { key: "hub", group: "Ecosystem", label: "Aevo Hub", helper: "Apps & Plans", icon: "hub", href: "/staff/hub", permission: "store.read" as Permission, ready: true },
   { key: "workspace", group: "Workspace", label: "ภาพรวม", helper: "Workspace", icon: "dashboard", href: "/staff/workspace", permission: "store.read" as Permission, ready: true },
   { key: "catalog", group: "Store", label: "สินค้า", helper: "Catalog", icon: "catalog", href: "/staff/catalog", permission: "catalog.read" as Permission, ready: true },
   { key: "pos", group: "Sales", label: "ขายหน้าร้าน", helper: "POS", icon: "pos", href: "/staff/pos", permission: "order.create" as Permission, ready: true },

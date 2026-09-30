@@ -66,6 +66,7 @@ a { color: inherit; }
 .pos-product-card:hover:not(:disabled) { border-color: #8aaef2; box-shadow: 0 10px 22px rgb(28 91 212 / 12%); transform: translateY(-2px); }
 .pos-product-card.is-disabled { filter: grayscale(0.3); }
 .pos-product-card__image { align-items: center; background: linear-gradient(145deg, #dce8ff, #f4f7fd); color: var(--pos-primary); display: inline-flex; font-size: 2.1rem; font-weight: 900; height: 88px; justify-content: center; }
+.pos-product-card__image img { height: 100%; object-fit: cover; width: 100%; }
 .pos-product-card__body { display: grid; gap: 0.25rem; padding: 0.8rem; }
 .pos-product-card__body strong { color: var(--pos-ink); }
 .pos-product-card__body small { color: var(--pos-muted); font-size: 0.72rem; }

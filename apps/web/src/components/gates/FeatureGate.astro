@@ -19,7 +19,7 @@ const {
   entitledFeatures,
   fallbackTitle = "ฟีเจอร์นี้ต้องใช้แพ็กเกจระดับสูงกว่า",
   fallbackDescription = "กรุณาอัปเกรดแพ็กเกจเพื่อเปิดใช้งานฟีเจอร์นี้สำหรับร้านค้าของคุณ",
-  upgradeHref = "/staff/hub",
+  upgradeHref = `${(import.meta.env.PUBLIC_AEVO_HUB_URL ?? import.meta.env.AEVO_HUB_WEB_URL ?? "http://localhost:4330").replace(/\/$/u, "")}/modern`,
   hideFallback = false,
   class: className = ""
 } = Astro.props;

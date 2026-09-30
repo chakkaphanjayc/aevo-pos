@@ -216,8 +216,8 @@ export function App() {
     return (catalog?.products ?? []).filter((product) => {
       const categoryMatch = categoryId === 'all' || product.categoryId === categoryId;
       const queryMatch = !normalizedQuery || product.name.toLowerCase().includes(normalizedQuery) || product.sku.toLowerCase().includes(normalizedQuery);
-      return categoryMatch && queryMatch;
-    });
+      return product.status === 'ACTIVE' && categoryMatch && queryMatch;
+    }).sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0) || left.name.localeCompare(right.name));
   }, [catalog, categoryId, query]);
 
   function addSelectedProduct(): void {
@@ -338,7 +338,7 @@ export function App() {
         <section className="pos-menu-panel">
           <div className="pos-heading"><div><span className="pos-eyebrow">Point of sale</span><h1>เลือกสินค้า</h1><p>{catalog?.products.length || 0} รายการ · ราคาจาก catalog กลาง</p></div><label className="pos-search"><span aria-hidden="true">⌕</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" /></label></div>
           <nav className="pos-categories" aria-label="หมวดหมู่"><button className={categoryId === 'all' ? 'is-active' : ''} type="button" onClick={() => setCategoryId('all')}>ทั้งหมด</button>{categories.map((category) => <button className={categoryId === category.id ? 'is-active' : ''} type="button" key={category.id} onClick={() => setCategoryId(category.id)}>{category.name}</button>)}</nav>
-          <div className="pos-product-grid">{products.map((product) => { const available = isAvailable(product); const variant = product.variants[0]; return <button className={`pos-product-card ${available ? '' : 'is-disabled'}`} disabled={!available} type="button" key={product.id} onClick={() => openProduct(product)}><span className="pos-product-card__image" aria-hidden="true">{product.name.slice(0, 1)}</span><span className="pos-product-card__body"><strong>{product.name}</strong><small>{product.sku} · {product.variants.length > 1 ? `${product.variants.length} variants` : 'standard'}</small><span>{formatMoney(effectivePrice(product, variant), product.currency)}</span></span>{!available ? <em>หมด/ปิดขาย</em> : null}</button>; })}</div>{products.length === 0 ? <div className="pos-empty"><strong>ไม่พบสินค้า</strong><p>ลองค้นหาคำอื่นหรือเลือกหมวดหมู่ทั้งหมด</p></div> : null}
+          <div className="pos-product-grid">{products.map((product) => { const available = isAvailable(product); const variant = product.variants[0]; return <button className={`pos-product-card ${available ? '' : 'is-disabled'}`} disabled={!available} type="button" key={product.id} onClick={() => openProduct(product)}><span className="pos-product-card__image">{product.imageUrl ? <img src={product.imageUrl} alt="" loading="lazy" /> : <span aria-hidden="true">{product.name.slice(0, 1)}</span>}</span><span className="pos-product-card__body"><strong>{product.name}</strong><small>{product.sku} · {product.variants.length > 1 ? `${product.variants.length} variants` : 'standard'}</small><span>{formatMoney(effectivePrice(product, variant), product.currency)}</span></span>{!available ? <em>หมด/ปิดขาย</em> : null}</button>; })}</div>{products.length === 0 ? <div className="pos-empty"><strong>ไม่พบสินค้า</strong><p>ลองค้นหาคำอื่นหรือเลือกหมวดหมู่ทั้งหมด</p></div> : null}
         </section>
         <aside className="pos-cart-panel" aria-label="ตะกร้า">
           <div className="pos-cart-heading"><div><span className="pos-eyebrow">Current order</span><h2>ตะกร้า</h2></div><button type="button" className="pos-clear" onClick={() => setCart((current) => clearCart(current))} disabled={cart.items.length === 0}>ล้าง</button></div>

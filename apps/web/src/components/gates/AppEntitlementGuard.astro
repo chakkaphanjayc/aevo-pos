@@ -26,7 +26,7 @@ const {
   fallbackTitle = `แอปพลิเคชัน ${appName} ยังไม่ได้เปิดใช้งาน`,
   fallbackDescription = `แอปนี้ไม่ได้อยู่ในแพ็กเกจปัจจุบันของคุณ เริ่มต้นทดลองใช้ฟรี 14 วัน หรือสมัครสมาชิกเพื่อเข้าถึงการทำงานเต็มรูปแบบ`,
   showTrialNotice = true,
-  hubHref = "/staff/hub",
+  hubHref = `${(import.meta.env.PUBLIC_AEVO_HUB_URL ?? import.meta.env.AEVO_HUB_WEB_URL ?? "http://localhost:4330").replace(/\/$/u, "")}/modern`,
   class: className = ""
 } = Astro.props as Props;
 

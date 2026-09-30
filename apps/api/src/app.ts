@@ -1,17 +1,13 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import {
-  ApplicationSessionError,
-  ApplicationSessionManager,
   AuthenticationError,
   AuthService,
   defineAbilityFor,
-  hasPermission,
-  isApplicationSessionCookie,
-  type ManagedApplicationSession
+  hasPermission
 } from "@aevo/auth";
 import type { AppConfig } from "@aevo/config";
 import { deviceModes, roles } from "@aevo/contracts";
-import type { AppAccessDecision, BillingProvider, DeviceMode, Permission, Role, SessionPrincipal, WaitlistStatus } from "@aevo/contracts";
+import type { DeviceMode, Permission, Role, SessionPrincipal, WaitlistStatus } from "@aevo/contracts";
 import type { Database } from "@aevo/db";
 import {
   canAccessStore,
@@ -78,10 +74,6 @@ import {
   updateMember,
   listAuditLogs,
   writeAuditLog,
-  listApps,
-  listOrganizationSubscriptions,
-  getAppEntitlement,
-  startAppTrial,
   listVenues,
   createVenue,
   listResources,
@@ -93,16 +85,6 @@ import {
   listWaitlists,
   addToWaitlist,
   updateWaitlistStatus,
-  listUserOrganizations,
-  createOrganization,
-  listOrganizationStores,
-  resolveApplicationAccess,
-  createStore,
-  getOrganizationStats,
-  StripeBillingAdapter,
-  MockBillingAdapter,
-  recordBillingWebhookEvent,
-  getBillingCustomer,
   DatabaseSchemaError,
   throwDatabaseError
 } from "@aevo/db";
@@ -133,7 +115,22 @@ export interface AppDependencies {
   config: AppConfig;
   database: Database;
   auth?: Pick<AuthService, "login" | "logout" | "resolve" | "refresh">;
-  billing?: BillingProvider;
+}
+
+const handshakePath = "/.well-known/aevo-handshake";
+const handshakeProtocol = "aevo.application-handshake";
+const handshakeProtocolVersion = "1";
+
+function validHandshakeRequest(request: Request, appCode: string, secret: string): boolean {
+  const timestamp = request.headers.get("x-aevo-handshake-timestamp")?.trim() ?? "";
+  const nonce = request.headers.get("x-aevo-handshake-nonce")?.trim() ?? "";
+  const provided = request.headers.get("x-aevo-handshake-signature")?.trim() ?? "";
+  const seconds = Number(timestamp);
+  if (!/^\d{1,20}$/u.test(timestamp) || !Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > 300) return false;
+  if (!/^[a-f0-9]{32}$/u.test(nonce) || !/^[a-f0-9]{64}$/u.test(provided)) return false;
+  const payload = [timestamp, "GET", handshakePath, nonce, appCode].join("\n");
+  const expected = createHmac("sha256", secret).update(payload).digest("hex");
+  return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"));
 }
 
 type ResponseHeaders = Record<string, string | number | string[]>;
@@ -152,14 +149,14 @@ interface BrokerSessionResponse {
 
 async function brokerPasswordSession(
   config: AppConfig,
-  input: { email: string; password: string; fullName?: string },
+  input: { email: string; password: string; fullName?: string; rememberMe?: boolean },
   endpoint: "password" | "register" = "password"
 ): Promise<{ user: BrokerUser; session: NonNullable<ReturnType<typeof coreSessionCredentials>> }> {
-  if (!config.accountsApiOrigin || !config.accountsExchangeSecret) throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
+  if (!config.accountsApiOrigin || !config.accountsServiceSecret) throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
   const response = await fetch(new URL(`/v1/auth/${endpoint}`, `${config.accountsApiOrigin.replace(/\/+$/u, "")}/`), {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json", "x-aevo-accounts-secret": config.accountsExchangeSecret },
-    body: JSON.stringify({ email: input.email, password: input.password, application: "POS", ...(input.fullName ? { fullName: input.fullName } : {}) })
+    headers: { accept: "application/json", "content-type": "application/json", "x-aevo-accounts-secret": config.accountsServiceSecret },
+    body: JSON.stringify({ email: input.email, password: input.password, application: "POS", rememberMe: input.rememberMe === true, ...(input.fullName ? { fullName: input.fullName } : {}) })
   });
   const payload = await response.json().catch(() => null) as BrokerSessionResponse | null;
   const session = coreSessionCredentials(payload?.session);
@@ -169,13 +166,18 @@ async function brokerPasswordSession(
   return { user: payload.user, session };
 }
 
+function coreSessionCookieExpiry(session: NonNullable<ReturnType<typeof coreSessionCredentials>>): Date {
+  const expiresAt = new Date(session.rememberMe ? session.absoluteExpiresAt : session.expiresAt);
+  if (!Number.isFinite(expiresAt.getTime())) throw new AppError(502, "SESSION_ISSUER_INVALID", "Accounts returned an invalid app session expiry");
+  return expiresAt;
+}
+
 function setCoreSessionCookies(set: { headers: ResponseHeaders }, config: AppConfig, session: NonNullable<ReturnType<typeof coreSessionCredentials>>): void {
-  const expiresAt = new Date(session.expiresAt);
-  if (!Number.isFinite(expiresAt.getTime())) throw new AppError(502, "SESSION_ISSUER_INVALID", "Accounts returned an invalid app session");
+  const expiresAt = coreSessionCookieExpiry(session);
   const secure = config.nodeEnv === "production";
   set.headers["set-cookie"] = [
-    applicationSessionCookie(config.sessionCookieName, session.sessionToken, expiresAt, secure, config.sessionCookieSameSite),
-    csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", session.csrfToken, expiresAt, secure, config.sessionCookieSameSite)
+    applicationSessionCookie(config.sessionCookieName, session.sessionToken, expiresAt, secure, config.sessionCookieSameSite, session.rememberMe),
+    csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", session.csrfToken, expiresAt, secure, config.sessionCookieSameSite, session.rememberMe)
   ];
 }
 
@@ -185,17 +187,11 @@ export function createApp(dependencies: AppDependencies) {
     throw new Error("AEVO_TEST_MODE is only allowed when NODE_ENV is development or test");
   }
   const auth = dependencies.auth ?? new AuthService(database);
-  const billing: BillingProvider = dependencies.billing ?? (
-    config.stripeSecretKey
-      ? new StripeBillingAdapter({ secretKey: config.stripeSecretKey, webhookSecret: config.stripeWebhookSecret })
-      : new MockBillingAdapter()
-  );
   const logger = createLogger(config.logLevel);
   const loginLimiter = new FixedWindowRateLimiter(10, 60_000);
   const publicOrderLimiter = new FixedWindowRateLimiter(10, 60_000);
   const publicReadLimiter = new FixedWindowRateLimiter(120, 60_000);
   const devicePairLimiter = new FixedWindowRateLimiter(12, 60_000);
-  const allowLegacyPosFixture = config.nodeEnv === "test" || config.nodeEnv === undefined;
   // Unit tests may inject an AuthService-shaped double. This is intentionally
   // limited to NODE_ENV=test and is not an application runtime fallback.
   const injectedTestAuth = !config.testMode
@@ -204,15 +200,6 @@ export function createApp(dependencies: AppDependencies) {
   const secureCookie = config.nodeEnv === "production";
   const cookieSameSite = config.sessionCookieSameSite ?? "lax";
   const applicationCode = config.applicationCode ?? "POS";
-  const sessionManager = new ApplicationSessionManager(
-    database,
-    config.sessionCookieSecret ?? config.supabaseKey,
-    {
-      applicationCode,
-      idleTimeoutSeconds: config.sessionIdleTimeoutSeconds ?? 60 * 60 * 24 * 7,
-      absoluteTimeoutSeconds: config.sessionAbsoluteTimeoutSeconds ?? 60 * 60 * 24 * 30
-    }
-  );
   const ssoSecret = config.sessionCookieSecret ?? config.supabaseKey;
   const ssoFlowCookieName = "aevo_pos_sso_flow";
   const testRuntime: PosTestRuntime | null = config.testMode ? createPosTestRuntime() : null;
@@ -241,7 +228,7 @@ export function createApp(dependencies: AppDependencies) {
     if (testRuntime) {
       const requestedOrganizationId = request.headers.get("x-organization-id")?.trim();
       if (requestedOrganizationId && requestedOrganizationId !== testRuntime.principal.organizationId) throw unauthorized();
-      await assertManagedSessionSecurity(request, null);
+      assertRequestSecurity(request);
       return testRuntime.principal;
     }
     if (injectedTestAuth) {
@@ -262,82 +249,9 @@ export function createApp(dependencies: AppDependencies) {
     return resolved.principal;
   }
 
-  function decodeApplicationSessionCookie(value: string | null): string | null {
-    if (!value || value.length > 8192) return null;
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return isApplicationSessionCookie(parsed) ? parsed.sessionToken : null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function managedSessionFor(request: Request): Promise<ManagedApplicationSession | null> {
-    const token = decodeApplicationSessionCookie(readCookie(request, config.sessionCookieName));
-    return token ? sessionManager.resolve(token) : null;
-  }
-
-  async function assertManagedSessionSecurity(request: Request, session: ManagedApplicationSession | null): Promise<void> {
+  function assertRequestSecurity(request: Request): void {
     if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) return;
     assertAllowedOrigin(request);
-    if (!session) return;
-    const csrf = readCookie(request, config.csrfCookieName ?? "aevo_pos_csrf");
-    const supplied = request.headers.get("x-csrf-token");
-    if (!supplied || supplied !== csrf || !await sessionManager.verifyCsrf(session, supplied)) {
-      throw new AppError(403, "CSRF_INVALID", "The security token is missing or invalid");
-    }
-  }
-
-  async function resolvePosAccess(principal: SessionPrincipal, storeId?: string): Promise<AppAccessDecision> {
-    if (testRuntime) {
-      if (storeId && !testRuntime.stores.some((store) => store.id === storeId)) {
-        return {
-          ...testRuntime.access(storeId),
-          allowed: false,
-          reason: "SCOPE_REQUIRED"
-        };
-      }
-      return testRuntime.access(storeId);
-    }
-    try {
-      const access = await resolveApplicationAccess(database, { principal, application: "POS", ...(storeId ? { storeId } : {}) });
-      // Existing API unit fixtures predate the additive assignment tables and
-      // therefore model an empty assignment table as an empty result. Keep the
-      // compatibility path limited to that one legacy shape in tests; a real
-      // denied assignment remains denied and production always fails closed.
-      if (allowLegacyPosFixture && !access.allowed && access.reason === "APP_ASSIGNMENT_REQUIRED") {
-        return {
-          allowed: true,
-          application: "POS",
-          reason: "ALLOWED",
-          userId: principal.userId,
-          organizationId: principal.organizationId,
-          ...(storeId ? { storeId } : {}),
-          role: principal.role,
-          permissions: [...principal.permissions],
-          checkedAt: new Date().toISOString()
-        };
-      }
-      return access;
-    } catch (error) {
-      // Existing API unit fixtures predate the additive assignment tables. The
-      // compatibility path is test-only; production always fails closed when
-      // the assignment schema is missing or unreadable.
-      if (allowLegacyPosFixture) {
-        return {
-          allowed: true,
-          application: "POS",
-          reason: "ALLOWED",
-          userId: principal.userId,
-          organizationId: principal.organizationId,
-          ...(storeId ? { storeId } : {}),
-          role: principal.role,
-          permissions: [...principal.permissions],
-          checkedAt: new Date().toISOString()
-        };
-      }
-      throw error;
-    }
   }
 
   async function authenticate(request: Request): Promise<SessionPrincipal> {
@@ -359,8 +273,6 @@ export function createApp(dependencies: AppDependencies) {
       return principal;
     }
     if (!await canAccessStore(database, principal, storeId)) throw forbidden();
-    const access = await resolvePosAccess(principal, storeId);
-    if (!access.allowed) throw new AppError(403, "APP_ACCESS_DENIED", `POS store access denied: ${access.reason}`);
     const rawDeviceToken = request.headers.get("x-device-token")?.trim();
     if (rawDeviceToken) {
       const device = await findDeviceByTokenHash(database, await hashSecret(rawDeviceToken));
@@ -510,13 +422,11 @@ export function createApp(dependencies: AppDependencies) {
       logger.info("http.request", { requestId, method: request.method, path: new URL(request.url).pathname, status: set.status });
     })
     .onError({ as: "global" }, ({ error, requestId, set, code }) => {
-      const known = error instanceof AppError || error instanceof ApplicationSessionError || error instanceof AuthenticationError || error instanceof DatabaseSchemaError;
+      const known = error instanceof AppError || error instanceof AuthenticationError || error instanceof DatabaseSchemaError;
       const status = error instanceof AppError
         ? error.status
         : error instanceof AuthenticationError
           ? 401
-          : error instanceof ApplicationSessionError
-            ? 503
           : error instanceof DatabaseSchemaError
             ? 503
             : code === "VALIDATION" ? 422 : 500;
@@ -524,8 +434,6 @@ export function createApp(dependencies: AppDependencies) {
         ? error.code
         : error instanceof AuthenticationError
           ? error.code
-          : error instanceof ApplicationSessionError
-            ? error.code
           : error instanceof DatabaseSchemaError
             ? error.code
             : code === "VALIDATION" ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
@@ -534,8 +442,6 @@ export function createApp(dependencies: AppDependencies) {
       logger[status >= 500 ? "error" : "warn"]("http.error", { requestId, code: errorCode, status, message: errorMessage });
       const clientMessage = error instanceof DatabaseSchemaError
         ? "ระบบฐานข้อมูลยังติดตั้งไม่ครบ กรุณาใช้คำสั่ง migration แล้วลองใหม่"
-        : error instanceof ApplicationSessionError
-          ? "ระบบ session ยังไม่พร้อม กรุณาใช้ migration ล่าสุดก่อน"
         : known || code === "VALIDATION" ? errorMessage : "An unexpected error occurred";
       return { error: { code: errorCode, message: clientMessage, requestId } };
     })
@@ -552,16 +458,42 @@ export function createApp(dependencies: AppDependencies) {
       if (!config.testMode) await database.ping();
       return { status: "ready", requestId };
     })
+    .get(handshakePath, ({ request, requestId, set }) => {
+      if (!config.handshakeSecret) {
+        set.status = 503;
+        return { error: { code: "HANDSHAKE_NOT_CONFIGURED", message: "The application handshake secret is not configured", requestId } };
+      }
+      if (!validHandshakeRequest(request, applicationCode, config.handshakeSecret)) {
+        set.status = 401;
+        return { error: { code: "HANDSHAKE_UNAUTHORIZED", message: "The application handshake request is not authorized", requestId } };
+      }
+      return {
+        protocol: handshakeProtocol,
+        protocolVersion: handshakeProtocolVersion,
+        appCode: applicationCode,
+        contractVersion: "v1",
+        environment: config.nodeEnv,
+        status: "ready",
+        capabilities: ["catalog", "orders", "queue", "devices", "reports"],
+        checkedAt: new Date().toISOString(),
+        requestId
+      };
+    })
     .get("/api/auth/start", async ({ request, set }) => {
       if (!config.accountsApiOrigin) throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
       const url = new URL(request.url);
       const returnPath = safeReturnPath(url.searchParams.get("returnTo"));
+      const storeId = url.searchParams.get("storeId")?.trim() || undefined;
+      if (storeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(storeId)) {
+        throw new AppError(400, "INVALID_STORE_CONTEXT", "The store context must be a UUID");
+      }
       const created = await createSsoFlow(returnPath, ssoSecret);
       const target = new URL("/v1/auth/start", config.accountsApiOrigin.replace(/\/+$/u, ""));
       target.searchParams.set("application", applicationCode);
       target.searchParams.set("redirect_uri", new URL("/auth/callback", config.modernWebOrigin ?? config.webOrigin).toString());
       target.searchParams.set("state", created.flow.state);
       target.searchParams.set("code_challenge", created.codeChallenge);
+      if (storeId) target.searchParams.set("store_id", storeId.toLowerCase());
       set.status = 302;
       set.headers.location = target.toString();
       set.headers["set-cookie"] = `${ssoFlowCookieName}=${encodeURIComponent(created.cookieValue)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${secureCookie ? "; Secure" : ""}`;
@@ -579,7 +511,7 @@ export function createApp(dependencies: AppDependencies) {
       }
       const flow = await readSsoFlow(readCookie(request, ssoFlowCookieName), ssoSecret);
       if (!flow || flow.state !== parsed.state) throw unauthorized();
-      if (!config.accountsApiOrigin || !config.accountsExchangeSecret) {
+      if (!config.accountsApiOrigin || !config.accountsServiceSecret) {
         throw new AppError(503, "ACCOUNTS_NOT_CONFIGURED", "The Accounts authentication boundary is not configured");
       }
       const brokerOrigin = config.accountsApiOrigin;
@@ -589,7 +521,7 @@ export function createApp(dependencies: AppDependencies) {
         headers: {
           accept: "application/json",
           "content-type": "application/json",
-          "x-aevo-accounts-secret": config.accountsExchangeSecret
+          "x-aevo-accounts-secret": config.accountsServiceSecret
         },
         body: JSON.stringify({ application: applicationCode, code: parsed.code, state: parsed.state, codeVerifier: flow.verifier })
       });
@@ -600,9 +532,10 @@ export function createApp(dependencies: AppDependencies) {
       if (exchanged.application !== applicationCode || typeof exchanged.userId !== "string" || !coreSession || exchanged.returnPath !== "/auth/callback") {
         throw new AppError(502, "SSO_EXCHANGE_FAILED", "The sign-in handoff response was invalid");
       }
+      const expiresAt = coreSessionCookieExpiry(coreSession);
       set.headers["set-cookie"] = [
-        applicationSessionCookie(config.sessionCookieName, coreSession.sessionToken, new Date(coreSession.expiresAt), secureCookie, cookieSameSite),
-        csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", coreSession.csrfToken, new Date(coreSession.expiresAt), secureCookie, cookieSameSite),
+        applicationSessionCookie(config.sessionCookieName, coreSession.sessionToken, expiresAt, secureCookie, cookieSameSite, coreSession.rememberMe),
+        csrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", coreSession.csrfToken, expiresAt, secureCookie, cookieSameSite, coreSession.rememberMe),
         `${ssoFlowCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secureCookie ? "; Secure" : ""}`
       ];
       return { authenticated: true, returnPath: flow.returnPath };
@@ -615,8 +548,8 @@ export function createApp(dependencies: AppDependencies) {
         return resolved.access;
       }
       const principal = await resolveAuthenticatedPrincipal(request);
-      const access = query.storeId ? await resolvePosAccess(principal, query.storeId) : await resolvePosAccess(principal);
-      return { ...access, testMode: true };
+      const access = testRuntime.access(query.storeId);
+      return { ...access, userId: principal.userId, organizationId: principal.organizationId, testMode: true };
     }, {
       query: t.Object({
         application: t.String(),
@@ -647,15 +580,13 @@ export function createApp(dependencies: AppDependencies) {
       set.status = 204;
       logger.info("auth.login", { requestId });
       return "";
-    }, { body: t.Object({ email: t.String({ format: "email", maxLength: 320 }), password: t.String({ minLength: 1, maxLength: 1024 }) }) })
+    }, { body: t.Object({ email: t.String({ format: "email", maxLength: 320 }), password: t.String({ minLength: 1, maxLength: 1024 }), rememberMe: t.Optional(t.Boolean()) }) })
     .post("/api/auth/refresh", async ({ request, requestId, set }) => {
       assertAllowedOrigin(request);
       if (config.testMode || injectedTestAuth) {
-        const managed = await managedSessionFor(request);
-        await assertManagedSessionSecurity(request, managed);
         const rawCookie = readCookie(request, config.sessionCookieName);
         const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
-        const refresh = managed?.refreshToken ?? cookie?.refreshToken;
+        const refresh = cookie?.refreshToken;
         if (!refresh) throw unauthorized();
         const result = await auth.refresh(refresh);
         set.headers["set-cookie"] = sessionCookie(config.sessionCookieName, encodeAuthSessionCookie({ accessToken: result.accessToken, refreshToken: result.refreshToken }), result.expiresAt, secureCookie, cookieSameSite);
@@ -671,25 +602,15 @@ export function createApp(dependencies: AppDependencies) {
     .post("/api/auth/logout", async ({ request, set, requestId }) => {
       assertAllowedOrigin(request);
       if (config.testMode || injectedTestAuth) {
-        const managed = await managedSessionFor(request);
-        await assertManagedSessionSecurity(request, managed);
         const rawCookie = readCookie(request, config.sessionCookieName);
         const cookie = rawCookie ? decodeAuthSessionCookie(rawCookie) : null;
-        const token = managed?.accessToken ?? cookie?.accessToken ?? rawCookie;
+        const token = cookie?.accessToken ?? rawCookie;
         if (token) {
           try { await auth.logout(token); } catch (error) {
             logger.warn("auth.logout.remote_failed", { requestId, message: error instanceof Error ? error.message : String(error) });
           }
         }
-        if (managed) {
-          await sessionManager.revoke(managed.sessionToken);
-          set.headers["set-cookie"] = [
-            clearApplicationSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite),
-            clearCsrfCookie(config.csrfCookieName ?? "aevo_pos_csrf", secureCookie, cookieSameSite)
-          ];
-        } else {
-          set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
-        }
+        set.headers["set-cookie"] = clearSessionCookie(config.sessionCookieName, secureCookie, cookieSameSite);
       } else {
         const resolved = await resolveCoreSession(request, config, "POS");
         if (!resolved) throw unauthorized();
@@ -715,47 +636,6 @@ export function createApp(dependencies: AppDependencies) {
       if (testRuntime) return { stores: testRuntime.stores };
       return { stores: await listAuthorizedStores(database, principal) };
     })
-    // Aevo Hub: Apps Catalog & Subscription Endpoints
-    .get("/api/hub/apps", async () => {
-      return { apps: await listApps(database) };
-    })
-    .get("/api/hub/subscriptions", async ({ request, query }) => {
-      const principal = await authenticate(request);
-      return { subscriptions: await listOrganizationSubscriptions(database, principal, query.storeId) };
-    }, {
-      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
-    })
-    .get("/api/hub/entitlements/:appId", async ({ request, params, query }) => {
-      const principal = await authenticate(request);
-      return { entitlement: await getAppEntitlement(database, principal, params.appId, query.storeId) };
-    }, {
-      params: t.Object({ appId: t.String({ minLength: 1, maxLength: 64 }) }),
-      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
-    })
-    .post("/api/hub/subscriptions/trial", async ({ request, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "organization.manage")) throw forbidden();
-      const subscription = await startAppTrial(database, principal, {
-        appId: body.appId,
-        ...(body.storeId ? { storeId: body.storeId } : {})
-      });
-      await writeAuditLog(database, {
-        organizationId: principal.organizationId,
-        userId: principal.userId,
-        action: "APP_TRIAL_STARTED",
-        resourceType: "app_subscription",
-        resourceId: subscription.id,
-        metadata: { appId: body.appId, storeId: body.storeId }
-      });
-      return { subscription };
-    }, {
-      body: t.Object({
-        appId: t.String({ minLength: 1, maxLength: 64 }),
-        storeId: t.Optional(t.String({ format: "uuid" }))
-      })
-    })
-
     // Aevo Booking Domain Endpoints
     .get("/api/booking/venues", async ({ request, query }) => {
       const principal = await authenticate(request);
@@ -1687,6 +1567,8 @@ export function createApp(dependencies: AppDependencies) {
         description: t.Optional(t.String({ maxLength: 2000 })),
         basePriceMinor: t.Integer({ minimum: 0, maximum: 2147483647 }),
         currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        imageUrl: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+        displayOrder: t.Optional(t.Integer({ minimum: 0, maximum: 999999 })),
         variants: t.Optional(t.Array(t.Object({
           code: t.String({ minLength: 1, maxLength: 32 }),
           name: t.String({ minLength: 1, maxLength: 160 }),
@@ -1767,6 +1649,9 @@ export function createApp(dependencies: AppDependencies) {
         name: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
         description: t.Optional(t.String({ maxLength: 2000 })),
         basePriceMinor: t.Optional(t.Integer({ minimum: 0, maximum: 2147483647 })),
+        currency: t.Optional(t.String({ minLength: 3, maxLength: 3 })),
+        imageUrl: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+        displayOrder: t.Optional(t.Integer({ minimum: 0, maximum: 999999 })),
         status: t.Optional(t.Union([t.Literal("ACTIVE"), t.Literal("ARCHIVED")]))
       })
     })
@@ -2024,161 +1909,6 @@ export function createApp(dependencies: AppDependencies) {
         storeId: t.String({ format: "uuid" }),
         limit: t.Optional(t.String())
       })
-    })
-
-    // ==========================================
-    // CANONICAL SURFACE 1: /api/v1/hub/*
-    // ==========================================
-    .get("/api/v1/hub/me", async ({ request }) => {
-      const principal = await authenticate(request);
-      return { principal };
-    })
-    .get("/api/v1/hub/organizations", async ({ request }) => {
-      const principal = await authenticate(request);
-      const organizations = await listUserOrganizations(database, principal.userId);
-      return { organizations };
-    })
-    .post("/api/v1/hub/organizations", async ({ request, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      const organization = await createOrganization(database, principal.userId, body);
-      return { organization };
-    }, {
-      body: t.Object({
-        name: t.String({ minLength: 2, maxLength: 100 }),
-        slug: t.Optional(t.String({ minLength: 2, maxLength: 64 }))
-      })
-    })
-    .get("/api/v1/hub/stores", async ({ request, query }) => {
-      const principal = await authenticate(request);
-      const orgId = query.organizationId || principal.organizationId;
-      const stores = await listOrganizationStores(database, orgId);
-      return { stores };
-    }, {
-      query: t.Object({
-        organizationId: t.Optional(t.String({ format: "uuid" }))
-      })
-    })
-    .post("/api/v1/hub/stores", async ({ request, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "organization.manage") && !hasPermission(principal, "store.manage")) throw forbidden();
-      const orgId = body.organizationId || principal.organizationId;
-      const store = await createStore(database, orgId, body);
-      return { store };
-    }, {
-      body: t.Object({
-        organizationId: t.Optional(t.String({ format: "uuid" })),
-        name: t.String({ minLength: 1, maxLength: 160 }),
-        code: t.String({ minLength: 1, maxLength: 32 }),
-        timezone: t.Optional(t.String({ minLength: 1, maxLength: 64 }))
-      })
-    })
-    .get("/api/v1/hub/apps", async () => {
-      return { apps: await listApps(database) };
-    })
-    .get("/api/v1/hub/subscriptions", async ({ request, query }) => {
-      const principal = await authenticate(request);
-      return { subscriptions: await listOrganizationSubscriptions(database, principal, query.storeId) };
-    }, {
-      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
-    })
-    .get("/api/v1/hub/entitlements/:appId", async ({ request, params, query }) => {
-      const principal = await authenticate(request);
-      return { entitlement: await getAppEntitlement(database, principal, params.appId, query.storeId) };
-    }, {
-      params: t.Object({ appId: t.String({ minLength: 1, maxLength: 64 }) }),
-      query: t.Object({ storeId: t.Optional(t.String({ format: "uuid" })) })
-    })
-    .post("/api/v1/hub/subscriptions/trial", async ({ request, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "organization.manage")) throw forbidden();
-      const subscription = await startAppTrial(database, principal, {
-        appId: body.appId,
-        ...(body.storeId ? { storeId: body.storeId } : {})
-      });
-      await writeAuditLog(database, {
-        organizationId: principal.organizationId,
-        userId: principal.userId,
-        action: "APP_TRIAL_STARTED",
-        resourceType: "app_subscription",
-        resourceId: subscription.id,
-        metadata: { appId: body.appId, storeId: body.storeId }
-      });
-      return { subscription };
-    }, {
-      body: t.Object({
-        appId: t.String({ minLength: 1, maxLength: 64 }),
-        storeId: t.Optional(t.String({ format: "uuid" }))
-      })
-    })
-    .get("/api/v1/hub/members", async ({ request }) => {
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "member.manage")) throw forbidden();
-      return { members: await listMembers(database, principal) };
-    })
-    .patch("/api/v1/hub/members/:membershipId", async ({ request, params, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "member.manage")) throw forbidden();
-      const member = await updateMember(database, principal, params.membershipId, body as never);
-      return { member };
-    }, {
-      params: t.Object({ membershipId: t.String({ format: "uuid" }) }),
-      body: t.Object({
-        role: t.Optional(t.Union([
-          t.Literal("OWNER"), t.Literal("MANAGER"), t.Literal("CASHIER"),
-          t.Literal("KITCHEN"), t.Literal("RUNNER")
-        ])),
-        customPermissions: t.Optional(t.Array(t.String()))
-      })
-    })
-    .get("/api/v1/hub/audit-logs", async ({ request, query }) => {
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "audit.read")) throw forbidden();
-      const logs = await listAuditLogs(database, principal, query.limit ? Number(query.limit) : 50);
-      return { logs };
-    }, {
-      query: t.Object({
-        limit: t.Optional(t.String()),
-        action: t.Optional(t.String()),
-        resourceType: t.Optional(t.String())
-      })
-    })
-    .get("/api/v1/hub/stats", async ({ request }) => {
-      const principal = await authenticate(request);
-      return { stats: await getOrganizationStats(database, principal.organizationId) };
-    })
-    .post("/api/v1/hub/billing/portal", async ({ request, body }) => {
-      assertAllowedOrigin(request);
-      const principal = await authenticate(request);
-      if (!hasPermission(principal, "organization.manage")) throw forbidden();
-      let customer = await getBillingCustomer(database, principal.organizationId);
-      if (!customer) {
-        customer = await billing.createCustomer({
-          organizationId: principal.organizationId,
-          email: principal.email,
-          name: principal.displayName || "Owner"
-        });
-      }
-      const returnUrl = body.returnUrl || `${config.webOrigin}/staff/hub`;
-      const url = await billing.getPortalUrl(customer.providerCustomerId, returnUrl);
-      return { url };
-    }, {
-      body: t.Object({
-        returnUrl: t.Optional(t.String())
-      })
-    })
-    .post("/api/v1/hub/billing/webhook", async ({ request }) => {
-      const event = await billing.verifyWebhook(request);
-      const record = await recordBillingWebhookEvent(database, {
-        id: event.id,
-        provider: "STRIPE",
-        eventType: event.type,
-        payload: event.data
-      });
-      return { received: true, processed: record.processed, duplicate: record.duplicate };
     })
 
     // ==========================================
